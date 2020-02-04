@@ -234,6 +234,19 @@ public final class Instructions {
     public static final int F32_REINTERPRET_I32 = 0xBE;
     public static final int F64_REINTERPRET_I64 = 0xBF;
 
+    // MS-Wasm instructions
+    public static final int I32_SEGMENT_LOAD = 0xF0;
+    public static final int I64_SEGMENT_LOAD = 0xF1;
+    public static final int I32_SEGMENT_STORE = 0xF2;
+    public static final int I64_SEGMENT_STORE = 0xF3;
+    public static final int NEW_SEGMENT = 0xF4;
+    public static final int FREE_SEGMENT = 0xF5;
+    public static final int SEGMENT_SLICE = 0xF6;
+    public static final int HANDLE_SEGMENT_LOAD = 0xF7;
+    public static final int HANDLE_SEGMENT_STORE = 0xF8;
+
+
+
     private static String[] decodingTable = new String[256];
 
     private Instructions() {

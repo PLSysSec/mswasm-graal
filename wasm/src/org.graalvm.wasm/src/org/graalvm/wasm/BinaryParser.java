@@ -948,6 +948,16 @@ public class BinaryParser extends BinaryStreamParser {
                     state.pop();
                     state.push();
                     break;
+                case Instructions.I32_SEGMENT_LOAD:
+                case Instructions.I64_SEGMENT_LOAD:
+                case Instructions.I32_SEGMENT_STORE:
+                case Instructions.I64_SEGMENT_STORE:
+                case Instructions.NEW_SEGMENT:
+                case Instructions.FREE_SEGMENT:
+                case Instructions.SEGMENT_SLICE:
+                case Instructions.SEGMENT_LOAD:
+                case Instructions.SEGMENT_STORE:
+                    break;
                 default:
                     Assert.fail(Assert.format("Unknown opcode: 0x%02x", opcode));
                     break;
