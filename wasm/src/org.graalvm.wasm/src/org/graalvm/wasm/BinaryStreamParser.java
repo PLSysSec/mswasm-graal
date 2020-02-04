@@ -295,6 +295,7 @@ public abstract class BinaryStreamParser {
             case ValueTypes.I64_TYPE:
             case ValueTypes.F32_TYPE:
             case ValueTypes.F64_TYPE:
+            case ValueTypes.HANDLE_TYPE;
                 break;
             default:
                 Assert.fail(String.format("Invalid value type: 0x%02X", b));

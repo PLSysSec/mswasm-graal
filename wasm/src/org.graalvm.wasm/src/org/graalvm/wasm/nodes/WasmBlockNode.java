@@ -559,6 +559,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer++;
                             break;
                         }
+                        case ValueTypes.HANDLE_TYPE: {
+                            // MSWASM-TODO
+                            break; 
+                        }
                         case ValueTypes.VOID_TYPE: {
                             // Void return type - do nothing.
                             break;
@@ -642,6 +646,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer++;
                             break;
                         }
+                        case ValueTypes.HANDLE_TYPE: {
+                            // MSWASM-TODO
+                            break; 
+                        }
                         case ValueTypes.VOID_TYPE: {
                             // Void return type - do nothing.
                             break;
@@ -707,6 +715,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             trace("local.get %d, value = %f [f64]", index, value);
                             break;
                         }
+                        case ValueTypes.HANDLE_TYPE: {
+                            // MSWASM-TODO
+                            break; 
+                        }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
                         }
@@ -748,6 +760,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             setDouble(frame, index, value);
                             trace("local.set %d, value = %f [f64]", index, value);
                             break;
+                        }
+                        case ValueTypes.HANDLE_TYPE: {
+                            // MSWASM-TODO
+                            break; 
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -799,6 +815,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             trace("local.tee %d, value = %f [f64]", index, value);
                             break;
                         }
+                        case ValueTypes.HANDLE_TYPE: {
+                            // MSWASM-TODO
+                            break; 
+                        }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
                         }
@@ -845,6 +865,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer++;
                             trace("global.get %d, value = %f [f64]", index, Double.longBitsToDouble(value));
                             break;
+                        }
+                        case ValueTypes.HANDLE_TYPE: {
+                            // MSWASM-TODO
+                            break; 
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -895,6 +919,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             context.globals().storeDoubleWithLong(address, value);
                             trace("global.set %d, value = %f [f64]", index, Double.longBitsToDouble(value));
                             break;
+                        }
+                        case ValueTypes.HANDLE_TYPE: {
+                            // MSWASM-TODO
+                            break; 
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -2378,6 +2406,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case ValueTypes.F64_TYPE:
                     args[i] = popAsDouble(frame, stackPointer);
                     break;
+                case ValueTypes.HANDLE_TYPE: {
+                     // MSWASM-TODO
+                      break; 
+                }
                 default: {
                     throw new WasmTrap(this, "Unknown type: " + type);
                 }

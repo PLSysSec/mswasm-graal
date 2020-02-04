@@ -184,6 +184,8 @@ public final class WasmModule implements TruffleObject {
                 return globals.loadAsFloat(address);
             case ValueTypes.F64_TYPE:
                 return globals.loadAsDouble(address);
+            case ValueTypes.HANDLE_TYPE:
+                throw new RuntimeException("Values of type handle cannot be global");
             default:
                 throw new RuntimeException("Unknown type: " + type);
         }

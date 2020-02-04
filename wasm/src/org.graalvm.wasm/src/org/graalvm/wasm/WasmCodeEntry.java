@@ -101,6 +101,8 @@ public final class WasmCodeEntry {
                 return FrameSlotKind.Float;
             case ValueTypes.F64_TYPE:
                 return FrameSlotKind.Double;
+            case ValueTypes.HANDLE_TYPE:
+                return FrameSlotKind.Object;
             default:
                 Assert.fail(String.format("Unknown value type: 0x%02X", valueType));
         }

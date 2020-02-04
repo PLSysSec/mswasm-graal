@@ -142,6 +142,11 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
                 long returnValue = pop(frame, 0);
                 return Double.longBitsToDouble(returnValue);
             }
+            case ValueTypes.HANDLE_TYPE: {
+                // MSWASM-TODO
+                assert false;
+                return null;
+            }
             default:
                 assert false;
                 return null;
@@ -202,6 +207,9 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
                     break;
                 case ValueTypes.F64_TYPE:
                     body.setDouble(frame, i, 0);
+                    break;
+                case ValueTypes.HANDLE_TYPE:
+                    // MSWASM-TODO
                     break;
             }
         }
