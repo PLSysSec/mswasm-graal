@@ -39,7 +39,6 @@ import org.graalvm.compiler.serviceprovider.GraalUnsafeAccess;
 import org.graalvm.compiler.word.BarrieredAccess;
 import org.graalvm.compiler.word.Word;
 import org.graalvm.nativeimage.CurrentIsolate;
-import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.c.function.CodePointer;
 import org.graalvm.word.Pointer;
@@ -50,7 +49,6 @@ import org.graalvm.word.WordBase;
 import org.graalvm.word.WordFactory;
 
 import com.oracle.svm.core.FrameAccess;
-import com.oracle.svm.core.MonitorSupport;
 import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.annotate.NeverInline;
 import com.oracle.svm.core.annotate.Specialize;
@@ -59,6 +57,7 @@ import com.oracle.svm.core.code.CodeInfo;
 import com.oracle.svm.core.code.CodeInfoAccess;
 import com.oracle.svm.core.code.CodeInfoQueryResult;
 import com.oracle.svm.core.code.CodeInfoTable;
+import com.oracle.svm.core.code.FrameInfoDecoder;
 import com.oracle.svm.core.code.FrameInfoQueryResult;
 import com.oracle.svm.core.code.FrameInfoQueryResult.ValueInfo;
 import com.oracle.svm.core.code.FrameInfoQueryResult.ValueType;
@@ -75,11 +74,11 @@ import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.log.StringBuilderLog;
 import com.oracle.svm.core.meta.SharedMethod;
 import com.oracle.svm.core.meta.SubstrateObjectConstant;
+import com.oracle.svm.core.monitor.MonitorSupport;
 import com.oracle.svm.core.option.RuntimeOptionKey;
 import com.oracle.svm.core.snippets.KnownIntrinsics;
 import com.oracle.svm.core.stack.JavaStackWalker;
 import com.oracle.svm.core.stack.StackFrameVisitor;
-import com.oracle.svm.core.thread.JavaThreads;
 import com.oracle.svm.core.thread.JavaVMOperation;
 import com.oracle.svm.core.thread.VMOperation;
 import com.oracle.svm.core.thread.VMThreads;
@@ -434,10 +433,8 @@ public final class Deoptimizer {
      */
     private Object[] materializedObjects;
 
-    /**
-     * All objects that have been materialized and re-locked during deoptimization.
-     */
-    private Object[] relockedObjects;
+    /** The recursive locking depth of {@link #materializedObjects} that need to be re-locked. */
+    private int[] materializedObjectsLockDepths;
 
     /**
      * The size of the new stack content after all stack entries are built).
@@ -681,11 +678,11 @@ public final class Deoptimizer {
             CodeInfoQueryResult targetInfo = CodeInfoTable.lookupDeoptimizationEntrypoint(deoptInfo.getDeoptMethodOffset(), deoptInfo.getEncodedBci());
             if (targetInfo == null || targetInfo.getFrameInfo() == null) {
                 throw VMError.shouldNotReachHere("Deoptimization: no matching target bytecode frame found for bci " +
-                                deoptInfo.getBci() + " (encodedBci " + deoptInfo.getEncodedBci() + ") in method at address " +
+                                FrameInfoDecoder.readableBci(deoptInfo.getEncodedBci()) + " in method at address " +
                                 Long.toHexString(deoptInfo.getDeoptMethodAddress().rawValue()));
             } else if (!targetInfo.getFrameInfo().isDeoptEntry()) {
                 throw VMError.shouldNotReachHere("Deoptimization: target frame information not marked as deoptimization entry point for bci " +
-                                deoptInfo.getBci() + " (encodedBci " + deoptInfo.getEncodedBci() + ") in method at address" +
+                                FrameInfoDecoder.readableBci(deoptInfo.getEncodedBci()) + " in method at address" +
                                 Long.toHexString(deoptInfo.getDeoptMethodAddress().rawValue()));
             } else if (targetInfo.getFrameInfo().getDeoptMethod() != null && targetInfo.getFrameInfo().getDeoptMethod().hasCalleeSavedRegisters()) {
                 /*
@@ -707,16 +704,16 @@ public final class Deoptimizer {
             deoptInfo = deoptInfo.getCaller();
         }
 
-        if (relockedObjects != null) {
-            for (Object lockee : relockedObjects) {
-                if (lockee != null) {
+        if (materializedObjectsLockDepths != null) {
+            for (int i = 0; i < materializedObjectsLockDepths.length; i++) {
+                int lockDepth = materializedObjectsLockDepths[i];
+                if (lockDepth > 0) {
+                    Object object = materializedObjects[i];
                     /*
                      * The re-locked objects must appear as if they had been locked from the thread
-                     * that contains the frame, not the thread that performed deoptimization. Since
-                     * the same object can be re-locked multiple times, we change the thread after
-                     * all virtual frames have been reconstructed.
+                     * that contains the frame, not the thread that performed deoptimization.
                      */
-                    ImageSingletons.lookup(MonitorSupport.class).setExclusiveOwnerThread(lockee, JavaThreads.fromVMThread(currentThread));
+                    MonitorSupport.singleton().lockRematerializedObject(object, currentThread, lockDepth);
                 }
             }
         }
@@ -889,13 +886,11 @@ public final class Deoptimizer {
             Object lockee = KnownIntrinsics.convertUnknownValue(SubstrateObjectConstant.asObject(valueConstant), Object.class);
             int lockeeIndex = TypeConversion.asS4(valueInfo.getData());
             assert lockee == materializedObjects[lockeeIndex];
-            MonitorSupport.monitorEnterWithoutBlockingCheck(lockee);
 
-            if (relockedObjects == null) {
-                relockedObjects = new Object[sourceFrame.getVirtualObjects().length];
+            if (materializedObjectsLockDepths == null) {
+                materializedObjectsLockDepths = new int[sourceFrame.getVirtualObjects().length];
             }
-            assert relockedObjects[lockeeIndex] == null || relockedObjects[lockeeIndex] == lockee;
-            relockedObjects[lockeeIndex] = lockee;
+            materializedObjectsLockDepths[lockeeIndex]++;
         }
     }
 
@@ -1131,19 +1126,20 @@ public final class Deoptimizer {
             int count = 0;
             while (sourceFrame != null) {
                 SharedMethod deoptMethod = sourceFrame.getDeoptMethod();
-                int bci = sourceFrame.getBci();
 
                 log.string("        at ");
                 if (deoptMethod != null) {
-                    StackTraceElement element = deoptMethod.asStackTraceElement(bci);
+                    StackTraceElement element = deoptMethod.asStackTraceElement(sourceFrame.getBci());
                     if (element.getFileName() != null && element.getLineNumber() >= 0) {
                         log.string(element.toString());
                     } else {
-                        log.string(deoptMethod.format("%H.%n(%p)")).string(" bci ").signed(bci);
+                        log.string(deoptMethod.format("%H.%n(%p)"));
                     }
                 } else {
-                    log.string("method at ").hex(sourceFrame.getDeoptMethodAddress()).string(" bci ").signed(bci);
+                    log.string("method at ").hex(sourceFrame.getDeoptMethodAddress());
                 }
+                log.string(" bci ");
+                FrameInfoDecoder.logReadableBci(log, sourceFrame.getEncodedBci());
                 log.string("  return address ").hex(targetFrame.returnAddress.returnAddress).newline();
 
                 if (printOnlyTopFrames || Options.TraceDeoptimizationDetails.getValue()) {
@@ -1170,7 +1166,8 @@ public final class Deoptimizer {
             log.string("            ").string(sourceReference).newline();
         }
 
-        log.string("            bci: ").signed(frameInfo.getBci());
+        log.string("            bci: ");
+        FrameInfoDecoder.logReadableBci(log, frameInfo.getEncodedBci());
         log.string("  deoptMethodOffset: ").signed(frameInfo.getDeoptMethodOffset());
         log.string("  deoptMethod: ").hex(frameInfo.getDeoptMethodAddress());
         log.string("  return address: ").hex(virtualFrame.returnAddress.returnAddress).string("  offset: ").signed(virtualFrame.returnAddress.offset);

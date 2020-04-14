@@ -24,8 +24,8 @@
  */
 package org.graalvm.compiler.hotspot.replacements;
 
-import static org.graalvm.compiler.hotspot.GraalHotSpotVMConfigBase.INJECTED_METAACCESS;
-import static org.graalvm.compiler.hotspot.GraalHotSpotVMConfigBase.INJECTED_VMCONFIG;
+import static org.graalvm.compiler.hotspot.GraalHotSpotVMConfig.INJECTED_METAACCESS;
+import static org.graalvm.compiler.hotspot.GraalHotSpotVMConfig.INJECTED_VMCONFIG;
 import static org.graalvm.compiler.hotspot.meta.HotSpotForeignCallsProviderImpl.VERIFY_OOP;
 
 import java.lang.ref.Reference;
@@ -55,7 +55,7 @@ import org.graalvm.compiler.nodes.extended.LoadHubOrNullNode;
 import org.graalvm.compiler.nodes.extended.RawLoadNode;
 import org.graalvm.compiler.nodes.extended.StoreHubNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.IntrinsicContext;
-import org.graalvm.compiler.nodes.memory.Access;
+import org.graalvm.compiler.nodes.memory.AddressableMemoryAccess;
 import org.graalvm.compiler.nodes.memory.address.AddressNode;
 import org.graalvm.compiler.nodes.memory.address.OffsetAddressNode;
 import org.graalvm.compiler.nodes.type.StampTool;
@@ -99,8 +99,8 @@ public class HotSpotReplacementsUtil {
             if (base instanceof CompressionNode) {
                 base = ((CompressionNode) base).getValue();
             }
-            if (base instanceof Access) {
-                Access access = (Access) base;
+            if (base instanceof AddressableMemoryAccess) {
+                AddressableMemoryAccess access = (AddressableMemoryAccess) base;
                 if (access.getLocationIdentity().equals(HUB_LOCATION) || access.getLocationIdentity().equals(COMPRESSED_HUB_LOCATION)) {
                     AddressNode address = access.getAddress();
                     if (address instanceof OffsetAddressNode) {
@@ -124,8 +124,8 @@ public class HotSpotReplacementsUtil {
          * @return an earlier read or the original {@code read}
          */
         protected static ValueNode foldIndirection(ValueNode read, ValueNode object, LocationIdentity otherLocation) {
-            if (object instanceof Access) {
-                Access access = (Access) object;
+            if (object instanceof AddressableMemoryAccess) {
+                AddressableMemoryAccess access = (AddressableMemoryAccess) object;
                 if (access.getLocationIdentity().equals(otherLocation)) {
                     AddressNode address = access.getAddress();
                     if (address instanceof OffsetAddressNode) {
@@ -156,9 +156,13 @@ public class HotSpotReplacementsUtil {
 
     @Fold
     public static int getFieldOffset(ResolvedJavaType type, String fieldName) {
+        return getField(type, fieldName).getOffset();
+    }
+
+    private static ResolvedJavaField getField(ResolvedJavaType type, String fieldName) {
         for (ResolvedJavaField field : type.getInstanceFields(true)) {
             if (field.getName().equals(fieldName)) {
-                return field.getOffset();
+                return field;
             }
         }
         throw new GraalError("missing field " + fieldName + " in type " + type);
@@ -865,7 +869,12 @@ public class HotSpotReplacementsUtil {
 
     @Fold
     public static long referentOffset(@InjectedParameter MetaAccessProvider metaAccessProvider) {
-        return getFieldOffset(metaAccessProvider.lookupJavaType(Reference.class), "referent");
+        return referentField(metaAccessProvider).getOffset();
+    }
+
+    @Fold
+    public static ResolvedJavaField referentField(@InjectedParameter MetaAccessProvider metaAccessProvider) {
+        return getField(metaAccessProvider.lookupJavaType(Reference.class), "referent");
     }
 
     @Fold

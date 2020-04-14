@@ -63,6 +63,16 @@ public interface GraalTruffleRuntimeListener {
     }
 
     /**
+     * Notifies this object when the target of a Truffle call node should be split but, for given
+     * reason, could not be.
+     *
+     * @param callNode the call node whose where splitting could not occur.
+     * @param reason why splitting of this node could not occur
+     */
+    default void onCompilationSplitFailed(OptimizedDirectCallNode callNode, CharSequence reason) {
+    }
+
+    /**
      * Notifies this object after {@code target} is added to the compilation queue.
      *
      * @param target the call target that has just been enqueued for compilation
@@ -181,5 +191,12 @@ public interface GraalTruffleRuntimeListener {
             deepNodeCount += inliningDecision.getInlinedNodeCount();
         }
         properties.put("ASTSize", String.format("%5d/%5d", nodeCount, deepNodeCount));
+    }
+
+    /**
+     * Determines if a failure is permanent.
+     */
+    static boolean isPermanentFailure(boolean bailout, boolean permanentBailout) {
+        return !bailout || permanentBailout;
     }
 }

@@ -66,6 +66,7 @@ else:
         return x.decode()
 
 GRAAL_COMPILER_FLAGS_BASE = [
+    '-XX:+UseParallelGC',  # native image generation is a throughput-oriented task
     '-XX:+UnlockExperimentalVMOptions',
     '-XX:+EnableJVMCI',
     '-Dtruffle.TrustAllTruffleRuntimeProviders=true', # GR-7046
@@ -358,12 +359,12 @@ class Tags(set):
 
 GraalTags = Tags([
     'helloworld',
+    'helloworld_debug',
     'test',
     'maven',
     'js',
     'build',
     'benchmarktest',
-    'truffletck',
     'relocations',
     "nativeimagehelp"
 ])
@@ -411,13 +412,22 @@ def native_image_context(common_args=None, hosted_assertions=True, native_image_
         raise mx.abort("GraalVM not built? could not find " + native_image_cmd)
 
     def query_native_image(all_args, option):
+
+        def remove_quotes(val):
+            if len(val) >= 2 and val.startswith("'") and val.endswith("'"):
+                return val[1:-1].replace("\\'", "'")
+            else:
+                return val
+
         out = mx.LinesOutputCapture()
         _native_image(['--dry-run'] + all_args, out=out)
         for line in out.lines:
-            _, sep, after = line.partition(option)
+            arg = remove_quotes(line.rstrip('\\').strip())
+            _, sep, after = arg.partition(option)
             if sep:
                 return after.split(' ')[0].rstrip()
         return None
+
     def native_image_func(args, **kwargs):
         all_args = base_args + common_args + args
         path = query_native_image(all_args, '-H:Path=')
@@ -459,6 +469,19 @@ def svm_gate_body(args, tasks):
                 cinterfacetutorial([])
                 clinittest([])
 
+        with Task('image demos debuginfo', tasks, tags=[GraalTags.helloworld_debug]) as t:
+            if t:
+                if svm_java8():
+                    javac_image(['--output-path', svmbuild_dir(), '-H:GenerateDebugInfo=1'])
+                    javac_command = ['--javac-command', ' '.join(javac_image_command(svmbuild_dir())), '-H:GenerateDebugInfo=1']
+                else:
+                    # Building javac image currently only supported for Java 8
+                    javac_command = ['-H:GenerateDebugInfo=1']
+                helloworld(['--output-path', svmbuild_dir()] + javac_command)
+                helloworld(['--output-path', svmbuild_dir(), '--shared', '-H:GenerateDebugInfo=1'])  # Build and run helloworld as shared library
+                cinterfacetutorial(['-H:GenerateDebugInfo=1'])
+                clinittest([])
+
         with Task('native unittests', tasks, tags=[GraalTags.test]) as t:
             if t:
                 with tempfile.NamedTemporaryFile(mode='w') as blacklist:
@@ -477,31 +500,8 @@ def svm_gate_body(args, tasks):
             if t:
                 testlib = mx_subst.path_substitutions.substitute('-Dnative.test.lib=<path:truffle:TRUFFLE_TEST_NATIVE>/<lib:nativetest>')
                 native_unittest_args = ['com.oracle.truffle.nfi.test', '--build-args', '--language:nfi',
-                                        '-H:MaxRuntimeCompileMethods=1500', '--run-args', testlib, '--very-verbose', '--enable-timing']
+                                        '-H:MaxRuntimeCompileMethods=1700', '--run-args', testlib, '--very-verbose', '--enable-timing']
                 native_unittest(native_unittest_args)
-
-        with Task('Truffle TCK', tasks, tags=[GraalTags.truffletck]) as t:
-            if t:
-                junit_native_dir = join(svmbuild_dir(), platform_name(), 'junit')
-                mkpath(junit_native_dir)
-                junit_tmp_dir = tempfile.mkdtemp(dir=junit_native_dir)
-                try:
-                    unittest_deps = []
-                    unittest_file = join(junit_tmp_dir, 'truffletck.tests')
-                    _run_tests([], lambda deps, vm_launcher, vm_args: unittest_deps.extend(deps), _VMLauncher('dummy_launcher', None, mx_compiler.jdk), ['@Test', '@Parameters'], unittest_file, [], [re.compile('com.oracle.truffle.tck.tests')], None, mx.suite('truffle'))
-                    if not exists(unittest_file):
-                        mx.abort('TCK tests not found.')
-                    unittest_deps.append(mx.dependency('truffle:TRUFFLE_SL_TCK'))
-                    vm_image_args = mx.get_runtime_jvm_args(unittest_deps, jdk=mx_compiler.jdk)
-                    tests_image = native_image(vm_image_args + ['--macro:truffle',
-                                                                '--features=com.oracle.truffle.tck.tests.TruffleTCKFeature',
-                                                                '-H:Class=org.junit.runner.JUnitCore', '-H:IncludeResources=com/oracle/truffle/sl/tck/resources/.*',
-                                                                '-H:MaxRuntimeCompileMethods=3000'])
-                    with open(unittest_file) as f:
-                        test_classes = [l.rstrip() for l in f.readlines()]
-                    mx.run([tests_image, '-Dtck.inlineVerifierInstrument=false'] + test_classes)
-                finally:
-                    remove_tree(junit_tmp_dir)
 
         with Task('Relocations in generated object file on Linux', tasks, tags=[GraalTags.relocations]) as t:
             if t:
@@ -1106,10 +1106,9 @@ if not mx.is_windows():
         dependencies=['SubstrateVM'],
         builder_jar_distributions=[
             'substratevm:SVM_LLVM',
-            'compiler:GRAAL_LLVM',
-            'compiler:LLVM_WRAPPER_SHADOWED',
-            'compiler:JAVACPP_SHADOWED',
-            'compiler:LLVM_PLATFORM_SPECIFIC_SHADOWED',
+            'substratevm:LLVM_WRAPPER_SHADOWED',
+            'substratevm:JAVACPP_SHADOWED',
+            'substratevm:LLVM_PLATFORM_SPECIFIC_SHADOWED',
         ],
     ))
 
@@ -1136,9 +1135,6 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJreComponent(
     polyglot_lib_jar_dependencies=[
         "substratevm:POLYGLOT_NATIVE_API",
     ],
-    polyglot_lib_build_dependencies=[
-        "substratevm:POLYGLOT_NATIVE_API_HEADERS"
-    ],
     has_polyglot_lib_entrypoints=True,
 ))
 
@@ -1157,10 +1153,8 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVMSvmMacro(
 jar_distributions = [
     'substratevm:GRAAL_HOTSPOT_LIBRARY',
     'compiler:GRAAL_LIBGRAAL_JNI',
-    'compiler:GRAAL_TRUFFLE_COMPILER_LIBGRAAL']
-
-if mx_sdk_vm.base_jdk_version() == 8:
-    jar_distributions.append('compiler:GRAAL_MANAGEMENT_LIBGRAAL')
+    'compiler:GRAAL_TRUFFLE_COMPILER_LIBGRAAL',
+    'compiler:GRAAL_MANAGEMENT_LIBGRAAL']
 
 mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJreComponent(
     suite=suite,
@@ -1221,19 +1215,20 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJreComponent(
     ],
 ))
 
-if mx.is_linux() and mx.get_arch() == "amd64":
-    jdk = mx.get_jdk(tag='default')
-    if jdk.javaCompliance == '11':
-        mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVMSvmStaticLib(
-            suite=suite,
-            name='JDK11 static libraries compiled with muslc',
-            short_name='mjdksl',
-            dir_name=False,
-            license_files=[],
-            third_party_license_files=[],
-            dependencies=['svm'],
-            support_distributions=['substratevm:JDK11_NATIVE_IMAGE_MUSL_SUPPORT']
-        ))
+is_musl_building_supported = mx.is_linux() and mx.get_arch() == "amd64" and mx.get_jdk(tag='default').javaCompliance == '11'
+
+if is_musl_building_supported:
+    mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVMSvmStaticLib(
+        suite=suite,
+        name='JDK11 static libraries compiled with muslc',
+        short_name='mjdksl',
+        dir_name=False,
+        license_files=[],
+        third_party_license_files=[],
+        dependencies=['svm'],
+        support_distributions=['substratevm:JDK11_NATIVE_IMAGE_MUSL_SUPPORT_CE'],
+        priority=5
+    ))
 
 
 @mx.command(suite_name=suite.name, command_name='helloworld', usage_msg='[options]')
@@ -1337,7 +1332,7 @@ def build(args, vm=None):
                 print('Write file ' + flags_path)
                 f.write(flags_contents)
 
-    update_if_needed("versions", GRAAL_COMPILER_FLAGS_MAP.keys())
+    update_if_needed("versions", sorted(GRAAL_COMPILER_FLAGS_MAP.keys()))
     for version_tag in GRAAL_COMPILER_FLAGS_MAP:
         update_if_needed(version_tag, GRAAL_COMPILER_FLAGS_BASE + GRAAL_COMPILER_FLAGS_MAP[version_tag])
 
@@ -1451,6 +1446,7 @@ def maven_plugin_install(args):
             '--all-distribution-types',
             '--validate=full',
             '--all-suites',
+            '--skip=GRAALVM_*_JAVA*',  # do not deploy GraalVM distributions
         ]
         if parsed.licenses:
             deploy_args += ["--licenses", parsed.licenses]

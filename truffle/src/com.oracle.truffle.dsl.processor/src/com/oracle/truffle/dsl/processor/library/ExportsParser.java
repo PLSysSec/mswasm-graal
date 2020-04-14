@@ -85,6 +85,9 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 
 import com.oracle.truffle.dsl.processor.ProcessorContext;
+import com.oracle.truffle.dsl.processor.expression.DSLExpression;
+import com.oracle.truffle.dsl.processor.expression.DSLExpressionResolver;
+import com.oracle.truffle.dsl.processor.expression.InvalidExpressionException;
 import com.oracle.truffle.dsl.processor.generator.GeneratorUtils;
 import com.oracle.truffle.dsl.processor.java.ElementUtils;
 import com.oracle.truffle.dsl.processor.java.compiler.CompilerFactory;
@@ -307,7 +310,6 @@ public class ExportsParser extends AbstractParser<ExportsData> {
                     ExportMessageData exportMessage = exportLib.getExportedMessages().get(message.getName());
 
                     if (exportMessage == null || exportMessage.getResolvedMessage() != message) {
-
                         boolean isAbstract;
                         if (!message.getAbstractIfExported().isEmpty()) {
                             isAbstract = false;
@@ -318,9 +320,8 @@ public class ExportsParser extends AbstractParser<ExportsData> {
                                 }
                             }
                         } else {
-                            isAbstract = true;
+                            isAbstract = !exportLib.hasExportDelegation();
                         }
-
                         if (isAbstract) {
                             missingAbstractMessage.add(message);
                         }
@@ -533,6 +534,20 @@ public class ExportsParser extends AbstractParser<ExportsData> {
                 }
             }
 
+            String transitionLimit = ElementUtils.getAnnotationValue(String.class, exportAnnotationMirror, "transitionLimit", false);
+            if (transitionLimit != null) {
+                DSLExpressionResolver resolver = new DSLExpressionResolver(context, model.getTemplateType(),
+                                NodeParser.importVisibleStaticMembers(model.getTemplateType(), model.getTemplateType(), false));
+                try {
+                    DSLExpression expression = DSLExpression.parse(transitionLimit);
+                    expression.accept(resolver);
+                    lib.setTransitionLimit(expression);
+                } catch (InvalidExpressionException e) {
+                    AnnotationValue allowTransition = ElementUtils.getAnnotationValue(exportAnnotationMirror, "transitionLimit");
+                    model.addError(exportAnnotationMirror, allowTransition, "Error parsing expression '%s': %s", transitionLimit, e.getMessage());
+                }
+            }
+
             String delegateTo = ElementUtils.getAnnotationValue(String.class, exportAnnotationMirror, "delegateTo", false);
             if (delegateTo != null) {
                 AnnotationValue delegateToValue = ElementUtils.getAnnotationValue(exportAnnotationMirror, "delegateTo");
@@ -570,8 +585,8 @@ public class ExportsParser extends AbstractParser<ExportsData> {
                     continue;
                 }
                 TypeMirror delegateType = delegateVar.asType();
-                TypeMirror exportsReceiverType = lib.getLibrary().getExportsReceiverType();
-                if (!ElementUtils.isAssignable(exportsReceiverType, delegateType)) {
+                TypeMirror exportsReceiverType = lib.getLibrary().getSignatureReceiverType();
+                if (!ElementUtils.isAssignable(delegateType, exportsReceiverType)) {
                     lib.addError(delegateToValue, "The type of export delegation field '%s' is not assignable to the expected type '%s'. " +
                                     "Change the field type to '%s' to resolve this.",
                                     ElementUtils.getSimpleName(receiverClass) + "." + delegateTo,
@@ -1000,6 +1015,7 @@ public class ExportsParser extends AbstractParser<ExportsData> {
         syntheticExecute.getParameters().set(0, new CodeVariableElement(exportedMessage.getReceiverType(), "receiver"));
         syntheticExecute.getModifiers().add(Modifier.ABSTRACT);
         syntheticExecute.setVarArgs(false);
+
         clonedType.add(syntheticExecute);
 
         // add enclosing type to static imports. merge with existing static imports
@@ -1023,6 +1039,7 @@ public class ExportsParser extends AbstractParser<ExportsData> {
         } else {
             clonedType.getAnnotationMirrors().add(new CodeAnnotationMirror(types.GenerateUncached));
         }
+        transferReportPolymorphismAnnotations(nodeType, clonedType);
 
         NodeData parsedNodeData = NodeParser.createExportParser(
                         exportedMessage.getExportsLibrary().getLibrary().getTemplateType().asType(),
@@ -1033,6 +1050,17 @@ public class ExportsParser extends AbstractParser<ExportsData> {
 
         return parsedNodeData;
 
+    }
+
+    private void transferReportPolymorphismAnnotations(TypeElement nodeType, CodeTypeElement clonedType) {
+        AnnotationMirror reportPolymorphism = findAnnotationMirror(nodeType, types.ReportPolymorphism);
+        if (reportPolymorphism != null) {
+            clonedType.getAnnotationMirrors().add(reportPolymorphism);
+        }
+        AnnotationMirror reportPolymorphismExclude = findAnnotationMirror(nodeType, types.ReportPolymorphism_Exclude);
+        if (reportPolymorphismExclude != null) {
+            clonedType.getAnnotationMirrors().add(reportPolymorphismExclude);
+        }
     }
 
     private static boolean isNodeElement(Element member) {

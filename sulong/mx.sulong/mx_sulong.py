@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, 2019, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2020, Oracle and/or its affiliates.
 #
 # All rights reserved.
 #
@@ -185,7 +185,7 @@ def _sulong_gate_runner(args, tasks):
     _sulong_gate_testsuite('GCC_CPP', 'gcc_cpp', tasks, args, tags=['gcc_cpp', 'sulongCoverage'])
     _sulong_gate_testsuite('GCC_Fortran', 'gcc_fortran', tasks, args, tags=['gcc_fortran', 'sulongCoverage'])
     _sulong_gate_sulongsuite_unittest('Sulong', tasks, args, testClasses='SulongSuite', tags=['sulong', 'sulongBasic', 'sulongCoverage'])
-    _sulong_gate_unittest('SulongLL', 'SULONG_LL_TEST_SUITES', tasks, args, testClasses='SulongLLSuite', tags=['sulongLL', 'sulongCoverage'])
+    _sulong_gate_unittest('SulongLL', 'SULONG_LL_TEST_SUITES', tasks, args, testClasses='com.oracle.truffle.llvm.tests.bitcode.', tags=['sulongLL', 'sulongCoverage'])
     _sulong_gate_sulongsuite_unittest('Interop', tasks, args, testClasses='com.oracle.truffle.llvm.tests.interop', tags=['interop', 'sulongBasic', 'sulongCoverage'])
     _sulong_gate_sulongsuite_unittest('Linker', tasks, args, testClasses='com.oracle.truffle.llvm.tests.linker', tags=['linker', 'sulongBasic', 'sulongCoverage'])
     _sulong_gate_sulongsuite_unittest('Debug', tasks, args, testClasses='LLVMDebugTest', tags=['debug', 'sulongBasic', 'sulongCoverage'])
@@ -504,14 +504,10 @@ def getCommonOptions(withAssertion, lib_args=None):
         options.append('-Dpolyglot.llvm.libraries=' + ':'.join(lib_args))
 
     options += ['-Xss56m', '-Xms4g', '-Xmx4g']
-    options.append(getLLVMRootOption())
     if withAssertion:
         options += ['-ea', '-esa']
 
     return options
-
-def getLLVMRootOption():
-    return "-Dsulongtest.projectRoot=" + _root
 
 def pullsuite(suiteDir, urls):
     name = os.path.basename(urls[0])
@@ -581,6 +577,16 @@ def get_jacoco_setting():
 
 mx_subst.path_substitutions.register_no_arg('jacoco', get_jacoco_setting)
 
+
+def _subst_get_jvm_args(dep):
+    java = mx.get_jdk().java
+    main_class = mx.distribution(dep).mainClass
+    jvm_args = [pipes.quote(arg) for arg in mx.get_runtime_jvm_args([dep])]
+    cmd = [java] + jvm_args + [main_class]
+    return " ".join(cmd)
+
+
+mx_subst.path_substitutions.register_with_arg('get_jvm_cmd_line', _subst_get_jvm_args)
 
 mx.add_argument('--jacoco-exec-file', help='the coverage result file of JaCoCo', default='jacoco.exec')
 
@@ -940,6 +946,105 @@ class BootstrapToolchainLauncherBuildTask(mx.BuildTask):
         return "#!/usr/bin/env bash\n" + "exec " + " ".join(command) + "\n"
 
 
+class CMakeBuildTask(mx.NativeBuildTask):
+
+    def __str__(self):
+        return 'Building {} with CMake'.format(self.subject.name)
+
+    def build(self):
+        # get cwd and env
+        self._configure()
+        # This is copied from the super call because we want to make it
+        # less verbose but calling super does not allow us to do that.
+        # super(CMakeBuildTask, self).build()
+        cmdline, cwd, env = self._build_run_args()
+        if mx._opts.verbose:
+            mx.run(cmdline, cwd=cwd, env=env)
+        else:
+            with open(os.devnull, 'w') as fnull:
+                mx.run(cmdline, cwd=cwd, env=env, out=fnull)
+        self._newestOutput = None
+        # END super(CMakeBuildTask, self).build()
+        source_dir = self.subject.source_dirs()[0]
+        self._write_guard(self.guard_file(), source_dir, self.subject.cmake_config())
+
+    def needsBuild(self, newestInput):
+        mx.logv('Checking whether to build {} with CMake'.format(self.subject.name))
+        if self._configure(silent=True):
+            return True, "rebuild needed by CMake"
+        # Makefiles produced by CMake do not support --question. Assume nothing has changed.
+        # return super(CMakeBuildTask, self).needsBuild(newestInput)
+        return False, None
+
+    def _check_guard(self, guard_file, source_dir, cmake_config):
+        if not os.path.exists(guard_file):
+            return False
+        with open(guard_file, 'r') as fp:
+            return fp.read() == self._guard_data(source_dir, cmake_config)
+
+    def _write_guard(self, guard_file, source_dir, cmake_config):
+        with open(guard_file, 'w') as fp:
+            fp.write(self._guard_data(source_dir, cmake_config))
+
+    def _guard_data(self, source_dir, cmake_config):
+        return source_dir + '\n' + '\n'.join(cmake_config)
+
+    def _check_cmake(self):
+        try:
+            self.run_cmake(["--version"], silent=False, nonZeroIsFatal=False)
+        except OSError as e:
+            mx.abort(str(e) + "\nError executing 'cmake --version'. Are you sure 'cmake' is installed? ")
+
+    def _configure(self, silent=False):
+        self._check_cmake()
+        _, cwd, env = self._build_run_args()
+        source_dir = self.subject.source_dirs()[0]
+        guard_file = self.guard_file()
+        if not os.path.exists(os.path.join(self.subject.dir, 'Makefile')) or not self._check_guard(guard_file, source_dir, self.subject.cmake_config()):
+            cmakefile = os.path.join(self.subject.dir, 'CMakeCache.txt')
+            if os.path.exists(cmakefile):
+                # remove cache file if it exist
+                os.remove(cmakefile)
+            cmdline = ["-G", "Unix Makefiles", source_dir] + self.subject.cmake_config()
+            self.run_cmake(cmdline, silent=silent, cwd=cwd, env=env)
+            return True
+        return False
+
+    def run_cmake(self, cmdline, silent, *args, **kwargs):
+        if mx._opts.verbose:
+            mx.run(["cmake"] + cmdline, *args, **kwargs)
+        else:
+            with open(os.devnull, 'w') as fnull:
+                err = fnull if silent else None
+                mx.run(["cmake"] + cmdline, out=fnull, err=err, *args, **kwargs)
+
+    def guard_file(self):
+        return os.path.join(self.subject.dir, 'mx.cmake.rebuild.guard')
+
+
+class CMakeProject(mx.NativeProject):  # pylint: disable=too-many-ancestors
+    def __init__(self, suite, name, deps, workingSets, subDir, results=None, output=None, **args):
+        projectDir = args.pop('dir', None)
+        if projectDir:
+            d = join(suite.dir, projectDir)
+        elif subDir is None:
+            d = join(suite.dir, name)
+        else:
+            d = join(suite.dir, subDir, name)
+        srcDir = args.pop('sourceDir', d)
+        if not srcDir:
+            mx.abort("Exactly on 'sourceDir' is required")
+        srcDir = mx_subst.path_substitutions.substitute(srcDir)
+        cmake_config = args.pop('cmakeConfig', {})
+        self.cmake_config = lambda: ['-D{}={}'.format(k, mx_subst.path_substitutions.substitute(v).replace('{{}}', '$')) for k, v in sorted(cmake_config.items())]
+
+        super(CMakeProject, self).__init__(suite, name, subDir, [srcDir], deps, workingSets, results, output, d, **args)
+        self.dir = self.getOutput()
+
+    def getBuildTask(self, args):
+        return CMakeBuildTask(args, self)
+
+
 _suite.toolchain = ToolchainConfig('native', 'SULONG_TOOLCHAIN_LAUNCHERS', 'SULONG_BOOTSTRAP_TOOLCHAIN',
                                    # unfortunately, we cannot define those in the suite.py because graalvm component
                                    # registration runs before the suite is properly initialized
@@ -980,7 +1085,7 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmLanguage(
 
 COPYRIGHT_HEADER_BSD = """\
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *

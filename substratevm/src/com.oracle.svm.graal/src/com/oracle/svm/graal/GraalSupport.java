@@ -42,6 +42,7 @@ import org.graalvm.compiler.core.common.CompilationIdentifier;
 import org.graalvm.compiler.core.gen.NodeMatchRules;
 import org.graalvm.compiler.core.match.MatchStatement;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.debug.DebugContext.Builder;
 import org.graalvm.compiler.debug.DebugContext.Description;
 import org.graalvm.compiler.debug.DebugHandlersFactory;
 import org.graalvm.compiler.debug.DiagnosticsOutputDirectory;
@@ -60,11 +61,11 @@ import org.graalvm.compiler.phases.BasePhase;
 import org.graalvm.compiler.phases.tiers.Suites;
 import org.graalvm.compiler.phases.util.Providers;
 import org.graalvm.compiler.serviceprovider.GraalServices;
-import org.graalvm.nativeimage.hosted.Feature.CompilationAccess;
-import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
+import org.graalvm.nativeimage.hosted.Feature.CompilationAccess;
+import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
 
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.graal.code.SubstrateBackend;
@@ -109,7 +110,7 @@ public class GraalSupport {
 
     public DebugContext openDebugContext(OptionValues options, CompilationIdentifier compilationId, Object compilable, PrintStream logStream) {
         Description description = new Description(compilable, compilationId.toString(CompilationIdentifier.Verbosity.ID));
-        return DebugContext.create(options, description, metricValues, logStream, runtimeConfig.getDebugHandlersFactories());
+        return new Builder(options, runtimeConfig.getDebugHandlersFactories()).globalMetrics(metricValues).description(description).logStream(logStream).build();
     }
 
     public DiagnosticsOutputDirectory getDebugOutputDirectory() {
@@ -160,6 +161,11 @@ public class GraalSupport {
 
     @Platforms(Platform.HOSTED_ONLY.class)
     public static boolean setGraphEncoding(byte[] graphEncoding, Object[] graphObjects, NodeClass<?>[] graphNodeTypes) {
+        if (get().graphObjects == null && graphObjects.length == 0) {
+            assert graphEncoding.length == 0;
+            assert graphNodeTypes.length == 0;
+            return false;
+        }
         boolean result = false;
         if (!Arrays.equals(get().graphEncoding, graphEncoding)) {
             get().graphEncoding = graphEncoding;

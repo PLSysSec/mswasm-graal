@@ -216,6 +216,16 @@ JNIEXPORT jobject JNICALL Java_sun_nio_ch_sctp_SctpChannelImpl_initIDs(JNIEnv *e
     return NULL;
 }
 
+jboolean VerifyFixClassname(char *utf_name) {
+    fprintf(stderr, "VerifyFixClassname(%s) called:  Unimplemented\n", utf_name);
+    abort();
+}
+
+jboolean VerifyClassname(char *utf_name, jboolean arrayAllowed) {
+    fprintf(stderr, "VerifyClassname(%s, %d) called:  Unimplemented\n", utf_name, arrayAllowed);
+    abort();
+}
+
 int jio_vfprintf(FILE* f, const char *fmt, va_list args) {
   return vfprintf(f, fmt, args);
 }
@@ -242,5 +252,17 @@ int jio_snprintf(char *str, size_t count, const char *fmt, ...) {
   len = jio_vsnprintf(str, count, fmt, args);
   va_end(args);
   return len;
+}
+
+int jio_fprintf(FILE *fp, const char *fmt, ...)
+{
+    int len;
+
+    va_list args;
+    va_start(args, fmt);
+    len = jio_vfprintf(fp, fmt, args);
+    va_end(args);
+
+    return len;
 }
 #endif

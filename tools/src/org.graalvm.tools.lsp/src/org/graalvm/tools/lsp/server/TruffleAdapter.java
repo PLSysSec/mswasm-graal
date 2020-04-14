@@ -51,7 +51,6 @@ import org.graalvm.tools.lsp.server.types.SignatureHelp;
 import org.graalvm.tools.lsp.server.types.TextDocumentContentChangeEvent;
 import org.graalvm.tools.lsp.exceptions.DiagnosticsNotification;
 import org.graalvm.tools.lsp.exceptions.UnknownLanguageException;
-import org.graalvm.tools.lsp.instrument.LSPInstrument;
 import org.graalvm.tools.lsp.server.request.AbstractRequestHandler;
 import org.graalvm.tools.lsp.server.request.CompletionRequestHandler;
 import org.graalvm.tools.lsp.server.request.CoverageRequestHandler;
@@ -84,10 +83,11 @@ import org.graalvm.tools.lsp.server.types.SignatureHelpOptions;
  *
  */
 public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
-    private static final TruffleLogger LOG = TruffleLogger.getLogger(LSPInstrument.ID, TruffleAdapter.class);
 
     private final boolean developerMode;
-    private TruffleInstrument.Env env;
+    private final TruffleLogger logger;
+    private final TruffleInstrument.Env envMain;
+    private TruffleInstrument.Env envInternal;
     ContextAwareExecutor contextAwareExecutor;
     private SourceCodeEvaluator sourceCodeEvaluator;
     CompletionRequestHandler completionHandler;
@@ -99,37 +99,40 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
     private final LanguageTriggerCharacters completionTriggerCharacters = new LanguageTriggerCharacters();
     private final LanguageTriggerCharacters signatureTriggerCharacters = new LanguageTriggerCharacters();
 
-    public TruffleAdapter(boolean developerMode) {
+    public TruffleAdapter(TruffleInstrument.Env mainEnv, boolean developerMode) {
+        this.envMain = mainEnv;
         this.developerMode = developerMode;
+        this.logger = envMain.getLogger("");
     }
 
     public void register(Env environment, ContextAwareExecutor executor) {
-        this.env = environment;
+        this.envInternal = environment;
         this.contextAwareExecutor = executor;
-    }
-
-    public void initialize() {
         initSurrogateMap();
         createLSPRequestHandlers();
     }
 
+    public TruffleLogger getLogger() {
+        return logger;
+    }
+
     private void createLSPRequestHandlers() {
-        this.sourceCodeEvaluator = new SourceCodeEvaluator(env, surrogateMap, contextAwareExecutor);
-        this.completionHandler = new CompletionRequestHandler(env, surrogateMap, contextAwareExecutor, sourceCodeEvaluator, completionTriggerCharacters);
-        this.hoverHandler = new HoverRequestHandler(env, surrogateMap, contextAwareExecutor, completionHandler, developerMode);
-        this.signatureHelpHandler = new SignatureHelpRequestHandler(env, surrogateMap, contextAwareExecutor, sourceCodeEvaluator, completionHandler, signatureTriggerCharacters);
-        this.coverageHandler = new CoverageRequestHandler(env, surrogateMap, contextAwareExecutor, sourceCodeEvaluator);
-        this.highlightHandler = new HighlightRequestHandler(env, surrogateMap, contextAwareExecutor);
+        this.sourceCodeEvaluator = new SourceCodeEvaluator(envMain, envInternal, surrogateMap, contextAwareExecutor);
+        this.completionHandler = new CompletionRequestHandler(envMain, envInternal, surrogateMap, contextAwareExecutor, sourceCodeEvaluator, completionTriggerCharacters);
+        this.hoverHandler = new HoverRequestHandler(envMain, envInternal, surrogateMap, contextAwareExecutor, completionHandler, developerMode);
+        this.signatureHelpHandler = new SignatureHelpRequestHandler(envMain, envInternal, surrogateMap, contextAwareExecutor, sourceCodeEvaluator, completionHandler, signatureTriggerCharacters);
+        this.coverageHandler = new CoverageRequestHandler(envMain, envInternal, surrogateMap, contextAwareExecutor, sourceCodeEvaluator);
+        this.highlightHandler = new HighlightRequestHandler(envMain, envInternal, surrogateMap, contextAwareExecutor);
     }
 
     private void initSurrogateMap() {
         try {
             contextAwareExecutor.executeWithDefaultContext(() -> {
-                LOG.log(Level.CONFIG, "Truffle Runtime: {0}", Truffle.getRuntime().getName());
+                logger.log(Level.CONFIG, "Truffle Runtime: {0}", Truffle.getRuntime().getName());
                 return null;
             }).get();
 
-            this.surrogateMap = new TextDocumentSurrogateMap(env);
+            this.surrogateMap = new TextDocumentSurrogateMap(envInternal);
         } catch (InterruptedException | ExecutionException e) {
             throw new RuntimeException(e);
         }
@@ -150,7 +153,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
     }
 
     protected CallTarget parseWithEnteredContext(final String text, final String langId, final URI uri) throws DiagnosticsNotification {
-        LanguageInfo languageInfo = findLanguageInfo(langId, env.getTruffleFile(uri));
+        LanguageInfo languageInfo = findLanguageInfo(langId, envInternal.getTruffleFile(uri));
         TextDocumentSurrogate surrogate = getOrCreateSurrogate(uri, text, languageInfo);
         return parseWithEnteredContext(surrogate);
     }
@@ -172,7 +175,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
      * @return a language info
      */
     private LanguageInfo findLanguageInfo(final String langId, final TruffleFile truffleFile) {
-        Map<String, LanguageInfo> languages = env.getLanguages();
+        Map<String, LanguageInfo> languages = envInternal.getLanguages();
         LanguageInfo langInfo = languages.get(langId);
         if (langInfo != null) {
             return langInfo;
@@ -216,7 +219,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
 
         surrogate.getChangeEventsSinceLastSuccessfulParsing().addAll(list);
         surrogate.setLastChange(list.get(list.size() - 1));
-        surrogate.setEditorText(SourceUtils.applyTextDocumentChanges(list, surrogate.getSource(), surrogate));
+        surrogate.setEditorText(SourceUtils.applyTextDocumentChanges(list, surrogate.getSource(), surrogate, logger));
 
         sourceCodeEvaluator.parse(surrogate);
 
@@ -238,7 +241,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
 
         Future<List<Future<?>>> futureTasks = contextAwareExecutor.executeWithDefaultContext(() -> {
             Map<String, LanguageInfo> mimeType2LangInfo = new HashMap<>();
-            for (LanguageInfo langInfo : env.getLanguages().values()) {
+            for (LanguageInfo langInfo : envInternal.getLanguages().values()) {
                 if (langInfo.isInternal()) {
                     continue;
                 }
@@ -246,7 +249,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
             }
             try {
                 WorkspaceWalker walker = new WorkspaceWalker(mimeType2LangInfo);
-                LOG.log(Level.FINE, "Start walking file tree at: {0}", rootPath);
+                logger.log(Level.FINE, "Start walking file tree at: {0}", rootPath);
                 Files.walkFileTree(rootPath, walker);
                 return walker.parsingTasks;
             } catch (IOException e) {
@@ -266,10 +269,19 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
         if (doc != null) {
             return doc.getLanguageId();
         }
+
+        Future<String> future = contextAwareExecutor.executeWithDefaultContext(() -> {
+            try {
+                return Source.findLanguage(envInternal.getTruffleFile(uri));
+            } catch (IOException ex) {
+                return null;
+            }
+        });
+
         try {
-            return Source.findLanguage(env.getTruffleFile(uri));
-        } catch (IOException ex) {
-            return null;
+            return future.get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -311,7 +323,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
         @Override
         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
             URI uri = file.toUri();
-            String mimeType = Source.findMimeType(env.getTruffleFile(uri));
+            String mimeType = Source.findMimeType(envInternal.getTruffleFile(uri));
             if (!mimeTypesAllLang.containsKey(mimeType)) {
                 return FileVisitResult.CONTINUE;
             }
@@ -392,7 +404,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
      */
     public Future<?> clearCoverage() {
         return contextAwareExecutor.executeWithDefaultContext(() -> {
-            LOG.fine("Clearing and re-parsing all files with coverage data...");
+            logger.fine("Clearing and re-parsing all files with coverage data...");
             List<PublishDiagnosticsParams> params = new ArrayList<>();
             surrogateMap.getSurrogates().stream().forEach(surrogate -> {
                 surrogate.clearCoverage();
@@ -403,7 +415,7 @@ public final class TruffleAdapter implements VirtualLanguageServerFileProvider {
                     params.addAll(e.getDiagnosticParamsCollection());
                 }
             });
-            LOG.fine("Clearing and re-parsing done.");
+            logger.fine("Clearing and re-parsing done.");
 
             throw new DiagnosticsNotification(params);
         });

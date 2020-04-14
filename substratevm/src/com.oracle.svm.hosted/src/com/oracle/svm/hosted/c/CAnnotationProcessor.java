@@ -33,6 +33,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.graalvm.nativeimage.ImageSingletons;
+
+import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.util.InterruptImageBuilding;
 import com.oracle.svm.core.util.UserError;
 import com.oracle.svm.core.util.VMError;
@@ -51,16 +54,20 @@ public class CAnnotationProcessor {
 
     private final NativeCodeContext codeCtx;
     private final NativeLibraries nativeLibs;
-    private final CCompilerInvoker compilerInvoker;
-    private final Path tempDirectory;
+    private CCompilerInvoker compilerInvoker;
+    private Path tempDirectory;
 
     private NativeCodeInfo codeInfo;
     private QueryCodeWriter writer;
 
-    public CAnnotationProcessor(NativeLibraries nativeLibs, NativeCodeContext codeCtx, CCompilerInvoker compilerInvoker) {
+    public CAnnotationProcessor(NativeLibraries nativeLibs, NativeCodeContext codeCtx) {
         this.nativeLibs = nativeLibs;
         this.codeCtx = codeCtx;
-        this.compilerInvoker = compilerInvoker;
+        if (!ImageSingletons.contains(CCompilerInvoker.class)) {
+            assert CAnnotationProcessorCache.Options.UseCAPCache.getValue();
+            return;
+        }
+        this.compilerInvoker = ImageSingletons.lookup(CCompilerInvoker.class);
         this.tempDirectory = compilerInvoker.tempDirectory;
     }
 
@@ -132,7 +139,7 @@ public class CAnnotationProcessor {
         }
         String fileName = fileNamePath.toString();
         Path binary = queryFile.resolveSibling(compilerInvoker.asExecutableName(fileName.substring(0, fileName.lastIndexOf("."))));
-        compilerInvoker.compileAndParseError(codeCtx.getDirectives().getOptions(), queryFile, binary, this::reportCompilerError);
+        compilerInvoker.compileAndParseError(codeCtx.getDirectives().getOptions(), queryFile, binary, this::reportCompilerError, nativeLibs.debug);
         return binary;
     }
 
@@ -167,7 +174,7 @@ public class CAnnotationProcessor {
         CInterfaceError error = new CInterfaceError(
                         String.format("Error compiling query code (in %s). Compiler command '%s' output included error: %s",
                                         queryFile,
-                                        String.join(" ", current.command()),
+                                        SubstrateUtil.getShellCommandString(current.command(), false),
                                         line),
                         elements);
         nativeLibs.getErrors().add(error);

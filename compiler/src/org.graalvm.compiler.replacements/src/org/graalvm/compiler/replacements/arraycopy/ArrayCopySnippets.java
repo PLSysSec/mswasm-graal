@@ -375,7 +375,6 @@ public abstract class ArrayCopySnippets implements Snippets {
 
         private ResolvedJavaMethod originalArraycopy;
         private final Counters counters;
-        private boolean expandArraycopyLoop;
 
         public Templates(ArrayCopySnippets receiver, OptionValues options, Iterable<DebugHandlersFactory> factories, Factory factory, Providers providers,
                         SnippetReflectionProvider snippetReflection, TargetDescription target) {
@@ -398,6 +397,10 @@ public abstract class ArrayCopySnippets implements Snippets {
         }
 
         public void lower(ArrayCopyNode arraycopy, LoweringTool tool) {
+            lower(arraycopy, false, tool);
+        }
+
+        public void lower(ArrayCopyNode arraycopy, boolean mayExpandThisArraycopy, LoweringTool tool) {
             JavaKind elementKind = selectComponentKind(arraycopy);
             SnippetInfo snippetInfo;
             ArrayCopyTypeCheck arrayTypeCheck;
@@ -456,7 +459,7 @@ public abstract class ArrayCopySnippets implements Snippets {
                 }
             }
 
-            if (this.expandArraycopyLoop && snippetInfo == arraycopyExactStubCallSnippet) {
+            if (mayExpandThisArraycopy && snippetInfo == arraycopyExactStubCallSnippet) {
                 snippetInfo = arraycopyExactSnippet;
             }
 
@@ -494,9 +497,13 @@ public abstract class ArrayCopySnippets implements Snippets {
         }
 
         public void lower(ArrayCopyWithDelayedLoweringNode arraycopy, LoweringTool tool) {
+            lower(arraycopy, false, tool);
+        }
+
+        public void lower(ArrayCopyWithDelayedLoweringNode arraycopy, boolean mayExpandArraycopyLoops, LoweringTool tool) {
             StructuredGraph graph = arraycopy.graph();
 
-            if (arraycopy.getSnippet() == exactArraycopyWithSlowPathWork && this.expandArraycopyLoop) {
+            if (arraycopy.getSnippet() == exactArraycopyWithSlowPathWork && mayExpandArraycopyLoops) {
                 if (!graph.getGuardsStage().areDeoptsFixed()) {
                     // Don't lower until floating guards are fixed.
                     return;
@@ -566,7 +573,7 @@ public abstract class ArrayCopySnippets implements Snippets {
                         throw new GraalError("unexpected invoke %s in snippet", call.targetMethod());
                     }
                     // Here we need to fix the bci of the invoke
-                    invoke.replaceBci(arraycopy.getBci());
+                    invoke.setBci(arraycopy.getBci());
                     invoke.setStateDuring(null);
                     invoke.setStateAfter(null);
                     if (arraycopy.stateDuring() != null) {
@@ -580,7 +587,8 @@ public abstract class ArrayCopySnippets implements Snippets {
                 } else if (originalNode instanceof ArrayCopyWithDelayedLoweringNode) {
                     ArrayCopyWithDelayedLoweringNode slowPath = (ArrayCopyWithDelayedLoweringNode) replacements.get(originalNode);
                     assert arraycopy.stateAfter() != null : arraycopy;
-                    assert slowPath.stateAfter() == arraycopy.stateAfter();
+                    assert slowPath.stateAfter() == arraycopy.stateAfter() : "States do not match for slowpath=" + slowPath + " and array copy=" + arraycopy + " slowPathState=" +
+                                    slowPath.stateAfter() + " and arraycopyState=" + arraycopy.stateAfter();
                     slowPath.setBci(arraycopy.getBci());
                 }
             }
@@ -596,10 +604,6 @@ public abstract class ArrayCopySnippets implements Snippets {
                 }
             }
             return originalArraycopy;
-        }
-
-        public void setExpandArraycopyLoop(boolean b) {
-            this.expandArraycopyLoop = b;
         }
     }
 }

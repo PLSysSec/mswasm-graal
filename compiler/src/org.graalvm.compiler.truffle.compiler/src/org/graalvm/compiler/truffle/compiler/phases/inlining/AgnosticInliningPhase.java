@@ -28,17 +28,13 @@ import static org.graalvm.compiler.truffle.compiler.TruffleCompilerOptions.getPo
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.phases.BasePhase;
 import org.graalvm.compiler.serviceprovider.GraalServices;
-import org.graalvm.compiler.truffle.common.CallNodeProvider;
-import org.graalvm.compiler.truffle.common.CompilableTruffleAST;
 import org.graalvm.compiler.truffle.compiler.PartialEvaluator;
 import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
-import org.graalvm.options.OptionValues;
 
 public final class AgnosticInliningPhase extends BasePhase<CoreProviders> {
 
@@ -55,19 +51,15 @@ public final class AgnosticInliningPhase extends BasePhase<CoreProviders> {
     }
 
     private final PartialEvaluator partialEvaluator;
-    private final CallNodeProvider callNodeProvider;
-    private final CompilableTruffleAST compilableTruffleAST;
-    private final OptionValues options;
+    private final PartialEvaluator.Request request;
 
-    public AgnosticInliningPhase(OptionValues options, PartialEvaluator partialEvaluator, CallNodeProvider callNodeProvider, CompilableTruffleAST compilableTruffleAST) {
-        this.options = options;
+    public AgnosticInliningPhase(PartialEvaluator partialEvaluator, PartialEvaluator.Request request) {
         this.partialEvaluator = partialEvaluator;
-        this.callNodeProvider = callNodeProvider;
-        this.compilableTruffleAST = compilableTruffleAST;
+        this.request = request;
     }
 
-    private static InliningPolicyProvider chosenProvider(List<? extends InliningPolicyProvider> providers, String name) {
-        for (InliningPolicyProvider provider : providers) {
+    private static InliningPolicyProvider chosenProvider(String name) {
+        for (InliningPolicyProvider provider : AgnosticInliningPhase.POLICY_PROVIDERS) {
             if (provider.getName().equals(name)) {
                 return provider;
             }
@@ -76,21 +68,20 @@ public final class AgnosticInliningPhase extends BasePhase<CoreProviders> {
     }
 
     private InliningPolicyProvider getInliningPolicyProvider() {
-        final String policy = getPolyglotOptionValue(options, PolyglotCompilerOptions.InliningPolicy);
-        return policy.equals("") ? POLICY_PROVIDERS.get(0) : chosenProvider(POLICY_PROVIDERS, policy);
+        final String policy = getPolyglotOptionValue(request.options, PolyglotCompilerOptions.InliningPolicy);
+        return policy.equals("") ? POLICY_PROVIDERS.get(0) : chosenProvider(policy);
     }
 
     @Override
     protected void run(StructuredGraph graph, CoreProviders coreProviders) {
-        if (!getPolyglotOptionValue(options, PolyglotCompilerOptions.Inlining)) {
-            return;
+        final InliningPolicy policy = getInliningPolicyProvider().get(request.options, coreProviders);
+        final CallTree tree = new CallTree(partialEvaluator, request, policy);
+        tree.dumpBasic("Before Inline");
+        if (getPolyglotOptionValue(request.options, PolyglotCompilerOptions.Inlining)) {
+            policy.run(tree);
+            tree.dumpBasic("After Inline");
+            tree.dequeueInlined();
         }
-        final InliningPolicy policy = getInliningPolicyProvider().get(options, coreProviders);
-        final CallTree tree = new CallTree(options, partialEvaluator, callNodeProvider, compilableTruffleAST, graph, policy);
-        tree.dumpBasic("Before Inline", "");
-        policy.run(tree);
-        tree.dumpBasic("After Inline", "");
         tree.trace();
-        tree.dequeueInlined();
     }
 }

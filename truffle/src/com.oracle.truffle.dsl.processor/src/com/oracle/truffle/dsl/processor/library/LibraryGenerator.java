@@ -282,8 +282,18 @@ public class LibraryGenerator extends CodeTypeElementFactory<LibraryData> {
                 }
 
                 builder.startCall("lib", "send").string("receiver_").field(null, message.messageField);
-                for (VariableElement param : executeImpl.getParameters().subList(1, executeImpl.getParameters().size())) {
+
+                List<VariableElement> executeParameters = executeImpl.getParameters();
+                for (VariableElement param : executeParameters.subList(1, executeParameters.size())) {
+                    builder.startGroup();
+                    if (executeImpl.isVarArgs() && executeParameters.size() == 2 && param == executeParameters.get(executeParameters.size() - 1) &&
+                                    ElementUtils.typeEquals(context.getType(Object[].class), param.asType())) {
+                        // force cast varargs library message to pass their varargs as object to the
+                        // varargs send.
+                        builder.string("(Object) ");
+                    }
                     builder.string(param.getSimpleName().toString());
+                    builder.end();
                 }
                 builder.end();
                 builder.end();
@@ -364,6 +374,8 @@ public class LibraryGenerator extends CodeTypeElementFactory<LibraryData> {
         createDelegate.setReturnType(libraryTypeMirror);
         createDelegate.createBuilder().startReturn().startNew(delegateClass.asType()).string("delegateLibrary").end().end();
         genClass.add(createDelegate);
+
+        delegateClass.addOptional(createDelegateCastMethod(model));
 
         for (MessageObjects message : methods) {
             CodeExecutableElement executeImpl = delegateClass.add(CodeExecutableElement.cloneNoAnnotations(message.model.getExecutable()));
@@ -684,6 +696,19 @@ public class LibraryGenerator extends CodeTypeElementFactory<LibraryData> {
         castMethod.renameArguments("receiver");
         builder = castMethod.createBuilder();
         builder.startReturn().string("receiver").end();
+        return castMethod;
+    }
+
+    private CodeExecutableElement createDelegateCastMethod(LibraryData library) {
+        if (!library.isDynamicDispatch()) {
+            return null;
+        }
+        CodeTreeBuilder builder;
+        CodeExecutableElement castMethod = CodeExecutableElement.cloneNoAnnotations(ElementUtils.findMethod(types.DynamicDispatchLibrary, "cast"));
+        castMethod.getModifiers().remove(Modifier.ABSTRACT);
+        castMethod.renameArguments("receiver");
+        builder = castMethod.createBuilder();
+        builder.startReturn().string("delegateLibrary.cast(receiver)").end();
         return castMethod;
     }
 

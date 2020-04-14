@@ -41,11 +41,13 @@ import org.graalvm.compiler.serviceprovider.GraalUnsafeAccess;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.LogHandler;
+import org.graalvm.nativeimage.StackValue;
 import org.graalvm.nativeimage.c.function.CEntryPoint;
 import org.graalvm.nativeimage.c.function.CFunctionPointer;
 import org.graalvm.nativeimage.c.function.InvokeCFunctionPointer;
 import org.graalvm.nativeimage.c.struct.SizeOf;
 import org.graalvm.nativeimage.c.type.CCharPointer;
+import org.graalvm.nativeimage.c.type.CLongPointer;
 import org.graalvm.nativeimage.c.type.CShortPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.WordPointer;
@@ -53,7 +55,6 @@ import org.graalvm.word.Pointer;
 import org.graalvm.word.WordBase;
 import org.graalvm.word.WordFactory;
 
-import com.oracle.svm.core.MonitorSupport;
 import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.annotate.Alias;
 import com.oracle.svm.core.annotate.NeverInline;
@@ -67,6 +68,7 @@ import com.oracle.svm.core.c.function.CEntryPointOptions;
 import com.oracle.svm.core.c.function.CEntryPointOptions.Publish;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.monitor.MonitorSupport;
 import com.oracle.svm.core.snippets.KnownIntrinsics;
 import com.oracle.svm.core.thread.VMThreads;
 import com.oracle.svm.core.util.Utf8;
@@ -773,9 +775,9 @@ final class JNIFunctions {
         throw (Throwable) JNIObjectHandles.getObject(handle);
     }
 
-    interface NewObjectWithObjectArgFunctionPointer extends CFunctionPointer {
+    interface NewObjectWithObjectArrayArgFunctionPointer extends CFunctionPointer {
         @InvokeCFunctionPointer
-        JNIObjectHandle invoke(JNIEnvironment env, JNIObjectHandle clazz, JNIMethodId ctor, JNIObjectHandle arg);
+        JNIObjectHandle invoke(JNIEnvironment env, JNIObjectHandle clazz, JNIMethodId ctor, CLongPointer array);
     }
 
     /*
@@ -787,8 +789,16 @@ final class JNIFunctions {
         Class<?> clazz = JNIObjectHandles.getObject(clazzHandle);
         JNIMethodId ctor = Support.getMethodID(clazz, "<init>", "(Ljava/lang/String;)V", false);
         JNIObjectHandle messageHandle = NewStringUTF(env, message);
-        NewObjectWithObjectArgFunctionPointer newObject = (NewObjectWithObjectArgFunctionPointer) env.getFunctions().getNewObject();
-        JNIObjectHandle exception = newObject.invoke(env, clazzHandle, ctor, messageHandle);
+        /*
+         * The iOS calling convention mandates that variadic functions parameters are all passed on
+         * the stack. As a consequence, calling the newObject method does not work on iOS as the
+         * code generator has no way of telling that the call is variadic, so we use newObjectA
+         * instead.
+         */
+        NewObjectWithObjectArrayArgFunctionPointer newObjectA = (NewObjectWithObjectArrayArgFunctionPointer) env.getFunctions().getNewObjectA();
+        CLongPointer array = StackValue.get(Long.BYTES);
+        array.write(messageHandle.rawValue());
+        JNIObjectHandle exception = newObjectA.invoke(env, clazzHandle, ctor, array);
         throw (Throwable) JNIObjectHandles.getObject(exception);
     }
 
@@ -918,7 +928,7 @@ final class JNIFunctions {
         if (obj == null) {
             throw new NullPointerException();
         }
-        MonitorSupport.monitorEnter(obj);
+        MonitorSupport.singleton().monitorEnter(obj);
         assert Thread.holdsLock(obj);
         JNIThreadOwnedMonitors.entered(obj);
         return JNIErrors.JNI_OK();
@@ -937,7 +947,7 @@ final class JNIFunctions {
         if (!Thread.holdsLock(obj)) {
             throw new IllegalMonitorStateException();
         }
-        MonitorSupport.monitorExit(obj);
+        MonitorSupport.singleton().monitorExit(obj);
         JNIThreadOwnedMonitors.exited(obj);
         return JNIErrors.JNI_OK();
     }

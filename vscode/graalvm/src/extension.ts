@@ -24,7 +24,7 @@ const POLYGLOT: string = "polyglot";
 const LSPORT: number = 8123;
 const delegateLanguageServers: Set<() => Thenable<String>> = new Set();
 
-let client: LanguageClient | undefined;
+let languageClient: Promise<LanguageClient> | undefined;
 let languageServerPID: number = 0;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -102,7 +102,7 @@ function startLanguageServer(graalVMHome: string) {
 				Promise.all(s).then((servers) => {
 					delegateServers = delegateServers ? delegateServers.concat(',', servers.join()) : servers.join();
 					const lspOpt = delegateServers ? '--lsp.Delegates=' + delegateServers : '--lsp';
-					const serverProcess = cp.spawn(re, ['--jvm', lspOpt, '--experimental-options', '--shell'], { cwd: serverWorkDir });
+					const serverProcess = cp.spawn(re, [lspOpt, '--experimental-options', '--shell'], { cwd: serverWorkDir });
 					if (!serverProcess || !serverProcess.pid) {
 						reject(`Launching server using command ${re} failed.`);
 					} else {
@@ -141,16 +141,21 @@ function connectToLanguageServer(connection: (() => Thenable<StreamInfo>)) {
 			{ scheme: 'file', language: 'ruby' }
 		]
 	};
-	client = new LanguageClient('GraalVM Language Client', connection, clientOptions);
-	let prepareStatus = vscode.window.setStatusBarMessage("Graal Language Client: Connecting to GraalLS");
-	client.onReady().then(() => {
-		prepareStatus.dispose();
-		vscode.window.setStatusBarMessage('GraalLS is ready.', 3000);
-	}).catch(() => {
-		prepareStatus.dispose();
-		vscode.window.setStatusBarMessage('GraalLS failed to initialize.', 3000);
+
+	languageClient = new Promise<LanguageClient>((resolve) => {
+		let client = new LanguageClient('GraalVM Language Client', connection, clientOptions);
+		let prepareStatus = vscode.window.setStatusBarMessage("Graal Language Client: Connecting to GraalLS");
+		client.onReady().then(() => {
+			prepareStatus.dispose();
+			vscode.window.setStatusBarMessage('GraalLS is ready.', 3000);
+			resolve(client);
+		}).catch(() => {
+			prepareStatus.dispose();
+			vscode.window.setStatusBarMessage('GraalLS failed to initialize.', 3000);
+			resolve(client);
+		});
+		client.start();
 	});
-	client.start();
 }
 
 function config() {
@@ -184,13 +189,13 @@ function config() {
 }
 
 function stopLanguageServer(): Thenable<void> {
-	if (client) {
-		return client.stop().then(() => {
-			client = undefined;
+	if (languageClient) {
+		return languageClient.then((client) => client.stop().then(() => {
+			languageClient = undefined;
 			if (languageServerPID > 0) {
 				terminateLanguageServer();
 			}
-		});
+		}));
 	}
 	if (languageServerPID > 0) {
 		terminateLanguageServer();
@@ -229,7 +234,7 @@ class GraalVMDebugAdapterTracker implements vscode.DebugAdapterTrackerFactory {
 	createDebugAdapterTracker(_session: vscode.DebugSession): vscode.ProviderResult<vscode.DebugAdapterTracker> {
 		return {
 			onDidSendMessage(message: any) {
-				if (!client && message.type === 'event') {
+				if (!languageClient && message.type === 'event') {
 					if (message.event === 'output' && message.body.category === 'telemetry' && message.body.output === 'childProcessID') {
 						languageServerPID = message.body.data.pid;
 					}
@@ -276,11 +281,7 @@ class GraalVMConfigurationProvider implements vscode.DebugConfigurationProvider 
 						delegateServers = delegateServers ? delegateServers.concat(',', servers.join()) : servers.join();
 						const lspOpt = delegateServers ? '--lsp.Delegates=' + delegateServers : '--lsp';
 						if (config.runtimeArgs) {
-							let idx = config.runtimeArgs.indexOf('--jvm');
-							if (idx < 0) {
-								config.runtimeArgs.unshift('--jvm');
-							}
-							idx = config.runtimeArgs.indexOf('--lsp');
+							let idx = config.runtimeArgs.indexOf('--lsp');
 							if (idx < 0) {
 								config.runtimeArgs.unshift(lspOpt);
 							}
@@ -289,13 +290,15 @@ class GraalVMConfigurationProvider implements vscode.DebugConfigurationProvider 
 								config.runtimeArgs.unshift('--experimental-options');
 							}
 						} else {
-							config.runtimeArgs = ['--jvm', lspOpt, '--experimental-options'];
+							config.runtimeArgs = [lspOpt, '--experimental-options'];
 						}
 						resolve(config);
 					});
 				});
-			} else if (config.program) {
-				vscode.commands.executeCommand('dry_run', pathToFileURL(this.resolveVarRefs(config.program)));
+			} else {
+				if (config.program) {
+					vscode.commands.executeCommand('dry_run', pathToFileURL(this.resolveVarRefs(config.program)));
+				}
 				resolve(config);
 			}
 		});

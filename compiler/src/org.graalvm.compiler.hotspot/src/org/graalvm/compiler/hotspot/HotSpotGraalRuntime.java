@@ -28,6 +28,7 @@ import static jdk.vm.ci.common.InitTimer.timer;
 import static jdk.vm.ci.hotspot.HotSpotJVMCIRuntime.runtime;
 import static org.graalvm.compiler.core.common.GraalOptions.GeneratePIC;
 import static org.graalvm.compiler.core.common.GraalOptions.HotSpotPrintInlining;
+import static org.graalvm.compiler.hotspot.GraalHotSpotVMConfigAccess.JDK;
 
 import java.io.PrintStream;
 import java.util.ArrayList;
@@ -45,10 +46,14 @@ import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.api.runtime.GraalRuntime;
 import org.graalvm.compiler.core.CompilationWrapper.ExceptionAction;
 import org.graalvm.compiler.core.common.CompilationIdentifier;
+import org.graalvm.compiler.core.common.CompilationListenerProfiler;
+import org.graalvm.compiler.core.common.CompilerProfiler;
 import org.graalvm.compiler.core.common.GraalOptions;
 import org.graalvm.compiler.core.common.spi.ForeignCallsProvider;
 import org.graalvm.compiler.core.target.Backend;
+import org.graalvm.compiler.debug.Assertions;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.debug.DebugContext.Builder;
 import org.graalvm.compiler.debug.DebugContext.Description;
 import org.graalvm.compiler.debug.DebugHandlersFactory;
 import org.graalvm.compiler.debug.DebugOptions;
@@ -142,6 +147,8 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
     private final DiagnosticsOutputDirectory outputDirectory;
     private final Map<ExceptionAction, Integer> compilationProblemsPerAction;
 
+    private final CompilerProfiler compilerProfiler;
+
     /**
      * @param nameQualifier a qualifier to be added to this runtime's {@linkplain #getName() name}
      * @param compilerConfigurationFactory factory for the compiler configuration
@@ -175,7 +182,14 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
             management = GraalServices.loadSingle(HotSpotGraalManagementRegistration.class, false);
         }
         if (management != null) {
-            management.initialize(this, config);
+            try {
+                management.initialize(this, config);
+            } catch (ThreadDeath td) {
+                throw td;
+            } catch (Throwable error) {
+                TTY.println("Cannot install GraalVM MBean due to " + error.getMessage());
+                management = null;
+            }
         }
 
         BackendMap backendMap = compilerConfigurationFactory.createBackendMap();
@@ -223,6 +237,8 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
 
         runtimeStartTime = System.nanoTime();
         bootstrapJVMCI = config.getFlag("BootstrapJVMCI", Boolean.class);
+
+        this.compilerProfiler = GraalServices.loadSingle(CompilerProfiler.class, false);
     }
 
     /**
@@ -230,47 +246,70 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
      */
     public enum HotSpotGC {
         // Supported GCs
-        Serial(true, "UseSerialGC"),
-        Parallel(true, "UseParallelGC", "UseParallelOldGC", "UseParNewGC"),
-        CMS(true, "UseConcMarkSweepGC"),
-        G1(true, "UseG1GC"),
+        Serial(true, "UseSerialGC", true),
+        Parallel(true, "UseParallelGC", true, "UseParallelOldGC", JDK < 15, "UseParNewGC", JDK < 10),
+        CMS(true, "UseConcMarkSweepGC", JDK < 14),
+        G1(true, "UseG1GC", true),
 
         // Unsupported GCs
-        Epsilon(false, "UseEpsilonGC"),
-        Z(false, "UseZGC");
+        Epsilon(false, "UseEpsilonGC", JDK >= 11),
+        Z(false, "UseZGC", JDK >= 11);
 
-        HotSpotGC(boolean supported, String... flags) {
+        HotSpotGC(boolean supported,
+                        String flag1, boolean expectFlagPresent1,
+                        String flag2, boolean expectFlagPresent2,
+                        String flag3, boolean expectFlagPresent3) {
             this.supported = supported;
-            this.flags = flags;
+            this.expectFlagsPresent = new boolean[]{expectFlagPresent1, expectFlagPresent2, expectFlagPresent3};
+            this.flags = new String[]{flag1, flag2, flag3};
+        }
+
+        HotSpotGC(boolean supported, String flag, boolean expectFlagPresent) {
+            this.supported = supported;
+            this.expectFlagsPresent = new boolean[]{expectFlagPresent};
+            this.flags = new String[]{flag};
         }
 
         final boolean supported;
+        final boolean[] expectFlagsPresent;
         private final String[] flags;
 
         public boolean isSelected(GraalHotSpotVMConfig config) {
-            for (String flag : flags) {
+            boolean selected = false;
+            for (int i = 0; i < flags.length; i++) {
                 final boolean notPresent = false;
-                if (config.getFlag(flag, Boolean.class, notPresent)) {
-                    return true;
+                if (config.getFlag(flags[i], Boolean.class, notPresent, expectFlagsPresent[i])) {
+                    selected = true;
+                    if (!Assertions.assertionsEnabled()) {
+                        // When asserting, check that isSelected works for all flag names
+                        break;
+                    }
                 }
             }
-            return false;
+            return selected;
         }
-
     }
 
     private HotSpotGC getSelectedGC() throws GraalError {
+        HotSpotGC selected = null;
         for (HotSpotGC gc : HotSpotGC.values()) {
             if (gc.isSelected(config)) {
                 if (!gc.supported) {
                     throw new GraalError(gc.name() + " garbage collector is not supported by Graal");
                 }
-                return gc;
+                selected = gc;
+                if (!Assertions.assertionsEnabled()) {
+                    // When asserting, check that isSelected works for all HotSpotGC values
+                    break;
+                }
             }
         }
-        // As of JDK 9, exactly one GC flag is guaranteed to be selected.
-        // On JDK 8, the default GC is Serial when no GC flag is true.
-        return HotSpotGC.Serial;
+        if (selected == null) {
+            // As of JDK 9, exactly one GC flag is guaranteed to be selected.
+            // On JDK 8, the default GC is Serial when no GC flag is true.
+            selected = HotSpotGC.Serial;
+        }
+        return selected;
     }
 
     private HotSpotBackend registerBackend(HotSpotBackend backend) {
@@ -310,8 +349,18 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
                 }
             }
         }
+
         Description description = new Description(compilable, compilationId.toString(CompilationIdentifier.Verbosity.ID));
-        return DebugContext.create(compilationOptions, description, metricValues, logStream, factories);
+        Builder builder = new Builder(compilationOptions, factories).//
+                        globalMetrics(metricValues).//
+                        description(description).//
+                        logStream(logStream);
+        if (compilerProfiler != null) {
+            int compileId = ((HotSpotCompilationIdentifier) compilationId).getRequest().getId();
+            builder.compilationListener(new CompilationListenerProfiler(compilerProfiler, compileId));
+        }
+        return builder.build();
+
     }
 
     @Override
@@ -453,7 +502,7 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
 
     // ------- Management interface ---------
 
-    private final HotSpotGraalManagementRegistration management;
+    private HotSpotGraalManagementRegistration management;
 
     /**
      * @returns the management object for this runtime or {@code null}

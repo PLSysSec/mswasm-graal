@@ -25,7 +25,7 @@
 package org.graalvm.compiler.hotspot.stubs;
 
 import static jdk.vm.ci.hotspot.HotSpotCallingConventionType.NativeCall;
-import static org.graalvm.compiler.hotspot.GraalHotSpotVMConfigBase.INJECTED_OPTIONVALUES;
+import static org.graalvm.compiler.hotspot.GraalHotSpotVMConfig.INJECTED_OPTIONVALUES;
 import static org.graalvm.compiler.hotspot.HotSpotForeignCallLinkage.Reexecutability.REEXECUTABLE;
 import static org.graalvm.compiler.hotspot.HotSpotForeignCallLinkage.Transition.SAFEPOINT;
 import static org.graalvm.compiler.hotspot.replacements.HotSpotReplacementsUtil.clearPendingException;
@@ -37,7 +37,6 @@ import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
 import org.graalvm.compiler.graph.Node.ConstantNodeParameter;
 import org.graalvm.compiler.graph.Node.NodeIntrinsic;
 import org.graalvm.compiler.hotspot.GraalHotSpotVMConfig;
-import org.graalvm.compiler.hotspot.GraalHotSpotVMConfigBase;
 import org.graalvm.compiler.hotspot.HotSpotForeignCallLinkage;
 import org.graalvm.compiler.hotspot.meta.HotSpotForeignCallsProviderImpl;
 import org.graalvm.compiler.hotspot.meta.HotSpotProviders;
@@ -112,7 +111,11 @@ public class CreateExceptionStub extends SnippetStub {
 
     private static Object handleExceptionReturn(Word thread, int deoptimized) {
         Object clearPendingException = clearPendingException(thread);
-        if (alwayDeoptimize(INJECTED_OPTIONVALUES) || (reportsDeoptimization(GraalHotSpotVMConfigBase.INJECTED_VMCONFIG) && deoptimized != 0)) {
+        // alwayDeoptimize is a testing option to force a deopt here but the code pattern should
+        // keep both the deopt and return paths, so include a test against the exception which we
+        // know should always succeed.
+        if ((alwayDeoptimize(INJECTED_OPTIONVALUES) && clearPendingException != null) ||
+                        (reportsDeoptimization(GraalHotSpotVMConfig.INJECTED_VMCONFIG) && deoptimized != 0)) {
             DeoptimizeWithExceptionInCallerNode.deopt(clearPendingException);
         }
         return clearPendingException;

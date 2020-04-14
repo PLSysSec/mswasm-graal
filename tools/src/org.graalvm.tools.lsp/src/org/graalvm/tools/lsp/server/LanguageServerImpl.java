@@ -93,9 +93,7 @@ import org.graalvm.tools.lsp.server.types.WorkspaceEdit;
 import org.graalvm.tools.lsp.server.types.WorkspaceSymbolParams;
 import org.graalvm.tools.lsp.exceptions.DiagnosticsNotification;
 import org.graalvm.tools.lsp.exceptions.UnknownLanguageException;
-import org.graalvm.tools.lsp.instrument.LSPInstrument;
 
-import com.oracle.truffle.api.TruffleLogger;
 import com.oracle.truffle.tools.utils.json.JSONObject;
 
 /**
@@ -103,8 +101,6 @@ import com.oracle.truffle.tools.utils.json.JSONObject;
  * JSON-RPC requests. It delegates all requests to {@link TruffleAdapter}.
  */
 public final class LanguageServerImpl extends LanguageServer {
-
-    private static final TruffleLogger LOG = TruffleLogger.getLogger(LSPInstrument.ID, LanguageServer.class);
 
     private static final String DRY_RUN = "dry_run";
     private static final String SHOW_COVERAGE = "show_coverage";
@@ -130,9 +126,7 @@ public final class LanguageServerImpl extends LanguageServer {
     }
 
     public static LanguageServerImpl create(TruffleAdapter adapter, PrintWriter info, PrintWriter err) {
-        LanguageServerImpl server = new LanguageServerImpl(adapter, info, err);
-        adapter.initialize();
-        return server;
+        return new LanguageServerImpl(adapter, info, err);
     }
 
     @Override
@@ -311,7 +305,7 @@ public final class LanguageServerImpl extends LanguageServer {
                     final List<? extends TextDocumentContentChangeEvent> list) {
         String langId = openedFileUri2LangId.get(URI.create(documentUri));
         if (langId == null) {
-            LOG.warning("Changed document that was not opened: " + documentUri);
+            truffleAdapter.getLogger().warning("Changed document that was not opened: " + documentUri);
             return;
         }
 
@@ -347,7 +341,7 @@ public final class LanguageServerImpl extends LanguageServer {
         if (params.getText() != null) {
             String langId = openedFileUri2LangId.get(uri);
             if (langId == null) {
-                LOG.warning("Saved document that was not opened: " + uri);
+                truffleAdapter.getLogger().warning("Saved document that was not opened: " + uri);
                 return;
             }
             future = truffleAdapter.parse(params.getText(), langId, uri);
@@ -394,17 +388,17 @@ public final class LanguageServerImpl extends LanguageServer {
         return new LoggerProxy() {
             @Override
             public boolean isLoggable(Level level) {
-                return LOG.isLoggable(level);
+                return truffleAdapter.getLogger().isLoggable(level);
             }
 
             @Override
             public void log(Level level, String msg) {
-                LOG.log(level, msg);
+                truffleAdapter.getLogger().log(level, msg);
             }
 
             @Override
             public void log(Level level, String msg, Throwable thrown) {
-                LOG.log(level, msg, thrown);
+                truffleAdapter.getLogger().log(level, msg, thrown);
             }
         };
     }
@@ -439,7 +433,7 @@ public final class LanguageServerImpl extends LanguageServer {
         } catch (ExecutionException e) {
             if (e.getCause() instanceof UnknownLanguageException) {
                 String message = "Unknown language: " + e.getCause().getMessage();
-                LOG.fine(message);
+                truffleAdapter.getLogger().fine(message);
                 client.showMessage(ShowMessageParams.create(MessageType.Error, message));
             } else if (e.getCause() instanceof DiagnosticsNotification) {
                 for (PublishDiagnosticsParams params : ((DiagnosticsNotification) e.getCause()).getDiagnosticParamsCollection()) {
@@ -453,7 +447,7 @@ public final class LanguageServerImpl extends LanguageServer {
         return resultOnError;
     }
 
-    public CompletableFuture<?> start(final ServerSocket serverSocket, final List<Pair<String, SocketAddress>> delegateAddresses, Runnable onConnect) {
+    public CompletableFuture<?> start(final ServerSocket serverSocket, final List<Pair<String, SocketAddress>> delegateAddresses) {
         clientConnectionExecutor = Executors.newSingleThreadExecutor(new ThreadFactory() {
 
             @Override
@@ -474,30 +468,30 @@ public final class LanguageServerImpl extends LanguageServer {
                     }
 
                     info.println("[Graal LSP] Starting server and listening on " + serverSocket.getLocalSocketAddress());
-                    Socket clientSocket = serverSocket.accept();
-                    onConnect.run();
-                    info.println("[Graal LSP] Client connected on " + clientSocket.getRemoteSocketAddress());
+                    try (Socket clientSocket = serverSocket.accept()) {
+                        info.println("[Graal LSP] Client connected on " + clientSocket.getRemoteSocketAddress());
 
-                    ExecutorService lspRequestExecutor = Executors.newCachedThreadPool(new ThreadFactory() {
-                        private final ThreadFactory factory = Executors.defaultThreadFactory();
+                        ExecutorService lspRequestExecutor = Executors.newCachedThreadPool(new ThreadFactory() {
+                            private final ThreadFactory factory = Executors.defaultThreadFactory();
 
-                        @Override
-                        public Thread newThread(Runnable r) {
-                            Thread thread = factory.newThread(r);
-                            thread.setName("LSP client request handler " + thread.getName());
-                            return thread;
+                            @Override
+                            public Thread newThread(Runnable r) {
+                                Thread thread = factory.newThread(r);
+                                thread.setName("LSP client request handler " + thread.getName());
+                                return thread;
+                            }
+                        });
+
+                        OutputStream serverOutput = clientSocket.getOutputStream();
+                        DelegateServers delegateServers = createDelegateServers(serverOutput);
+                        Future<?> listenFuture = Session.connect(LanguageServerImpl.this, clientSocket.getInputStream(), serverOutput, lspRequestExecutor, delegateServers);
+                        try {
+                            listenFuture.get();
+                        } catch (InterruptedException | ExecutionException e) {
+                            err.println("[Graal LSP] Error: " + e.getLocalizedMessage());
+                        } finally {
+                            lspRequestExecutor.shutdown();
                         }
-                    });
-
-                    OutputStream serverOutput = clientSocket.getOutputStream();
-                    DelegateServers delegateServers = createDelegateServers(serverOutput);
-                    Future<?> listenFuture = Session.connect(LanguageServerImpl.this, clientSocket.getInputStream(), serverOutput, lspRequestExecutor, delegateServers);
-                    try {
-                        listenFuture.get();
-                    } catch (InterruptedException | ExecutionException e) {
-                        err.println("[Graal LSP] Error: " + e.getLocalizedMessage());
-                    } finally {
-                        lspRequestExecutor.shutdown();
                     }
                 } catch (IOException e) {
                     err.println("[Graal LSP] Error while connecting to client: " + e.getLocalizedMessage());

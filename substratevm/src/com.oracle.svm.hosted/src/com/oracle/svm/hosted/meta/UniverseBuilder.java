@@ -51,6 +51,8 @@ import org.graalvm.nativeimage.c.function.CFunctionPointer;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatures;
+import com.oracle.graal.pointsto.flow.MethodTypeFlow;
+import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.infrastructure.WrappedConstantPool;
 import com.oracle.graal.pointsto.infrastructure.WrappedJavaType;
 import com.oracle.graal.pointsto.infrastructure.WrappedSignature;
@@ -663,16 +665,17 @@ public class UniverseBuilder {
 
             // Check which types may be a parameter of System.identityHashCode (which is invoked by
             // Object.hashCode).
-            TypeState thisParamState = method.getTypeFlow().getParameterTypeState(bb, 0);
+            MethodTypeFlow methodFlow = method.getTypeFlow();
+            TypeFlow<?> paramFlow = methodFlow.getParameterFlow(0);
+            TypeState thisParamState = methodFlow.getParameterTypeState(bb, 0);
             assert thisParamState != null;
-
             Iterable<AnalysisType> typesNeedHashCode = thisParamState.types();
-            if (typesNeedHashCode == null || thisParamState.isUnknown()) {
+            if (typesNeedHashCode == null || thisParamState.isUnknown() || methodFlow.isSaturated(bb, paramFlow)) {
 
-                // This is the case if the identityHashCode parameter type is unknown. So all
-                // classes get the hashCode field.
-                // But this is only a fail-safe, because it cannot happen in the current
-                // implementation of the analysis pass.
+                /*
+                 * If the identityHashCode parameter type is unknown or it is saturated then all
+                 * classes need to get the hashCode field.
+                 */
 
                 debug.log("all types need a hashCode field");
                 for (HostedType hType : hUniverse.getTypes()) {
@@ -778,11 +781,13 @@ public class UniverseBuilder {
         }
 
         // An int to hold the result for System.identityHashCode.
-        if (clazz.needHashCodeField()) {
+        if (ConfigurationValues.getObjectLayout().useExplicitIdentityHashCodeField() && clazz.needHashCodeField()) {
             int intFieldSize = ConfigurationValues.getObjectLayout().sizeInBytes(JavaKind.Int);
             nextOffset = NumUtil.roundUp(nextOffset, intFieldSize);
             clazz.setHashCodeFieldOffset(nextOffset);
             nextOffset += intFieldSize;
+        } else {
+            clazz.setHashCodeFieldOffset(ConfigurationValues.getObjectLayout().getInstanceIdentityHashCodeOffset());
         }
 
         clazz.instanceFields = orderedFields.toArray(new HostedField[orderedFields.size()]);
@@ -1182,7 +1187,7 @@ public class UniverseBuilder {
                 JavaKind storageKind = type.getComponentType().getStorageKind();
                 boolean isObject = (storageKind == JavaKind.Object);
                 layoutHelper = LayoutEncoding.forArray(type, isObject, ol.getArrayBaseOffset(storageKind), ol.getArrayIndexShift(storageKind));
-                hashCodeOffset = ol.getArrayHashCodeOffset();
+                hashCodeOffset = ol.getArrayIdentityHashcodeOffset();
             } else if (type.isInterface()) {
                 layoutHelper = LayoutEncoding.forInterface();
             } else if (type.isPrimitive()) {

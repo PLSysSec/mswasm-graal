@@ -24,7 +24,6 @@
  */
 package org.graalvm.compiler.truffle.runtime;
 
-import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -39,6 +38,8 @@ import java.util.function.UnaryOperator;
 
 import org.graalvm.compiler.truffle.common.CompilableTruffleAST;
 import org.graalvm.compiler.truffle.common.TruffleCallNode;
+import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
+import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.ExceptionAction;
 import org.graalvm.compiler.truffle.runtime.OptimizedOSRLoopNode.OSRRootNode;
 import org.graalvm.options.OptionKey;
 import org.graalvm.options.OptionValues;
@@ -74,13 +75,41 @@ import jdk.vm.ci.meta.SpeculationLog;
  * this is a Truffle AST that can be optimized via partial evaluation and compiled to machine code.
  *
  * Note: {@code PartialEvaluator} looks up this class and a number of its methods by name.
+ *
+ * The end-goal of executing a {@link OptimizedCallTarget} is executing its root node. The following
+ * call-graph shows all the paths that can be taken from calling a call target (through all the
+ * public <code>call*</code> methods) to the {@linkplain #executeRootNode(VirtualFrame) execution of
+ * the root node} depending on the type of call.
+ *
+ * <pre>
+ *                    OptimizedCallProfiled#call                   OptimizedCallInlined#call
+ *                                |                                            |
+ *                                |                                            |
+ *  PUBLIC   call -> callIndirect | callOSR  callDirectOrInlined  callInlined  |
+ *                           |  +-+    |              |                 |      |
+ *                           |  |  +---+              |                 |      |
+ *                           V  V  V                  |                 |      |
+ *  PROTECTED               doInvoke <------ no - inlined? - yes -------+      |
+ *                             |                                        |      |
+ *                             | <= Jump to installed code              |      |
+ *                             V                                        |      |
+ *  PROTECTED              callBoundary                                 |      |
+ *                             |                                        |      |
+ *                             | <= Tail jump to installed code in Int. |      |
+ *                             V                                        V      V
+ *  PROTECTED           profiledPERoot                              inlinedPERoot
+ *                             |                                        |
+ *  PRIVATE                    +----------> executeRootNode <-----------+
+ *                                                 |
+ *                                                 V
+ *                                         rootNode.execute()
+ * </pre>
  */
 @SuppressWarnings("deprecation")
 public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootCallTarget, ReplaceObserver {
 
     private static final String NODE_REWRITING_ASSUMPTION_NAME = "nodeRewritingAssumption";
-    static final String CALL_BOUNDARY_METHOD_NAME = "callProxy";
-    static final String CALL_INLINED_METHOD_NAME = "call";
+    static final String EXECUTE_ROOT_NODE_METHOD_NAME = "executeRootNode";
     private static final AtomicReferenceFieldUpdater<OptimizedCallTarget, SpeculationLog> SPECULATION_LOG_UPDATER = AtomicReferenceFieldUpdater.newUpdater(OptimizedCallTarget.class,
                     SpeculationLog.class, "speculationLog");
     private static final AtomicReferenceFieldUpdater<OptimizedCallTarget, Assumption> NODE_REWRITING_ASSUMPTION_UPDATER = AtomicReferenceFieldUpdater.newUpdater(OptimizedCallTarget.class,
@@ -103,13 +132,13 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
      * {@link #compile(boolean) compilation}. It is decremented for each real call to the call
      * target. Reset by TruffleFeature after boot image generation.
      */
-    private int callThreshold;
+    private int callCount;
     /**
      * The call and loop threshold is counted down for each real call and reported loop count until
      * it reaches zero and triggers a {@link #compile(boolean) compilation}. Reset by TruffleFeature
      * after boot image generation.
      */
-    private int callAndLoopThreshold;
+    private int callAndLoopCount;
 
     /*
      * Updating profiling information and its Assumption objects is done without synchronization and
@@ -219,7 +248,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
         tvmci.setCallTarget(rootNode, this);
     }
 
-    public final Assumption getNodeRewritingAssumption() {
+    final Assumption getNodeRewritingAssumption() {
         Assumption assumption = nodeRewritingAssumption;
         if (assumption == null) {
             assumption = initializeNodeRewritingAssumption();
@@ -262,8 +291,8 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
     }
 
     public final void resetCompilationProfile() {
-        this.callThreshold = engine.firstTierCallThreshold;
-        this.callAndLoopThreshold = engine.firstTierCallAndLoopThreshold;
+        this.callCount = 0;
+        this.callAndLoopCount = 0;
     }
 
     protected List<OptimizedAssumption> getProfiledTypesAssumptions() {
@@ -335,20 +364,30 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
     }
 
     // Note: {@code PartialEvaluator} looks up this method by name and signature.
-    public final Object callDirect(Node location, Object... args) {
+    public final Object callDirectOrInlined(Node location, Object... args) {
         try {
-            profileDirectCall(args);
             try {
+                Object result;
                 final boolean isInlined = InlineDecision.get();
-                /*
-                 * Language agnostic inlining depends on this call to callBoundary to inline. The
-                 * isInlined value is passed in to create a data dependency needed by the compiler
-                 * and despite being "always true" should not be replaced with true (or anything
-                 * else).
-                 */
-                Object result = isInlined ? callBoundary(InlineDecision.inject(args, isInlined)) : doInvoke(args);
-                if (CompilerDirectives.inCompiledCode()) {
-                    result = injectReturnValueProfile(result);
+                if (isInlined) {
+                    /*
+                     * Language agnostic inlining depends on this call to callBoundary to inline.
+                     * This call to callBoundary will be replaced with #inlinedPERoot during
+                     * compilation. We don't simply call #inlinedPERoot at this point as a truffle
+                     * call boundary is a known point to end partial evaluation. This might change
+                     * (GR-22220).
+                     *
+                     * The isInlined value is passed in to create a data dependency needed by the
+                     * compiler and despite being "always true" should not be replaced with true (or
+                     * anything else).
+                     */
+                    result = callBoundary(InlineDecision.inject(args, isInlined));
+                } else {
+                    profileDirectCall(args);
+                    result = doInvoke(args);
+                    if (CompilerDirectives.inCompiledCode()) {
+                        result = injectReturnValueProfile(result);
+                    }
                 }
                 return result;
             } catch (Throwable t) {
@@ -369,34 +408,23 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
     }
 
     // Note: {@code PartialEvaluator} looks up this method by name and signature.
+    final Object inlinedPERoot(Object... arguments) {
+        ensureInitialized();
+        return executeRootNode(createFrame(getRootNode().getFrameDescriptor(), arguments));
+    }
+
+    // Note: {@code PartialEvaluator} looks up this method by name and signature.
     public final Object callInlined(Node location, Object... arguments) {
         ensureInitialized();
         try {
-            return callProxy(createFrame(getRootNode().getFrameDescriptor(), arguments));
+            return inlinedPERoot(arguments);
         } finally {
             // this assertion is needed to keep the values from being cleared as non-live locals
             assert keepAlive(location);
         }
     }
 
-    // Note: {@code PartialEvaluator} looks up this method by name and signature.
-    public final Object callInlinedAgnostic(Object... arguments) {
-        ensureInitialized();
-        return callProxy(createFrame(getRootNode().getFrameDescriptor(), arguments));
-    }
-
-    // Note: {@code PartialEvaluator} looks up this method by name and signature.
-    public final Object callInlinedForced(Node location, Object... arguments) {
-        ensureInitialized();
-        try {
-            return callProxy(createFrame(getRootNode().getFrameDescriptor(), arguments));
-        } finally {
-            // this assertion is needed to keep the values from being cleared as non-live locals
-            assert keepAlive(location);
-        }
-    }
-
-    /*
+    /**
      * Overridden by SVM.
      */
     protected Object doInvoke(Object[] args) {
@@ -408,7 +436,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
         /*
          * Note this method compiles without any inlining or other optimizations. It is therefore
          * important that this method stays small. It is compiled as a special stub that calls into
-         * the optimized code or if the call target is not yet optimized calls into callRoot
+         * the optimized code or if the call target is not yet optimized calls into profiledPERoot
          * directly. In order to avoid deoptimizations in this method it has optimizations disabled.
          * Any additional code here will likely have significant impact on the intepreter call
          * performance.
@@ -416,20 +444,24 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
         if (interpreterCall()) {
             return doInvoke(args);
         }
-        return callRoot(args);
+        return profiledPERoot(args);
     }
 
     private boolean interpreterCall() {
         if (isValid()) {
             // Native entry stubs were deoptimized => reinstall.
-            runtime().bypassedInstalledCode();
+            runtime().bypassedInstalledCode(this);
         }
         ensureInitialized();
-        int intCallCount = --callThreshold;
-        int intAndLoopCallCount = --callAndLoopThreshold;
-        // Check if call target is hot enough to compile, but took not too long to get hot.
-        if (intCallCount <= 0 //
-                        && intAndLoopCallCount <= 0 //
+
+        int intCallCount = this.callCount;
+        this.callCount = intCallCount == Integer.MAX_VALUE ? intCallCount : ++intCallCount;
+        int intAndLoopCallCount = callAndLoopCount;
+        this.callAndLoopCount = intAndLoopCallCount == Integer.MAX_VALUE ? intAndLoopCallCount : ++intAndLoopCallCount;
+
+        // Check if call target is hot enough to compile
+        if (intCallCount >= engine.firstTierCallThreshold //
+                        && intAndLoopCallCount >= engine.firstTierCallAndLoopThreshold //
                         && !compilationFailed //
                         && !isCompiling()) {
             return compile(!engine.multiTier);
@@ -438,7 +470,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
     }
 
     // Note: {@code PartialEvaluator} looks up this method by name and signature.
-    protected final Object callRoot(Object[] originalArguments) {
+    protected final Object profiledPERoot(Object[] originalArguments) {
         Object[] args = originalArguments;
         if (GraalCompilerDirectives.inFirstTier()) {
             firstTierCall();
@@ -446,7 +478,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
         if (CompilerDirectives.inCompiledCode()) {
             args = injectArgumentProfile(originalArguments);
         }
-        Object result = callProxy(createFrame(getRootNode().getFrameDescriptor(), args));
+        Object result = executeRootNode(createFrame(getRootNode().getFrameDescriptor(), args));
         profileReturnValue(result);
         return result;
     }
@@ -456,8 +488,8 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
      */
     public final boolean firstTierCall() {
         // this is partially evaluated so the second part should fold to a constant.
-        int firstTierCallThreshold = (--callThreshold) - engine.firstTierCallThreshold + engine.lastTierCallThreshold;
-        if (firstTierCallThreshold <= 0 && !isCompiling() && !compilationFailed) {
+        int firstTierCallThreshold = ++callCount;
+        if (firstTierCallThreshold >= engine.lastTierCallThreshold && !isCompiling() && !compilationFailed) {
             return lastTierCompile(this);
         }
         return false;
@@ -468,10 +500,10 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
         return callTarget.compile(true);
     }
 
-    protected final Object callProxy(VirtualFrame frame) {
+    private Object executeRootNode(VirtualFrame frame) {
         final boolean inCompiled = CompilerDirectives.inCompilationRoot();
         try {
-            return getRootNode().execute(frame);
+            return rootNode.execute(frame);
         } catch (ControlFlowException t) {
             throw rethrow(profileExceptionType(t));
         } catch (Throwable t) {
@@ -570,9 +602,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
     }
 
     public final boolean maybeWaitForTask(CancellableCompileTask task) {
-        boolean allowBackgroundCompilation = !engine.performanceWarningsAreFatal &&
-                        !engine.compilationExceptionsAreThrown;
-        boolean mayBeAsynchronous = allowBackgroundCompilation && engine.backgroundCompilation;
+        boolean mayBeAsynchronous = engine.backgroundCompilation;
         runtime().finishCompilation(this, task, mayBeAsynchronous);
         // not async compile and compilation successful
         return !mayBeAsynchronous && isValid();
@@ -683,6 +713,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
 
     @Override
     public final void onCompilationFailed(Supplier<String> reasonAndStackTrace, boolean bailout, boolean permanentBailout) {
+        ExceptionAction action;
         if (bailout && !permanentBailout) {
             /*
              * Non-permanent bailouts are expected cases. A non-permanent bailout would be for
@@ -690,21 +721,32 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
              * bailouts, non-permanent bailouts will trigger recompilation and are not considered a
              * failure state.
              */
+            action = ExceptionAction.Silent;
         } else {
             compilationFailed = true;
-            if (getOptionValue(PolyglotCompilerOptions.CompilationExceptionsAreThrown)) {
-                final InternalError error = new InternalError(reasonAndStackTrace.get());
-                throw new OptimizationFailedException(error, this);
-            }
-
-            boolean truffleCompilationExceptionsAreFatal = engine.compilationExceptionsAreFatal || engine.performanceWarningsAreFatal;
-            if (getOptionValue(PolyglotCompilerOptions.CompilationExceptionsArePrinted) || truffleCompilationExceptionsAreFatal) {
-                log(reasonAndStackTrace.get());
-                if (truffleCompilationExceptionsAreFatal) {
-                    log("Exiting VM due to " + (getOptionValue(PolyglotCompilerOptions.CompilationExceptionsAreFatal) ? "TruffleCompilationExceptionsAreFatal"
-                                    : "TrufflePerformanceWarningsAreFatal") + "=true");
-                    System.exit(-1);
+            action = engine.compilationFailureAction;
+        }
+        if (action == ExceptionAction.Throw) {
+            final InternalError error = new InternalError(reasonAndStackTrace.get());
+            throw new OptimizationFailedException(error, this);
+        }
+        if (action.ordinal() >= ExceptionAction.Print.ordinal()) {
+            GraalTruffleRuntime rt = runtime();
+            Map<String, Object> properties = new LinkedHashMap<>();
+            properties.put("ASTSize", getNonTrivialNodeCount());
+            rt.logEvent(0, "opt fail", toString(), properties);
+            rt.log(reasonAndStackTrace.get());
+            if (action == ExceptionAction.ExitVM) {
+                String reason;
+                if (getOptionValue(PolyglotCompilerOptions.CompilationFailureAction) == ExceptionAction.ExitVM) {
+                    reason = "engine.CompilationFailureAction=ExitVM";
+                } else if (getOptionValue(PolyglotCompilerOptions.CompilationExceptionsAreFatal)) {
+                    reason = "engine.CompilationExceptionsAreFatal=true";
+                } else {
+                    reason = "engine.PerformanceWarningsAreFatal=true";
                 }
+                log(String.format("Exiting VM due to %s", reason));
+                System.exit(-1);
             }
         }
     }
@@ -776,7 +818,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
     }
 
     final void onLoopCount(int count) {
-        callAndLoopThreshold -= count;
+        callAndLoopCount += count;
     }
 
     @Override
@@ -823,11 +865,11 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
 
     @Override
     public final int getCallCount() {
-        return -(callThreshold - engine.firstTierCallThreshold);
+        return callCount;
     }
 
     public final int getCallAndLoopCount() {
-        return -(callAndLoopThreshold - engine.firstTierCallAndLoopThreshold);
+        return callAndLoopCount;
     }
 
     public final long getInitializedTimestamp() {
@@ -1266,7 +1308,7 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
             if (callNode != null) {
                 callers.add(callNode);
             }
-            PolymorphicSpecializeDump.dumpPolymorphicSpecialize(this, toDump, callers);
+            PolymorphicSpecializeDump.dumpPolymorphicSpecialize(this, toDump);
         }
     }
 
@@ -1294,10 +1336,13 @@ public abstract class OptimizedCallTarget implements CompilableTruffleAST, RootC
     }
 
     static class OptimizedCallInlined extends CallInlined {
+
+        static final String CALL_METHOD_NAME = "call";
+
         @Override
         public Object call(Node callNode, CallTarget target, Object... arguments) {
             try {
-                return ((OptimizedCallTarget) target).callInlinedForced(callNode, arguments);
+                return ((OptimizedCallTarget) target).inlinedPERoot(arguments);
             } catch (Throwable t) {
                 OptimizedCallTarget.runtime().getTvmci().onThrowable(callNode, ((OptimizedCallTarget) target), t, null);
                 throw OptimizedCallTarget.rethrow(t);

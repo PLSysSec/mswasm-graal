@@ -28,30 +28,26 @@ import static org.graalvm.compiler.truffle.compiler.TruffleCompilerOptions.getPo
 
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.graph.Graph;
-import org.graalvm.compiler.nodes.StructuredGraph;
-import org.graalvm.compiler.truffle.common.CallNodeProvider;
-import org.graalvm.compiler.truffle.common.CompilableTruffleAST;
 import org.graalvm.compiler.truffle.common.TruffleCompilerRuntime;
 import org.graalvm.compiler.truffle.compiler.PartialEvaluator;
 import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
-import org.graalvm.options.OptionValues;
 
 public final class CallTree extends Graph {
 
     private final InliningPolicy policy;
     private final GraphManager graphManager;
     private final CallNode root;
-    private final OptionValues options;
+    private final PartialEvaluator.Request request;
     int expanded = 1;
     int inlined = 1;
 
-    CallTree(OptionValues options, PartialEvaluator partialEvaluator, CallNodeProvider callNodeProvider, CompilableTruffleAST truffleAST, StructuredGraph ir, InliningPolicy policy) {
-        super(ir.getOptions(), ir.getDebug());
-        this.options = options;
+    CallTree(PartialEvaluator partialEvaluator, PartialEvaluator.Request request, InliningPolicy policy) {
+        super(request.graph.getOptions(), request.debug);
         this.policy = policy;
-        this.graphManager = new GraphManager(ir, partialEvaluator, callNodeProvider);
+        this.request = request;
+        this.graphManager = new GraphManager(partialEvaluator, request);
         // Should be kept as the last call in the constructor, as this is an argument.
-        this.root = CallNode.makeRoot(options, this, truffleAST, ir);
+        this.root = CallNode.makeRoot(this, request);
     }
 
     InliningPolicy getPolicy() {
@@ -74,9 +70,9 @@ public final class CallTree extends Graph {
         return graphManager;
     }
 
-    public void trace() {
-        final Boolean details = getPolyglotOptionValue(options, PolyglotCompilerOptions.TraceInliningDetails);
-        if (getPolyglotOptionValue(options, PolyglotCompilerOptions.TraceInlining) || details) {
+    void trace() {
+        Boolean details = getPolyglotOptionValue(request.options, PolyglotCompilerOptions.TraceInliningDetails);
+        if (getPolyglotOptionValue(request.options, PolyglotCompilerOptions.TraceInlining) || details) {
             TruffleCompilerRuntime runtime = TruffleCompilerRuntime.getRuntime();
             runtime.logEvent(0, "inline start", root.getName(), root.getStringProperties());
             traceRecursive(runtime, root, details, 0);
@@ -95,7 +91,7 @@ public final class CallTree extends Graph {
         }
     }
 
-    public void dequeueInlined() {
+    void dequeueInlined() {
         dequeueInlined(root);
     }
 
@@ -115,8 +111,8 @@ public final class CallTree extends Graph {
         return "Call Tree";
     }
 
-    public void dumpBasic(String format, Object arg) {
-        getDebug().dump(DebugContext.BASIC_LEVEL, this, format, arg);
+    void dumpBasic(String format) {
+        getDebug().dump(DebugContext.BASIC_LEVEL, this, format, "");
     }
 
     public void dumpInfo(String format, Object arg) {

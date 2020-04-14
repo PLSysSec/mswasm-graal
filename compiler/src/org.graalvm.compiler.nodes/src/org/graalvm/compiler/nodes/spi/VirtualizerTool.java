@@ -30,6 +30,7 @@ import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.WithExceptionNode;
 import org.graalvm.compiler.nodes.java.MonitorIdNode;
 import org.graalvm.compiler.nodes.virtual.VirtualObjectNode;
 import org.graalvm.compiler.options.OptionValues;
@@ -119,7 +120,8 @@ public interface VirtualizerTool {
     // operations on the current node
 
     /**
-     * Deletes the current node and replaces it with the given virtualized object.
+     * Deletes the current node and replaces it with the given virtualized object. If the current
+     * node is a {@link WithExceptionNode}, kills the exception edge.
      *
      * @param virtualObject the virtualized object that should replace the current node.
      */
@@ -133,7 +135,8 @@ public interface VirtualizerTool {
     void replaceWithValue(ValueNode replacement);
 
     /**
-     * Deletes the current node.
+     * Deletes the current node. If the current node is a {@link WithExceptionNode}, kills the
+     * exception edge.
      */
     void delete();
 

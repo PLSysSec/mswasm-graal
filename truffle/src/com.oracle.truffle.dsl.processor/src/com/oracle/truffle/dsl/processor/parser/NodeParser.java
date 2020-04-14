@@ -324,7 +324,7 @@ public final class NodeParser extends AbstractParser<NodeData> {
             return node; // error sync point
         }
 
-        node.getSpecializations().addAll(new SpecializationMethodParser(context, node).parse(members));
+        node.getSpecializations().addAll(new SpecializationMethodParser(context, node, mode == ParseMode.EXPORTED_MESSAGE).parse(members));
         node.getSpecializations().addAll(new FallbackParser(context, node).parse(members));
         node.getCasts().addAll(new CreateCastParser(context, node).parse(members));
 
@@ -872,7 +872,7 @@ public final class NodeParser extends AbstractParser<NodeData> {
                     node.addError(importAnnotation, importClassesValue, "The specified static import class '%s' is not visible.",
                                     getQualifiedName(importClass));
                 }
-                elements.addAll(importVisibleStaticMembers(node.getTemplateType(), importClassElement, false));
+                elements.addAll(importVisibleStaticMembersImpl(node.getTemplateType(), importClassElement, false));
             }
         }
     }
@@ -908,13 +908,20 @@ public final class NodeParser extends AbstractParser<NodeData> {
     private final Map<ImportsKey, List<Element>> importCache = ProcessorContext.getInstance().getCacheMap(ImportsKey.class);
 
     @SuppressWarnings("unchecked")
-    private List<Element> importVisibleStaticMembers(TypeElement relativeTo, TypeElement importType, boolean includeConstructors) {
+    private List<Element> importVisibleStaticMembersImpl(TypeElement relativeTo, TypeElement importType, boolean includeConstructors) {
         ImportsKey key = new ImportsKey(relativeTo, importType, includeConstructors);
         List<Element> elements = importCache.get(key);
         if (elements != null) {
             return elements;
         }
 
+        List<Element> members = importVisibleStaticMembers(relativeTo, importType, includeConstructors);
+        importCache.put(key, members);
+        return members;
+    }
+
+    public static List<Element> importVisibleStaticMembers(TypeElement relativeTo, TypeElement importType, boolean includeConstructors) {
+        ProcessorContext context = ProcessorContext.getInstance();
         // hack to reload type is necessary for incremental compiling in eclipse.
         // otherwise methods inside of import guard types are just not found.
         TypeElement importElement = fromTypeMirror(context.reloadType(importType.asType()));
@@ -973,7 +980,6 @@ public final class NodeParser extends AbstractParser<NodeData> {
                 return superTypes;
             }
         });
-        importCache.put(key, members);
         return members;
     }
 
@@ -1309,8 +1315,8 @@ public final class NodeParser extends AbstractParser<NodeData> {
             if (findAnnotationMirror(method, types.Specialization) != null) {
                 continue;
             }
-
-            ExecutableTypeData executableType = new ExecutableTypeData(node, method, signatureSize, context.getFrameTypes());
+            boolean ignoreUnexpected = mode == ParseMode.EXPORTED_MESSAGE;
+            ExecutableTypeData executableType = new ExecutableTypeData(node, method, signatureSize, context.getFrameTypes(), ignoreUnexpected);
 
             if (executableType.getFrameParameter() != null) {
                 boolean supportedType = false;
@@ -1381,7 +1387,7 @@ public final class NodeParser extends AbstractParser<NodeData> {
 
         boolean genericFound = false;
         for (ExecutableTypeData type : node.getExecutableTypes()) {
-            if (!type.hasUnexpectedValue()) {
+            if (mode == ParseMode.EXPORTED_MESSAGE || !type.hasUnexpectedValue()) {
                 genericFound = true;
                 break;
             }
@@ -1422,14 +1428,13 @@ public final class NodeParser extends AbstractParser<NodeData> {
             }
         }
 
-        TypeMirror unexpectedResult = types.UnexpectedResultException;
         TypeMirror runtimeException = context.getType(RuntimeException.class);
         Set<String> allowedCheckedExceptions = null;
         for (ExecutableTypeData type : allExecutes) {
             List<? extends TypeMirror> thrownTypes = type.getMethod().getThrownTypes();
             List<String> checkedTypes = null;
             for (TypeMirror thrownType : thrownTypes) {
-                if (typeEquals(thrownType, unexpectedResult)) {
+                if (type.hasUnexpectedValue()) {
                     continue;
                 } else if (isAssignable(thrownType, runtimeException)) {
                     // runtime exceptions don't need to be declared.
@@ -2471,7 +2476,7 @@ public final class NodeParser extends AbstractParser<NodeData> {
     private DSLExpressionResolver importStatics(DSLExpressionResolver resolver, TypeMirror targetType) {
         DSLExpressionResolver localResolver = resolver;
         if (targetType.getKind() == TypeKind.DECLARED) {
-            List<Element> prefixedImports = importVisibleStaticMembers(resolver.getAccessType(), fromTypeMirror(targetType), true);
+            List<Element> prefixedImports = importVisibleStaticMembersImpl(resolver.getAccessType(), fromTypeMirror(targetType), true);
             localResolver = localResolver.copy(prefixedImports);
         }
         return localResolver;
@@ -2663,7 +2668,7 @@ public final class NodeParser extends AbstractParser<NodeData> {
             index++;
         }
 
-        SpecializationMethodParser parser = new SpecializationMethodParser(context, node);
+        SpecializationMethodParser parser = new SpecializationMethodParser(context, node, mode == ParseMode.EXPORTED_MESSAGE);
         SpecializationData polymorphic = parser.create("Polymorphic", TemplateMethod.NO_NATURAL_ORDER, null, null, returnType, foundTypes);
         if (polymorphic == null) {
             throw new AssertionError("Failed to parse polymorphic signature. " + parser.createDefaultMethodSpec(null, null, false, null) + " Types: " + returnType + " - " + foundTypes);

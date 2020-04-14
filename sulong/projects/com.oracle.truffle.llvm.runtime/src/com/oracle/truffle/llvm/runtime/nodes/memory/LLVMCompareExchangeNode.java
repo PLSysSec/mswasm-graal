@@ -39,6 +39,8 @@ import com.oracle.truffle.api.frame.FrameSlot;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.llvm.runtime.LLVMLanguage;
 import com.oracle.truffle.llvm.runtime.datalayout.DataLayout;
+import com.oracle.truffle.llvm.runtime.except.LLVMAllocationFailureException;
+import com.oracle.truffle.llvm.runtime.except.LLVMStackOverflowError;
 import com.oracle.truffle.llvm.runtime.memory.LLVMMemory;
 import com.oracle.truffle.llvm.runtime.memory.LLVMMemory.CMPXCHGI16;
 import com.oracle.truffle.llvm.runtime.memory.LLVMMemory.CMPXCHGI32;
@@ -49,13 +51,9 @@ import com.oracle.truffle.llvm.runtime.nodes.api.LLVMExpressionNode;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMNode;
 import com.oracle.truffle.llvm.runtime.nodes.memory.LLVMCompareExchangeNodeGen.LLVMCMPXCHInternalNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI16LoadNode;
-import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI16LoadNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI32LoadNode;
-import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI32LoadNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI64LoadNode;
-import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI64LoadNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI8LoadNode;
-import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMI8LoadNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.store.LLVMI16StoreNode;
 import com.oracle.truffle.llvm.runtime.nodes.memory.store.LLVMI16StoreNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.store.LLVMI32StoreNode;
@@ -68,6 +66,7 @@ import com.oracle.truffle.llvm.runtime.pointer.LLVMManagedPointer;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMNativePointer;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMPointer;
 import com.oracle.truffle.llvm.runtime.types.AggregateType;
+import com.oracle.truffle.llvm.runtime.types.Type.TypeOverflowException;
 
 @NodeChild(type = LLVMExpressionNode.class, value = "address")
 @NodeChild(type = LLVMExpressionNode.class, value = "comparisonValue")
@@ -76,9 +75,14 @@ public abstract class LLVMCompareExchangeNode extends LLVMExpressionNode {
 
     @Child private LLVMCMPXCHInternalNode cmpxch;
 
-    public LLVMCompareExchangeNode(AggregateType returnType, DataLayout dataLayout) {
-        int resultSize = returnType.getSize(dataLayout);
+    public static LLVMCompareExchangeNode create(AggregateType returnType, DataLayout dataLayout, LLVMExpressionNode address, LLVMExpressionNode comparisonValue, LLVMExpressionNode newValue)
+                    throws TypeOverflowException {
+        long resultSize = returnType.getSize(dataLayout);
         long secondValueOffset = returnType.getOffsetOf(1, dataLayout);
+        return LLVMCompareExchangeNodeGen.create(resultSize, secondValueOffset, address, comparisonValue, newValue);
+    }
+
+    public LLVMCompareExchangeNode(long resultSize, long secondValueOffset) {
         this.cmpxch = LLVMCMPXCHInternalNodeGen.create(resultSize, secondValueOffset);
     }
 
@@ -89,10 +93,10 @@ public abstract class LLVMCompareExchangeNode extends LLVMExpressionNode {
 
     abstract static class LLVMCMPXCHInternalNode extends LLVMNode {
 
-        private final int resultSize;
+        private final long resultSize;
         private final long secondValueOffset;
 
-        LLVMCMPXCHInternalNode(int resultSize, long secondValueOffset) {
+        LLVMCMPXCHInternalNode(long resultSize, long secondValueOffset) {
             this.resultSize = resultSize;
             this.secondValueOffset = secondValueOffset;
         }
@@ -244,12 +248,16 @@ public abstract class LLVMCompareExchangeNode extends LLVMExpressionNode {
         }
 
         private LLVMNativePointer allocateResult(VirtualFrame frame, LLVMMemory memory) {
-            LLVMNativePointer allocation = LLVMNativePointer.create(LLVMStack.allocateStackMemory(frame, memory, getStackPointerSlot(), resultSize, 8));
-            return allocation;
+            try {
+                return LLVMNativePointer.create(LLVMStack.allocateStackMemory(frame, memory, getStackPointerSlot(), resultSize, 8));
+            } catch (LLVMStackOverflowError soe) {
+                CompilerDirectives.transferToInterpreter();
+                throw new LLVMAllocationFailureException(this, soe);
+            }
         }
 
         protected static LLVMI8LoadNode createI8Read() {
-            return LLVMI8LoadNodeGen.create(null);
+            return LLVMI8LoadNode.create();
         }
 
         protected static LLVMI8StoreNode createI8Write() {
@@ -257,7 +265,7 @@ public abstract class LLVMCompareExchangeNode extends LLVMExpressionNode {
         }
 
         protected static LLVMI16LoadNode createI16Read() {
-            return LLVMI16LoadNodeGen.create(null);
+            return LLVMI16LoadNode.create();
         }
 
         protected static LLVMI16StoreNode createI16Write() {
@@ -265,7 +273,7 @@ public abstract class LLVMCompareExchangeNode extends LLVMExpressionNode {
         }
 
         protected static LLVMI32LoadNode createI32Read() {
-            return LLVMI32LoadNodeGen.create(null);
+            return LLVMI32LoadNode.create();
         }
 
         protected static LLVMI32StoreNode createI32Write() {
@@ -273,7 +281,7 @@ public abstract class LLVMCompareExchangeNode extends LLVMExpressionNode {
         }
 
         protected static LLVMI64LoadNode createI64Read() {
-            return LLVMI64LoadNodeGen.create(null);
+            return LLVMI64LoadNode.create();
         }
 
         protected static LLVMI64StoreNode createI64Write() {

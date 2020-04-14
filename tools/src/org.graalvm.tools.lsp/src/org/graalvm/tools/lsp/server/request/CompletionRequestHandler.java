@@ -35,6 +35,9 @@ import java.util.concurrent.Future;
 import java.util.logging.Level;
 
 import org.graalvm.tools.api.lsp.LSPLibrary;
+import org.graalvm.tools.lsp.exceptions.DiagnosticsNotification;
+import org.graalvm.tools.lsp.server.ContextAwareExecutor;
+import org.graalvm.tools.lsp.server.LanguageTriggerCharacters;
 import org.graalvm.tools.lsp.server.types.CompletionContext;
 import org.graalvm.tools.lsp.server.types.CompletionItem;
 import org.graalvm.tools.lsp.server.types.CompletionItemKind;
@@ -44,14 +47,8 @@ import org.graalvm.tools.lsp.server.types.Diagnostic;
 import org.graalvm.tools.lsp.server.types.DiagnosticSeverity;
 import org.graalvm.tools.lsp.server.types.MarkupContent;
 import org.graalvm.tools.lsp.server.types.MarkupKind;
-
-import org.graalvm.tools.lsp.server.ContextAwareExecutor;
-import org.graalvm.tools.lsp.exceptions.DiagnosticsNotification;
-import org.graalvm.tools.lsp.instrument.LSPInstrument;
-import org.graalvm.tools.lsp.server.LanguageTriggerCharacters;
 import org.graalvm.tools.lsp.server.utils.CoverageData;
 import org.graalvm.tools.lsp.server.utils.EvaluationResult;
-import org.graalvm.tools.lsp.server.utils.InteropUtils;
 import org.graalvm.tools.lsp.server.utils.NearestNode;
 import org.graalvm.tools.lsp.server.utils.NearestSectionsFinder;
 import org.graalvm.tools.lsp.server.utils.SourceUtils;
@@ -61,9 +58,9 @@ import org.graalvm.tools.lsp.server.utils.TextDocumentSurrogate;
 import org.graalvm.tools.lsp.server.utils.TextDocumentSurrogateMap;
 
 import com.oracle.truffle.api.CallTarget;
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.Scope;
 import com.oracle.truffle.api.TruffleException;
-import com.oracle.truffle.api.TruffleLogger;
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.instrumentation.TruffleInstrument;
 import com.oracle.truffle.api.interop.InteropException;
@@ -77,7 +74,6 @@ import com.oracle.truffle.api.source.SourceSection;
 
 public final class CompletionRequestHandler extends AbstractRequestHandler {
 
-    private static final TruffleLogger LOG = TruffleLogger.getLogger(LSPInstrument.ID, CompletionRequestHandler.class);
     private static final InteropLibrary INTEROP = InteropLibrary.getFactory().getUncached();
     private static final LSPLibrary LSP_INTEROP = LSPLibrary.getFactory().getUncached();
 
@@ -95,25 +91,25 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
     private final SourceCodeEvaluator sourceCodeEvaluator;
     private final LanguageTriggerCharacters languageCompletionTriggerCharacters;
 
-    public CompletionRequestHandler(TruffleInstrument.Env env, TextDocumentSurrogateMap surrogateMap, ContextAwareExecutor executor,
+    public CompletionRequestHandler(TruffleInstrument.Env envMain, TruffleInstrument.Env env, TextDocumentSurrogateMap surrogateMap, ContextAwareExecutor executor,
                     SourceCodeEvaluator sourceCodeEvaluator, LanguageTriggerCharacters completionTriggerCharacters) {
-        super(env, surrogateMap, executor);
+        super(envMain, env, surrogateMap, executor);
         this.sourceCodeEvaluator = sourceCodeEvaluator;
         this.languageCompletionTriggerCharacters = completionTriggerCharacters;
     }
 
     public CompletionList completionWithEnteredContext(final URI uri, int line, int column, CompletionContext completionContext) throws DiagnosticsNotification {
-        LOG.log(Level.FINER, "Start finding completions for {0}:{1}:{2}", new Object[]{uri, line, column});
+        logger.log(Level.FINER, "Start finding completions for {0}:{1}:{2}", new Object[]{uri, line, column});
 
         TextDocumentSurrogate surrogate = surrogateMap.get(uri);
         if (surrogate == null) {
-            LOG.info("Completion requested in an unknown document: " + uri);
+            logger.info("Completion requested in an unknown document: " + uri);
             return emptyList;
         }
         Source source = surrogate.getSource();
 
         if (!SourceUtils.isLineValid(line, source) || !SourceUtils.isColumnValid(line, column, source)) {
-            LOG.fine("line or column is out of range, line=" + line + ", column=" + column);
+            logger.fine("line or column is out of range, line=" + line + ", column=" + column);
             return emptyList;
         }
 
@@ -125,9 +121,9 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
         } else {
             // Try fixing the source code, parse again, then create the completions
 
-            SourceFix sourceFix = SourceUtils.removeLastTextInsertion(surrogate, column);
+            SourceFix sourceFix = SourceUtils.removeLastTextInsertion(surrogate, column, logger);
             if (sourceFix == null) {
-                LOG.fine("Unable to fix unparsable source code. No completion possible.");
+                logger.fine("Unable to fix unparsable source code. No completion possible.");
                 return emptyList;
             }
 
@@ -212,7 +208,7 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
     }
 
     private Node findNearestNode(SourceWrapper sourceWrapper, int line, int column) {
-        NearestNode nearestNodeHolder = NearestSectionsFinder.findNearestNode(sourceWrapper.getSource(), line, column, env);
+        NearestNode nearestNodeHolder = NearestSectionsFinder.findNearestNode(sourceWrapper.getSource(), line, column, env, logger);
         return nearestNodeHolder.getNode();
     }
 
@@ -244,7 +240,7 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
                                                 DiagnosticSeverity.Information, null, "Graal", null));
             }
         } else {
-            LOG.fine("No object property completion possible. Caret is not directly at the end of a source section. Line: " + line + ", column: " + column);
+            logger.fine("No object property completion possible. Caret is not directly at the end of a source section. Line: " + line + ", column: " + column);
         }
     }
 
@@ -305,7 +301,7 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
                 }
                 size = INTEROP.getArraySize(keys);
             } catch (Exception ex) {
-                LOG.log(Level.INFO, ex.getLocalizedMessage(), ex);
+                logger.log(Level.INFO, ex.getLocalizedMessage(), ex);
                 continue;
             }
             for (long i = 0; i < size; i++) {
@@ -324,7 +320,7 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
                 } catch (ThreadDeath td) {
                     throw td;
                 } catch (Throwable t) {
-                    LOG.log(Level.CONFIG, variables.toString(), t);
+                    logger.log(Level.CONFIG, variables.toString(), t);
                     continue;
                 }
                 CompletionItem completion = CompletionItem.create(key);
@@ -358,35 +354,30 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
         if (object == null) {
             return false;
         }
-        String metaObject = getMetaObject(langInfo, object);
+        Object metaObject = getMetaObject(langInfo, object);
         if (metaObject == null) {
             return false;
         }
 
-        Object boxedObject;
-        Object keys = null;
-        if (InteropUtils.isPrimitive(object)) {
-            // TODO: box the primitive when such API is available
-            LOG.fine("No completions for primitive: " + object + ", no boxed object in language " + langInfo.getId());
-            return false;
-        } else {
-            boxedObject = object;
-        }
-        try {
-            keys = INTEROP.getMembers(boxedObject);
-        } catch (UnsupportedMessageException ex) {
-            // No members
+        Object languageView = env.getLanguageView(langInfo, object);
+        Object members = null;
+        if (INTEROP.hasMembers(languageView)) {
+            try {
+                members = INTEROP.getMembers(languageView);
+            } catch (UnsupportedMessageException ex) {
+                // No members
+            }
         }
 
-        if (keys == null || !INTEROP.hasArrayElements(keys)) {
-            LOG.fine("No completions found for object: " + boxedObject);
+        if (members == null || !INTEROP.hasArrayElements(members)) {
+            logger.fine("No completions found for object: " + languageView);
             return false;
         }
 
         int counter = 0;
         long size;
         try {
-            size = INTEROP.getArraySize(keys);
+            size = INTEROP.getArraySize(members);
         } catch (UnsupportedMessageException ex) {
             size = 0;
         }
@@ -394,16 +385,16 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
             String key;
             Object value;
             try {
-                key = INTEROP.readArrayElement(keys, i).toString();
-                if (INTEROP.isMemberReadable(boxedObject, key)) {
-                    value = INTEROP.readMember(boxedObject, key);
+                key = INTEROP.readArrayElement(members, i).toString();
+                if (INTEROP.isMemberReadable(languageView, key)) {
+                    value = INTEROP.readMember(languageView, key);
                 } else {
                     value = null;
                 }
             } catch (ThreadDeath td) {
                 throw td;
             } catch (Throwable t) {
-                LOG.log(Level.CONFIG, boxedObject.toString(), t);
+                logger.log(Level.CONFIG, languageView.toString(), t);
                 continue;
             }
             CompletionItem completion = CompletionItem.create(key);
@@ -412,7 +403,11 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
             completion.setSortText(String.format("%s%06d.%s", "+", counter, key));
             completion.setKind(CompletionItemKind.Property);
             completion.setDetail(createCompletionDetail(value, langInfo));
-            completion.setDocumentation(createDocumentation(value, langInfo, "of " + metaObject));
+            try {
+                completion.setDocumentation(createDocumentation(value, langInfo, "of " + INTEROP.getMetaQualifiedName(metaObject)));
+            } catch (UnsupportedMessageException e) {
+                throw new AssertionError(e);
+            }
 
             completions.add(completion);
         }
@@ -425,8 +420,15 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
         if (documentation == null) {
             String markupStr = escapeMarkdown(scopeInformation);
 
-            SourceSection section = env.findSourceLocation(langInfo, value);
-            if (section != null) {
+            Object view = env.getLanguageView(langInfo, value);
+            if (INTEROP.hasSourceLocation(view)) {
+                SourceSection section;
+                try {
+                    section = INTEROP.getSourceLocation(view);
+                } catch (UnsupportedMessageException e) {
+                    CompilerDirectives.transferToInterpreter();
+                    throw new AssertionError(e);
+                }
                 String code = section.getCharacters().toString();
                 if (!code.isEmpty()) {
                     markupStr += "\n\n```\n" + section.getCharacters().toString() + "\n```";
@@ -441,32 +443,38 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
         return original.replaceAll("__", "\\\\_\\\\_");
     }
 
-    @SuppressWarnings("all") // The parameter langInfo should not be assigned
     String createCompletionDetail(Object obj, LanguageInfo langInfo) {
         String detailText = "";
         if (obj == null) {
             return detailText;
         }
 
-        Object truffleObj;
-        if (InteropUtils.isPrimitive(obj)) {
-            truffleObj = null; // TODO: box the primitive when such API is available
-        } else {
-            truffleObj = (TruffleObject) obj;
-            langInfo = getObjectLanguageInfo(langInfo, obj);
-        }
-
-        if (truffleObj != null && INTEROP.isExecutable(truffleObj)) {
-            String formattedSignature = getFormattedSignature(truffleObj, langInfo);
+        Object view = env.getLanguageView(langInfo, obj);
+        if (INTEROP.isExecutable(view)) {
+            String formattedSignature = getFormattedSignature(view, langInfo);
             detailText = formattedSignature != null ? formattedSignature : "";
         }
 
-        Object metaObject = env.findMetaObject(langInfo, obj);
+        Object metaObject = null;
+        if (INTEROP.hasMetaObject(view)) {
+            try {
+                metaObject = INTEROP.getMetaObject(view);
+            } catch (UnsupportedMessageException e) {
+                CompilerDirectives.transferToInterpreter();
+                throw new AssertionError("Unexpected unsupported message.", e);
+            }
+        }
+
         if (metaObject != null) {
             if (!detailText.isEmpty()) {
                 detailText += " ";
             }
-            detailText += env.toString(langInfo, metaObject);
+            try {
+                detailText += INTEROP.asString(INTEROP.toDisplayString(metaObject));
+            } catch (UnsupportedMessageException e) {
+                CompilerDirectives.transferToInterpreter();
+                throw new AssertionError("Unexpected unsupported message.", e);
+            }
         }
         return detailText;
     }
@@ -503,7 +511,7 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
                     if (text != null) {
                         return MarkupContent.create(markupKind, text);
                     } else {
-                        return MarkupContent.create(markupKind, env.toString(langInfo, docu));
+                        return MarkupContent.create(markupKind, languageToString(langInfo, docu));
                     }
                 }
             }
@@ -515,10 +523,19 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
         return null;
     }
 
+    private String languageToString(LanguageInfo langInfo, Object value) {
+        try {
+            return INTEROP.asString(INTEROP.toDisplayString(env.getLanguageView(langInfo, value)));
+        } catch (UnsupportedMessageException e) {
+            CompilerDirectives.transferToInterpreter();
+            throw new AssertionError(e);
+        }
+    }
+
     public String getFormattedSignature(Object truffleObj, LanguageInfo langInfo) {
         try {
             Object signature = LSP_INTEROP.getSignature(truffleObj);
-            return env.toString(langInfo, signature);
+            return languageToString(langInfo, signature);
         } catch (UnsupportedMessageException e) {
             // GET_SIGNATURE message is not supported
         }
@@ -527,21 +544,30 @@ public final class CompletionRequestHandler extends AbstractRequestHandler {
 
     private LanguageInfo getObjectLanguageInfo(LanguageInfo defaultInfo, Object object) {
         assert object != null;
-        LanguageInfo langInfo = env.findLanguage(object);
-        if (langInfo == null) {
-            langInfo = defaultInfo;
+        if (INTEROP.hasLanguage(object)) {
+            try {
+                return env.getLanguageInfo(INTEROP.getLanguage(object));
+            } catch (UnsupportedMessageException e) {
+                CompilerDirectives.transferToInterpreter();
+                throw new AssertionError(e);
+            }
+        } else {
+            return defaultInfo;
         }
-        return langInfo;
     }
 
-    private String getMetaObject(LanguageInfo defaultInfo, Object object) {
+    private Object getMetaObject(LanguageInfo defaultInfo, Object object) {
         LanguageInfo langInfo = getObjectLanguageInfo(defaultInfo, object);
-        Object metaObject = env.findMetaObject(langInfo, object);
-        if (metaObject == null) {
-            return null;
-        } else {
-            return env.toString(langInfo, metaObject);
+        Object view = env.getLanguageView(langInfo, object);
+        if (INTEROP.hasMetaObject(view)) {
+            try {
+                return INTEROP.getMetaObject(view);
+            } catch (UnsupportedMessageException e) {
+                CompilerDirectives.transferToInterpreter();
+                throw new AssertionError("Unexpected unsupported message.", e);
+            }
         }
+        return null;
     }
 
 }

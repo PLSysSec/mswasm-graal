@@ -28,9 +28,6 @@ import java.security.AccessControlContext;
 import java.util.Map;
 import java.util.Objects;
 
-import org.graalvm.nativeimage.ImageSingletons;
-
-import com.oracle.svm.core.MonitorSupport;
 import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.annotate.Alias;
 import com.oracle.svm.core.annotate.Delete;
@@ -40,16 +37,16 @@ import com.oracle.svm.core.annotate.RecomputeFieldValue;
 import com.oracle.svm.core.annotate.Substitute;
 import com.oracle.svm.core.annotate.TargetClass;
 import com.oracle.svm.core.annotate.TargetElement;
-import com.oracle.svm.core.jdk.JDK11OrLater;
 import com.oracle.svm.core.jdk.JDK11OrEarlier;
+import com.oracle.svm.core.jdk.JDK11OrLater;
 import com.oracle.svm.core.jdk.JDK14OrLater;
 import com.oracle.svm.core.jdk.JDK8OrEarlier;
 import com.oracle.svm.core.jdk.StackTraceUtils;
 import com.oracle.svm.core.jdk.UninterruptibleUtils.AtomicReference;
+import com.oracle.svm.core.monitor.MonitorSupport;
 import com.oracle.svm.core.option.XOptions;
 import com.oracle.svm.core.snippets.KnownIntrinsics;
 import com.oracle.svm.core.stack.StackOverflowCheck;
-import com.oracle.svm.core.thread.ParkEvent.WaitResult;
 import com.oracle.svm.core.util.TimeUtils;
 import com.oracle.svm.core.util.VMError;
 
@@ -277,9 +274,14 @@ final class Target_java_lang_Thread {
         return interrupted;
     }
 
+    /**
+     * Marks the thread as interrupted and wakes it up.
+     *
+     * See {@link JavaThreads#park()}, {@link JavaThreads#park(long)} and {@link JavaThreads#sleep}
+     * for vital aspects of the underlying mechanisms.
+     */
     @Substitute
     void interrupt0() {
-        /* Set the interrupt status of the thread. */
         interrupted = true;
 
         if (!SubstrateOptions.MultiThreaded.getValue()) {
@@ -287,14 +289,10 @@ final class Target_java_lang_Thread {
             return;
         }
 
-        // Cf. os::interrupt(Thread*) from HotSpot, which unparks all of:
-        // (1) thread->_SleepEvent,
-        // (2) ((JavaThread*)thread)->parker()
-        // (3) thread->_ParkEvent
         JavaThreads.interrupt(JavaThreads.fromTarget(this));
         JavaThreads.unpark(JavaThreads.fromTarget(this));
-        /* Interrupt anyone waiting on a VMCondVar. */
-        JavaThreads.interruptVMCondVars();
+
+        JavaThreads.wakeUpVMConditionWaiters();
     }
 
     @Substitute
@@ -352,15 +350,8 @@ final class Target_java_lang_Thread {
         if (millis < 0) {
             throw new IllegalArgumentException("timeout value is negative");
         }
-        WaitResult sleepResult = JavaThreads.sleep(TimeUtils.millisToNanos(millis));
-        /*
-         * If the sleep did not time out, I was interrupted. The interrupted flag of the thread must
-         * be cleared when an InterruptedException is thrown (see JavaDoc of Thread.sleep), so we
-         * call Thread.interrupted() unconditionally.
-         */
-        boolean interrupted = Thread.interrupted();
-        /* The common case is interruption is UNPARKED: Check it first. */
-        if ((sleepResult == WaitResult.UNPARKED) || (sleepResult == WaitResult.INTERRUPTED) || interrupted) {
+        JavaThreads.sleep(TimeUtils.millisToNanos(millis));
+        if (Thread.interrupted()) { // clears the interrupted flag as required of Thread.sleep()
             throw new InterruptedException();
         }
     }
@@ -372,7 +363,7 @@ final class Target_java_lang_Thread {
     @Substitute
     private static boolean holdsLock(Object obj) {
         Objects.requireNonNull(obj);
-        return ImageSingletons.lookup(MonitorSupport.class).holdsLock(obj);
+        return MonitorSupport.singleton().holdsLock(obj);
     }
 
     @Substitute

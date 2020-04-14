@@ -1,5 +1,5 @@
 # overlay version
-overlay = 1e6a01bace1f1d635882bfa738d0596a67f19ef6
+overlay = 342aa921cb7cc26612d0be82f6141a6d6ff8e41d
 
 # oraclejdk* are released OracleJDK binaries
 # oraclejdk* are JDKs based on OracleJDK binaries
@@ -36,13 +36,15 @@ labsjdk-ee-11 :         { downloads : { JAVA_HOME : ${jdks.labsjdk-ee-11} }}
 
 common : ${mx} {
   timelimit : "30:00"
+  environment : {
+    MX_PYTHON: "python3"
+  }
   catch_files : [
     "Graal diagnostic output saved in (?P<filename>.+\.zip)"
   ]
   packages : {
     "pip:logilab-common ": "==1.4.4"
-    "pip:astroid" : "==1.1.0"
-    "pip:pylint" : "==1.1.0"
+    "pip:pylint" : "==1.9.3"
     "pip:ninja_syntax" : "==1.7.2"
   }
 }
@@ -64,6 +66,11 @@ solaris : ${common} {
 }
 
 darwin : ${common} {
+  environment : {
+    # Required to keep pylint happy on Darwin
+    # https://coderwall.com/p/-k_93g/mac-os-x-valueerror-unknown-locale-utf-8-in-python
+    LC_ALL : "en_US.UTF-8"
+  }
 }
 
 windows : ${common} {
@@ -99,7 +106,7 @@ LARGE_YOUNG_GEN_SIZE : "27G"
 
 eclipse : {
   downloads : {
-    ECLIPSE : {name: eclipse, version: "4.5.2", platformspecific: true}
+    ECLIPSE : {name: eclipse, version: "4.14.0", platformspecific: true}
   }
   environment : {
     ECLIPSE_EXE : "$ECLIPSE/eclipse"
@@ -108,7 +115,7 @@ eclipse : {
 
 jdt : {
   downloads : {
-    JDT : {name: ecj, version: "4.5.1", platformspecific: false}
+    JDT : {name: ecj, version: "4.14.0", platformspecific: false}
   }
 }
 
@@ -148,6 +155,7 @@ svm-common: ${mx} {
     "*/*/stripped/*.map"
     "*/callgrind.*"
     "*.bgv"
+    "*.log"
   ]
 }
 

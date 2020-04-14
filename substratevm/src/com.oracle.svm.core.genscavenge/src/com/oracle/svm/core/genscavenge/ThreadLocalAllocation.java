@@ -51,7 +51,6 @@ import com.oracle.svm.core.genscavenge.UnalignedHeapChunk.UnalignedHeader;
 import com.oracle.svm.core.genscavenge.graal.nodes.FormatArrayNode;
 import com.oracle.svm.core.genscavenge.graal.nodes.FormatObjectNode;
 import com.oracle.svm.core.graal.snippets.DeoptTester;
-import com.oracle.svm.core.heap.ObjectVisitor;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.hub.LayoutEncoding;
 import com.oracle.svm.core.log.Log;
@@ -152,28 +151,28 @@ public final class ThreadLocalAllocation {
 
     static Object allocateNewInstance(DynamicHub hub, ThreadLocalAllocation.Descriptor tlab, boolean rememberedSet) {
         DeoptTester.disableDeoptTesting();
+        try {
+            log().string("[ThreadLocalAllocation.allocateNewInstance: ").string(DynamicHub.toClass(hub).getName()).string(" in tlab ").hex(tlab).newline();
 
-        log().string("[ThreadLocalAllocation.allocateNewInstance: ").string(DynamicHub.toClass(hub).getName()).string(" in tlab ").hex(tlab).newline();
+            // Slow-path check if allocation is disallowed.
+            HeapImpl.exitIfAllocationDisallowed("ThreadLocalAllocation.allocateNewInstance", DynamicHub.toClass(hub).getName());
+            // Policy: Possibly collect before this allocation.
+            HeapImpl.getHeapImpl().getHeapPolicy().getCollectOnAllocationPolicy().maybeCauseCollection();
 
-        // Slow-path check if allocation is disallowed.
-        HeapImpl.exitIfAllocationDisallowed("ThreadLocalAllocation.allocateNewInstance", DynamicHub.toClass(hub).getName());
-        // Policy: Possibly collect before this allocation.
-        HeapImpl.getHeapImpl().getHeapPolicy().getCollectOnAllocationPolicy().maybeCauseCollection();
+            /*
+             * On this path allocation failed in the 'allocation chunk', thus we refill it, i.e..,
+             * add a new allocation chunk at the front of the TLAB's aligned chunks.
+             */
+            AlignedHeader newChunk = prepareNewAllocationChunk(tlab);
 
-        /*
-         * On this path allocation failed in the 'allocation chunk', thus we refill it, i.e.., add a
-         * new allocation chunk at the front of the TLAB's aligned chunks.
-         */
-        AlignedHeader newChunk = prepareNewAllocationChunk(tlab);
+            UnsignedWord size = LayoutEncoding.getInstanceSize(hub.getLayoutEncoding());
+            Object result = allocateNewInstanceUninterruptibly(hub, tlab, rememberedSet, size, newChunk);
 
-        UnsignedWord size = LayoutEncoding.getInstanceSize(hub.getLayoutEncoding());
-        Object result = allocateNewInstanceUninterruptibly(hub, tlab, rememberedSet, size, newChunk);
-
-        log().string("  ThreadLocalAllocation.allocateNewInstance returns ").object(result).string(" .. ").hex(LayoutEncoding.getObjectEnd(result)).string("]").newline();
-
-        DeoptTester.enableDeoptTesting();
-
-        return result;
+            log().string("  ThreadLocalAllocation.allocateNewInstance returns ").object(result).string(" .. ").hex(LayoutEncoding.getObjectEnd(result)).string("]").newline();
+            return result;
+        } finally {
+            DeoptTester.enableDeoptTesting();
+        }
     }
 
     @Uninterruptible(reason = "Holds uninitialized memory, modifies TLAB")
@@ -221,37 +220,38 @@ public final class ThreadLocalAllocation {
 
     private static Object allocateNewArray(DynamicHub hub, int length, ThreadLocalAllocation.Descriptor tlab, boolean rememberedSet) {
         DeoptTester.disableDeoptTesting();
+        try {
+            log().string("[ThreadLocalAllocation.allocateNewArray: ").string(DynamicHub.toClass(hub).getName()).string("  length ").signed(length).string("  in tlab ").hex(tlab).newline();
 
-        log().string("[ThreadLocalAllocation.allocateNewArray: ").string(DynamicHub.toClass(hub).getName()).string("  length ").signed(length).string("  in tlab ").hex(tlab).newline();
+            // Slow-path check if allocation is disallowed.
+            HeapImpl.exitIfAllocationDisallowed("Heap.allocateNewArray", DynamicHub.toClass(hub).getName());
+            // Policy: Possibly collect before this allocation.
+            HeapImpl.getHeapImpl().getHeapPolicy().getCollectOnAllocationPolicy().maybeCauseCollection();
 
-        // Slow-path check if allocation is disallowed.
-        HeapImpl.exitIfAllocationDisallowed("Heap.allocateNewArray", DynamicHub.toClass(hub).getName());
-        // Policy: Possibly collect before this allocation.
-        HeapImpl.getHeapImpl().getHeapPolicy().getCollectOnAllocationPolicy().maybeCauseCollection();
-
-        UnsignedWord size = LayoutEncoding.getArraySize(hub.getLayoutEncoding(), length);
-        Object result;
-        if (size.aboveOrEqual(HeapPolicy.getLargeArrayThreshold())) {
-            /*
-             * Check if the array is really too big. This is an optimistic check because the heap
-             * probably has other objects in it, so the next collection will throw an
-             * OutOfMemoryError if this object is allocated and survives.
-             */
-            if (size.aboveOrEqual(HeapPolicy.getMaximumHeapSize())) {
-                throw arrayAllocationTooLarge;
+            UnsignedWord size = LayoutEncoding.getArraySize(hub.getLayoutEncoding(), length);
+            Object result;
+            if (size.aboveOrEqual(HeapPolicy.getLargeArrayThreshold())) {
+                /*
+                 * Check if the array is really too big. This is an optimistic check because the
+                 * heap probably has other objects in it, so the next collection will throw an
+                 * OutOfMemoryError if this object is allocated and survives.
+                 */
+                if (size.aboveOrEqual(HeapPolicy.getMaximumHeapSize())) {
+                    throw arrayAllocationTooLarge;
+                }
+                /* Large arrays go into their own unaligned chunk. */
+                UnalignedHeapChunk.UnalignedHeader uChunk = HeapChunkProvider.get().produceUnalignedChunk(size);
+                result = allocateLargeArray(hub, length, size, uChunk, tlab, rememberedSet);
+            } else {
+                /* Small arrays go into the regular aligned chunk. */
+                AlignedHeader newChunk = prepareNewAllocationChunk(tlab);
+                result = allocateSmallArray(hub, length, size, tlab, rememberedSet, newChunk);
             }
-            /* Large arrays go into their own unaligned chunk. */
-            UnalignedHeapChunk.UnalignedHeader uChunk = HeapChunkProvider.get().produceUnalignedChunk(size);
-            result = allocateLargeArray(hub, length, size, uChunk, tlab, rememberedSet);
-        } else {
-            /* Small arrays go into the regular aligned chunk. */
-            AlignedHeader newChunk = prepareNewAllocationChunk(tlab);
-            result = allocateSmallArray(hub, length, size, tlab, rememberedSet, newChunk);
+            log().string("  ThreadLocalAllocation.allocateNewArray returns ").object(result).string(" .. ").hex(LayoutEncoding.getObjectEnd(result)).string("]").newline();
+            return result;
+        } finally {
+            DeoptTester.enableDeoptTesting();
         }
-        log().string("  ThreadLocalAllocation.allocateNewArray returns ").object(result).string(" .. ").hex(LayoutEncoding.getObjectEnd(result)).string("]").newline();
-
-        DeoptTester.enableDeoptTesting();
-        return result;
     }
 
     @Uninterruptible(reason = "Holds uninitialized memory, modifies TLAB")
@@ -314,7 +314,7 @@ public final class ThreadLocalAllocation {
 
     static boolean isThreadLocalAllocationSpace(Space space) {
         // Compare "space" to a compile-time constant, rather than accessing a field of the space.
-        return (space == HeapImpl.getHeapImpl().getYoungGeneration().getSpace());
+        return (space == HeapImpl.getHeapImpl().getYoungGeneration().getEden());
     }
 
     /** Stop using the current chunk for thread-local allocation. */
@@ -368,37 +368,8 @@ public final class ThreadLocalAllocation {
         resumeAllocationChunk(regularTLAB.getAddress());
     }
 
-    /** Walk objects in this thread's TLABs. */
-    public static boolean walkObjects(ObjectVisitor visitor) {
-        Descriptor tlab = regularTLAB.getAddress();
-        if (!walkObjects(tlab, visitor)) {
-            return false;
-        }
-        return true;
-    }
-
-    /** Walk the Objects in the TLAB, passing each to a Visitor. */
-    private static boolean walkObjects(Descriptor tlab, ObjectVisitor visitor) {
-        // Visit the Objects in the aligned chunks.
-        AlignedHeapChunk.AlignedHeader aChunk = tlab.getAlignedChunk();
-        while (aChunk.isNonNull()) {
-            if (!AlignedHeapChunk.walkObjectsOfAlignedHeapChunk(aChunk, visitor)) {
-                return false;
-            }
-            aChunk = aChunk.getNext();
-        }
-        // Visit the Objects in the unaligned chunks.
-        UnalignedHeapChunk.UnalignedHeader uChunk = tlab.getUnalignedChunk();
-        while (uChunk.isNonNull()) {
-            if (!UnalignedHeapChunk.walkObjectsOfUnalignedHeapChunk(uChunk, visitor)) {
-                return false;
-            }
-            uChunk = uChunk.getNext();
-        }
-        return true;
-    }
-
     static void retireToSpace(Descriptor tlab, Space space) {
+        assert !space.isOldSpace() : "must not be moved to the old gen - otherwise a remembered set would have to be constructed";
         log().string("[ThreadLocalAllocator.retireToSpace: tlab ").hex(tlab).string(" space ").string(space.getName()).newline();
 
         retireAllocationChunk(tlab);
@@ -414,11 +385,6 @@ public final class ThreadLocalAllocation {
 
             log().string("  aligned chunk ").hex(alignedChunk).newline();
             space.appendAlignedHeapChunk(alignedChunk);
-
-            if (!HeapImpl.getHeapImpl().isYoungGeneration(space)) {
-                log().string("  setting up remembered set for ").hex(alignedChunk).newline();
-                AlignedHeapChunk.constructRememberedSetOfAlignedHeapChunk(alignedChunk);
-            }
 
             alignedChunk = next;
         }

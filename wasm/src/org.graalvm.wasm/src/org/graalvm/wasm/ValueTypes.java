@@ -40,7 +40,7 @@
  */
 package org.graalvm.wasm;
 
-import org.graalvm.wasm.exception.WasmException;
+import org.graalvm.wasm.exception.WasmValidationException;
 
 public class ValueTypes {
     public static final byte VOID_TYPE = 0x40;
@@ -64,7 +64,7 @@ public class ValueTypes {
             case HANDLE_TYPE:
                 return "handle";
             default:
-                throw new WasmException("Unknown value type: 0x" + Integer.toHexString(valueType));
+                throw new WasmValidationException("Unknown value type: 0x" + Integer.toHexString(valueType));
         }
     }
 }

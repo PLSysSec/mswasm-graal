@@ -50,7 +50,7 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJdkComponent(
     license_files=[],
     third_party_license_files=[],
     dependencies=['sdk'],
-    jar_distributions=['vm:INSTALLER', 'sdk:LAUNCHER_COMMON'],
+    jar_distributions=['vm:INSTALLER'],
     support_distributions=['vm:INSTALLER_GRAALVM_SUPPORT'],
     launcher_configs=[
         mx_sdk_vm.LauncherConfig(
@@ -79,17 +79,17 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmComponent(
 ))
 
 # pylint: disable=line-too-long
-ce_components = ['cmp', 'cov', 'gu', 'gvm', 'ins', 'ats', 'js', 'lg', 'lsp', 'nfi', 'njs', 'polynative', 'pro', 'rgx', 'sdk', 'slg', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'vvm']
-ce_complete_components = ['cmp', 'cov', 'gu', 'gvm', 'gwa', 'ins', 'ats', 'js', 'lg', 'llp', 'lsp', 'nfi', 'ni', 'nil', 'njs', 'polynative', 'pro', 'pyn', 'pynl', 'rby', 'rbyl', 'rgx', 'sdk', 'slg', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'vvm']
-ce_python_components = ['cmp', 'cov', 'gu', 'gvm', 'ins', 'ats', 'js', 'lg', 'llp', 'lsp', 'nfi', 'ni', 'nil', 'njs', 'nju', 'nic', 'polynative', 'pyn', 'pynl', 'pro', 'rgx', 'sdk', 'slg', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'vvm']
-ce_no_native_components = ['bgu', 'bjs', 'blli', 'bgraalvm-native-clang', 'bgraalvm-native-clang++', 'bgraalvm-native-ld', 'bgraalvm-native-binutil', 'bnative-image', 'bpolyglot', 'cmp', 'cov', 'gu', 'gvm', 'ins', 'ats', 'js', 'lsp', 'nfi', 'ni', 'nil', 'njs', 'polynative', 'pro', 'rgx', 'sdk', 'slg', 'snative-image-agent', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'vvm']
+ce_components = ['cmp', 'cov', 'gu', 'gvm', 'ins', 'ats', 'js', 'lg', 'lsp', 'nfi', 'njs', 'polynative', 'pro', 'rgx', 'sdk', 'slg', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'bpolyglot', 'vvm']
+ce_complete_components = ['cmp', 'cov', 'gu', 'gvm', 'gwa', 'ins', 'ats', 'js', 'lg', 'llp', 'lsp', 'nfi', 'ni', 'nil', 'njs', 'polynative', 'pro', 'pyn', 'pynl', 'rby', 'rbyl', 'rgx', 'sdk', 'slg', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'bpolyglot', 'vvm']
+ce_python_components = ['cmp', 'cov', 'gu', 'gvm', 'ins', 'ats', 'js', 'lg', 'llp', 'lsp', 'nfi', 'ni', 'nil', 'njs', 'nju', 'nic', 'polynative', 'pyn', 'pynl', 'pro', 'rgx', 'sdk', 'slg', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'bpolyglot', 'vvm']
+ce_no_native_components = ['bgu', 'bjs', 'blli', 'bgraalvm-native-clang', 'bgraalvm-native-clang++', 'bgraalvm-native-ld', 'bgraalvm-native-binutil', 'bnative-image', 'bpolyglot', 'cmp', 'cov', 'gu', 'gvm', 'ins', 'ats', 'js', 'lsp', 'nfi', 'ni', 'nil', 'njs', 'polynative', 'pro', 'rgx', 'sdk', 'slg', 'snative-image-agent', 'spolyglot', 'svm', 'svml', 'tfl', 'tflm', 'libpoly', 'poly', 'vvm']
 if mx.is_linux() and mx.get_arch() == 'amd64' and mx.get_jdk(tag='default').javaCompliance == '11':
     ce_components.append('mjdksl')
     ce_complete_components.append('mjdksl')
     ce_python_components.append('mjdksl')
     ce_no_native_components.append('mjdksl')
 
-mx_sdk_vm.register_vm_config('ce', ['ats', 'cmp', 'cov', 'gu', 'gvm', 'ins', 'js', 'lg', 'libpoly', 'lsp', 'nfi', 'poly', 'polynative', 'pro', 'rgx', 'sdk', 'svm', 'tfl', 'tflm', 'vvm'], _suite, env_file='ce-win')
+mx_sdk_vm.register_vm_config('ce', ['ats', 'cmp', 'cov', 'gu', 'gvm', 'ins', 'js', 'lg', 'libpoly', 'lsp', 'nfi', 'njs', 'poly', 'bpolyglot', 'polynative', 'pro', 'rgx', 'sdk', 'svm', 'tfl', 'tflm', 'vvm'], _suite, env_file='ce-win')
 mx_sdk_vm.register_vm_config('ce', ce_components, _suite)
 mx_sdk_vm.register_vm_config('ce', ce_complete_components, _suite, dist_name='ce-complete')
 mx_sdk_vm.register_vm_config('ce-python', ce_python_components, _suite)
@@ -118,6 +118,13 @@ def mx_register_dynamic_suite_constituents(register_project, register_distributi
     :type register_project: (mx.Project) -> None
     :type register_distribution: (mx.Distribution) -> None
     """
+    if mx_sdk_vm_impl.has_component('FastR'):
+        fastr_release_env = mx.get_env('FASTR_RELEASE', None)
+        if fastr_release_env != 'true':
+            mx.abort(('When including FastR, please set FASTR_RELEASE to \'true\' (env FASTR_RELEASE=true mx ...). Got FASTR_RELEASE={}. '
+                      'For local development, you may also want to disable recommended packages build (FASTR_NO_RECOMMENDED=true) and '
+                      'capturing of system libraries (export FASTR_CAPTURE_DEPENDENCIES set to an empty value). '
+                      'See building.md in FastR documentation for more details.').format(fastr_release_env))
     if register_project:
         register_project(GraalVmSymlinks())
 
