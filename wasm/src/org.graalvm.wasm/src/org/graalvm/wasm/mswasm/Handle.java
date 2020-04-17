@@ -1,3 +1,4 @@
+package org.graalvm.wasm.mswasm;
 
 public class Handle {
     private int offset;
@@ -42,6 +43,10 @@ public class Handle {
 
     public boolean isCorrupted() {
         return isCorrupted;
+    }
+
+    public void setCorrupted() {
+        isCorrupted = true;
     }
 
     public boolean isValid() {
