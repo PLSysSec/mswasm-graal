@@ -574,7 +574,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case ValueTypes.HANDLE_TYPE: {
-                            // MSWASM-TODO
+                            // MSWasm
+                            pushHandle(frame, stackPointer, (Handle) result);
+                            stackPointer++;
                             break; 
                         }
                         case ValueTypes.VOID_TYPE: {
@@ -663,7 +665,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case ValueTypes.HANDLE_TYPE: {
-                            // MSWASM-TODO
+                            // MSWasm
+                            pushHandle(frame, stackPointer, (Handle) result);
+                            stackPointer++;
                             break; 
                         }
                         case ValueTypes.VOID_TYPE: {
@@ -734,7 +738,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case ValueTypes.HANDLE_TYPE: {
-                            // MSWASM-TODO
+                            // MSWasm
+                            Handle value = getHandle(frame, index);
+                            pushHandle(frame, stackPointer, value);
+                            stackPointer++;
+                            trace("local.get %d, value = " + hresult, index);
                             break; 
                         }
                         default: {
@@ -782,7 +790,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case ValueTypes.HANDLE_TYPE: {
-                            // MSWASM-TODO
+                            // MSWasm
+                            stackPointer--;
+                            Handle value = popHandle(frame, stackPointer);
+                            setHandle(frame, index, value);
+                            trace("local.set %d, value = " + value, index);
                             break; 
                         }
                         default: {
@@ -838,7 +850,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case ValueTypes.HANDLE_TYPE: {
-                            // MSWASM-TODO
+                            // MSWasm
+                            stackPointer--;
+                            Handle value = popHandle(frame, stackPointer);
+                            pushHandle(frame, stackPointer, value);
+                            stackPointer++;
+                            setHandle(frame, index, value);
+                            trace("local.tee %d, value = " + value, index);
                             break; 
                         }
                         default: {

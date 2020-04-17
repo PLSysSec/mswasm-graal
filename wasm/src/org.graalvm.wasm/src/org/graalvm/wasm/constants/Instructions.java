@@ -235,7 +235,7 @@ public final class Instructions {
     public static final int F32_REINTERPRET_I32 = 0xBE;
     public static final int F64_REINTERPRET_I64 = 0xBF;
 
-    // MS-Wasm instructions
+    // MSWasm instructions
     public static final int I32_SEGMENT_LOAD = 0xF0;
     public static final int I64_SEGMENT_LOAD = 0xF1;
     public static final int I32_SEGMENT_STORE = 0xF2;
@@ -245,6 +245,8 @@ public final class Instructions {
     public static final int SEGMENT_SLICE = 0xF6;
     public static final int HANDLE_SEGMENT_LOAD = 0xF7;
     public static final int HANDLE_SEGMENT_STORE = 0xF8;
+    public static final int HANDLE_ADD = 0xF9;
+    public static final int HANDLE_SUB = 0xFA;
 
 
 
@@ -260,8 +262,9 @@ public final class Instructions {
                     int code = f.getInt(null);
                     String representation = f.getName().toLowerCase(Locale.ENGLISH);
                     if (representation.startsWith("i32") || representation.startsWith("i64") ||
-                                    representation.startsWith("f32") || representation.startsWith("f64") ||
-                                    representation.startsWith("local") || representation.startsWith("global")) {
+                        representation.startsWith("f32") || representation.startsWith("f64") || 
+                        representation.startsWith("handle") || 
+                        representation.startsWith("local") || representation.startsWith("global")) {
                         representation = representation.replaceFirst("_", ".");
                     }
                     decodingTable[code] = representation;

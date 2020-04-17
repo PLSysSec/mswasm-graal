@@ -43,6 +43,7 @@ package org.graalvm.wasm.nodes;
 import com.oracle.truffle.api.frame.FrameSlotTypeException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import org.graalvm.wasm.WasmCodeEntry;
+import org.graalvm.wasm.mswasm.Handle;
 
 public interface WasmNodeInterface {
     WasmCodeEntry codeEntry();
@@ -81,6 +82,15 @@ public interface WasmNodeInterface {
         }
     }
 
+    // MSWasm
+    default Handle getHandle(VirtualFrame frame, int slot) {
+        try {
+            return (Handle) frame.getObject(codeEntry().localSlot(slot));
+        } catch (FrameSlotTypeException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     default void setLong(VirtualFrame frame, int slot, long value) {
         frame.setLong(codeEntry().localSlot(slot), value);
     }
@@ -95,6 +105,11 @@ public interface WasmNodeInterface {
 
     default void setDouble(VirtualFrame frame, int slot, double value) {
         frame.setDouble(codeEntry().localSlot(slot), value);
+    }
+
+    // MSWasm
+    default void setHandle(VirtualFrame frame, int slot, Handle value) {
+        frame.setObject(codeEntry().localSlot(slot), value);
     }
 
     /* STACK operations */
@@ -115,6 +130,11 @@ public interface WasmNodeInterface {
         push(frame, slot, Double.doubleToRawLongBits(value));
     }
 
+    // MSWasm
+    default void pushHandle(VirtualFrame frame, int slot, Handle value) {
+        frame.setObject(codeEntry().stackSlot(slot), value);
+    }
+
     default long pop(VirtualFrame frame, int slot) {
         try {
             return frame.getLong(codeEntry().stackSlot(slot));
@@ -133,6 +153,14 @@ public interface WasmNodeInterface {
 
     default double popAsDouble(VirtualFrame frame, int slot) {
         return Double.longBitsToDouble(pop(frame, slot));
+    }
+
+    // MSWasm
+    default Handle popHandle(VirtualFrame frame, int slot) {
+        try {
+            return (Handle)frame.getObject(codeEntry().stackSlot(slot));
+        } catch (FrameSlotTypeException e) {
+            throw new RuntimeException(e);
     }
 
 }
