@@ -241,7 +241,7 @@ import org.graalvm.wasm.exception.WasmExecutionException;
 import org.graalvm.wasm.exception.WasmTrap;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.memory.WasmMemoryException;
-import org.graalvm.wasm.mswasm.Handle; // MSWasm
+import org.graalvm.wasm.mswasm.MSWasmHandle; // MSWasm
 
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
@@ -576,7 +576,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         }
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
-                            pushHandle(frame, stackPointer, (Handle) result);
+                            pushHandle(frame, stackPointer, (MSWasmHandle) result);
                             stackPointer++;
                             break; 
                         }
@@ -667,7 +667,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         }
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
-                            pushHandle(frame, stackPointer, (Handle) result);
+                            pushHandle(frame, stackPointer, (MSWasmHandle) result);
                             stackPointer++;
                             break; 
                         }
@@ -740,7 +740,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         }
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
-                            Handle value = getHandle(frame, index);
+                            MSWasmHandle value = getHandle(frame, index);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
                             trace("local.get %d, value = " + value, index);
@@ -793,7 +793,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
                             stackPointer--;
-                            Handle value = popHandle(frame, stackPointer);
+                            MSWasmHandle value = popHandle(frame, stackPointer);
                             setHandle(frame, index, value);
                             trace("local.set %d, value = " + value, index);
                             break; 
@@ -853,7 +853,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
                             stackPointer--;
-                            Handle value = popHandle(frame, stackPointer);
+                            MSWasmHandle value = popHandle(frame, stackPointer);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
                             setHandle(frame, index, value);
@@ -912,7 +912,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
                             int address = module().symbolTable().globalAddress(index);
-                            Handle value = context.globals().loadAsHandle(address);
+                            MSWasmHandle value = context.globals().loadAsHandle(address);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
                             trace("global.get %d, value = " + value, index);
@@ -973,7 +973,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
                             stackPointer--;
-                            Handle value = popHandle(frame, stackPointer);
+                            MSWasmHandle value = popHandle(frame, stackPointer);
                             int address = module.symbolTable().globalAddress(index);
                             trace("global.set %d, value = " + value, index);
                             break; 
@@ -2437,7 +2437,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I32_SEGMENT_LOAD: {
                     // MSWasm
                     stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
+                    MSWasmHandle x = popHandle(frame, stackPointer);
                     Object value = context.segmentMemory().loadFromSegment(x);
                     
                     if (value == null) { // load failed
@@ -2454,7 +2454,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I64_SEGMENT_LOAD: {
                     // MSWasm
                     stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
+                    MSWasmHandle x = popHandle(frame, stackPointer);
                     Object value = context.segmentMemory().loadFromSegment(x);
                     
                     if (value == null) { // load failed
@@ -2471,7 +2471,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I32_SEGMENT_STORE: {
                     // MSWasm
                     stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
+                    MSWasmHandle key = popHandle(frame, stackPointer);
                     stackPointer--;
                     int value = popInt(frame, stackPointer);
                     boolean success = context.segmentMemory()
@@ -2486,7 +2486,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I64_SEGMENT_STORE: {
                     // MSWasm
                     stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
+                    MSWasmHandle key = popHandle(frame, stackPointer);
                     stackPointer--;
                     long value = pop(frame, stackPointer);
                     boolean success = context.segmentMemory()

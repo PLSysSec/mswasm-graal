@@ -1,19 +1,19 @@
 package org.graalvm.wasm.mswasm;
 
-public class Handle {
+public class MSWasmHandle {
     private int base;
     private int offset;
     private int bound;
     private boolean isCorrupted;
 
-    public Handle(int base, int offset, int bound, boolean isCorrupted) {
+    public MSWasmHandle(int base, int offset, int bound, boolean isCorrupted) {
         this.base = base;
         this.offset = offset;
         this.bound = bound;
         this.isCorrupted = isCorrupted;
     }
 
-    public Handle(Handle other) {
+    public MSWasmHandle(MSWasmHandle other) {
         this.base = other.getBase();
         this.offset = other.getOffset();
         this.bound = other.getBound();
@@ -27,11 +27,11 @@ public class Handle {
 
     @Override
     public boolean equals(Object obj) {
-        if ( ! (obj instanceof Handle)) {
+        if ( ! (obj instanceof MSWasmHandle)) {
             return false;
         }
 
-        Handle handle = (Handle) obj;
+        MSWasmHandle handle = (MSWasmHandle) obj;
         return handle.getOffset() == offset && handle.getBase() == base && 
                handle.getBound() == bound;
     }
