@@ -5,15 +5,25 @@ import java.util.HashMap;
 
 public class SegmentMemory {
     private Map<Handle,SegmentValue> segments;
+    int size;
 
     public SegmentMemory() {
         segments = new HashMap<>();
+        size = 0;
+    }
+
+    public int size() {
+        return size;
     }
 
     // Return true iff store operation is successful. Prohibits null values
     public boolean storeToSegment(Handle handle, Object value) {
-        if ( ! handle.isValid() || ! segments.containsKey(handle) || value == null) {
+        if ( ! handle.isValid() || value == null) {
             return false;
+        }
+
+        if ( ! segments.containsKey(handle)) {
+            size = Math.max(size, handle.getBound());
         }
 
         if (value instanceof Handle) {

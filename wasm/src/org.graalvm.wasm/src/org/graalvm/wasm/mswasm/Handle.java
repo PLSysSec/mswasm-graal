@@ -3,7 +3,6 @@ package org.graalvm.wasm.mswasm;
 public class Handle {
     private int base;
     private int offset;
-    private int base;
     private int bound;
     private boolean isCorrupted;
 
@@ -35,6 +34,11 @@ public class Handle {
         Handle handle = (Handle) obj;
         return handle.getOffset() == offset && handle.getBase() == base && 
                handle.getBound() == bound;
+    }
+
+    @Override
+    public int hashCode() {
+        return this.toString().hashCode();
     }
 
     public int getOffset() {

@@ -875,8 +875,11 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.NEW_SEGMENT:
                 case Instructions.FREE_SEGMENT:
                 case Instructions.SEGMENT_SLICE:
-                case Instructions.SEGMENT_LOAD:
-                case Instructions.SEGMENT_STORE:
+                case Instructions.HANDLE_SEGMENT_LOAD:
+                case Instructions.HANDLE_SEGMENT_STORE:
+                case Instructions.HANDLE_ADD:
+                case Instructions.HANDLE_SUB:
+                    // MSWASM-TODO
                     break;
                 default:
                     Assert.fail(Assert.format("Unknown opcode: 0x%02x", opcode));
