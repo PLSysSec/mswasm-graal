@@ -241,6 +241,7 @@ import org.graalvm.wasm.exception.WasmExecutionException;
 import org.graalvm.wasm.exception.WasmTrap;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.memory.WasmMemoryException;
+import org.graalvm.wasm.mswasm.Handle; // MSWasm
 
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
@@ -909,7 +910,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case ValueTypes.HANDLE_TYPE: {
-                            // MSWASM-TODO
+                            // MSWasm
+                            int address = module().symbolTable().globalAddress(index);
+                            Handle value = context.globals().loadAsHandle(address);
+                            pushHandle(frame, stackPointer, value);
+                            stackPointer++;
+                            trace("global.get %d, value = " + value, index);
                             break; 
                         }
                         default: {
@@ -965,7 +971,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case ValueTypes.HANDLE_TYPE: {
-                            // MSWASM-TODO
+                            // MSWasm
+                            stackPointer--;
+                            Handle value = popHandle(frame, stackPointer);
+                            int address = module.symbolTable().globalAddress(index);
+                            trace("global.set %d, value = " + value, index);
                             break; 
                         }
                         default: {
@@ -2422,6 +2432,46 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     trace("push reinterpret_i64 [f64]");
                     break;
                 }
+
+                // MSWasm - instruction execution implementations follow
+                case I32_SEGMENT_LOAD: {
+                    // MSWASM_TODO
+                    stackPointer--;
+                    Handle x = popHandle(frame, stackPointer);
+                    // pop handle
+
+                    // push i32
+                }
+                case I64_SEGMENT_LOAD: {
+                    // MSWASM_TODO
+                }
+                case I32_SEGMENT_STORE: {
+                    // MSWASM_TODO
+                }
+                case I64_SEGMENT_STORE: {
+                    // MSWASM_TODO
+                }
+                case NEW_SEGMENT: {
+                    // MSWASM_TODO
+                }
+                case FREE_SEGMENT: {
+                    // MSWASM_TODO
+                }
+                case SEGMENT_SLICE: {
+                    // MSWASM_TODO
+                }
+                case HANDLE_SEGMENT_LOAD: {
+                    // MSWASM_TODO
+                }
+                case HANDLE_SEGMENT_STORE: {
+                    // MSWASM_TODO
+                }
+                case HANDLE_ADD: {
+                    // MSWASM_TODO
+                }
+                case HANDLE_SUB: {
+                    // MSWASM_TODO
+                }
                 default:
                     Assert.fail(Assert.format("Unknown opcode: 0x%02X", opcode));
             }
@@ -2462,8 +2512,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     args[i] = popAsDouble(frame, stackPointer);
                     break;
                 case ValueTypes.HANDLE_TYPE: {
-                     // MSWASM-TODO
-                      break; 
+                    // MSWasm
+                    args[i] = popHandle(frame, stackPointer);
+                    break; 
                 }
                 default: {
                     throw new WasmTrap(this, "Unknown type: " + type);

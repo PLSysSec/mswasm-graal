@@ -14,6 +14,13 @@ public class Handle {
         this.isCorrupted = isCorrupted;
     }
 
+    public Handle(Handle other) {
+        this.base = other.getBase();
+        this.offset = other.getOffset();
+        this.bound = other.getBound();
+        this.isCorrupted = other.isCorrupted();
+    }
+
     @Override
     public String toString() {
         return "Handle: (" + base + ", " + offset + ", " + bound + ", " + isCorrupted + ")"; 

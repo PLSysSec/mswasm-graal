@@ -50,6 +50,7 @@ import com.oracle.truffle.api.TruffleLanguage.Env;
 import com.oracle.truffle.api.source.Source;
 import org.graalvm.wasm.exception.WasmValidationException;
 import org.graalvm.wasm.predefined.BuiltinModule;
+import org.graalvm.wasm.mswasm.SegmentMemory;
 
 public final class WasmContext {
     private final Env env;
@@ -59,6 +60,7 @@ public final class WasmContext {
     private final TableRegistry tableRegistry;
     private final Linker linker;
     private Map<String, WasmModule> modules;
+    private SegmentMemory segmentMemory;
 
     public static WasmContext getCurrent() {
         return WasmLanguage.getCurrentContext();
@@ -72,6 +74,7 @@ public final class WasmContext {
         this.memoryRegistry = new MemoryRegistry();
         this.modules = new LinkedHashMap<>();
         this.linker = new Linker(language);
+        segmentMemory = new SegmentMemory();
         initializeBuiltinModules();
     }
 
@@ -90,6 +93,11 @@ public final class WasmContext {
 
     public MemoryRegistry memories() {
         return memoryRegistry;
+    }
+
+    // MSWasm
+    public SegmentMemory segmentMemory() {
+        return segmentMemory;
     }
 
     public GlobalRegistry globals() {

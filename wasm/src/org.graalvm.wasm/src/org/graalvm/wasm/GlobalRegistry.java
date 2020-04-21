@@ -40,7 +40,11 @@
  */
 package org.graalvm.wasm;
 
+import java.util.List;
+import java.util.ArrayList;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
+
+import jdk.internal.org.objectweb.asm.Handle;
 
 public class GlobalRegistry {
     private static final int INITIAL_GLOBALS_SIZE = 2048;
@@ -52,9 +56,13 @@ public class GlobalRegistry {
     @CompilationFinal(dimensions = 0) private long[] globals;
     private int numGlobals;
 
+    // MSWasm: store global handles
+    private List<Handle> handles;
+
     public GlobalRegistry() {
         this.globals = new long[INITIAL_GLOBALS_SIZE];
         this.numGlobals = 0;
+        handles = new ArrayList<>();
     }
 
     public int count() {
@@ -93,6 +101,12 @@ public class GlobalRegistry {
         return Double.longBitsToDouble(globals[address]);
     }
 
+    // MSWasm - load global handle
+    public Handle loadAsHandle(int address) {
+        int index = (int) globals[address];
+        return handles.get(index);
+    }
+
     public void storeInt(int address, int value) {
         globals[address] = value;
     }
@@ -117,6 +131,12 @@ public class GlobalRegistry {
         globals[address] = value;
     }
 
+    // MSWasm - store global handle
+    public void storeHandle(int address, Handle value) {
+        globals[address] = handles.size();
+        handles.add(new Handle(value));
+    }
+
     public GlobalRegistry duplicate() {
         final GlobalRegistry other = new GlobalRegistry();
         for (int i = 0; i < numGlobals; i++) {
@@ -124,6 +144,12 @@ public class GlobalRegistry {
             final long value = this.loadAsLong(address);
             other.storeLong(address, value);
         }
+
+        // MSWasm - ensure handles are copied over
+        for (Handle handle : handles) {
+            other.handles.add(new Handle(handle));
+        }
+
         return other;
     }
 }

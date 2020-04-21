@@ -43,7 +43,7 @@ package org.graalvm.wasm.nodes;
 import com.oracle.truffle.api.frame.FrameSlotTypeException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import org.graalvm.wasm.WasmCodeEntry;
-import org.graalvm.wasm.mswasm.Handle;
+import org.graalvm.wasm.mswasm.Handle; // MSWasm
 
 public interface WasmNodeInterface {
     WasmCodeEntry codeEntry();
@@ -82,7 +82,7 @@ public interface WasmNodeInterface {
         }
     }
 
-    // MSWasm
+    // MSWasm - get local handle
     default Handle getHandle(VirtualFrame frame, int slot) {
         try {
             return (Handle) frame.getObject(codeEntry().localSlot(slot));
@@ -107,7 +107,7 @@ public interface WasmNodeInterface {
         frame.setDouble(codeEntry().localSlot(slot), value);
     }
 
-    // MSWasm
+    // MSWasm - set local handle
     default void setHandle(VirtualFrame frame, int slot, Handle value) {
         frame.setObject(codeEntry().localSlot(slot), value);
     }
@@ -130,7 +130,7 @@ public interface WasmNodeInterface {
         push(frame, slot, Double.doubleToRawLongBits(value));
     }
 
-    // MSWasm
+    // MSWasm - push local handle
     default void pushHandle(VirtualFrame frame, int slot, Handle value) {
         frame.setObject(codeEntry().stackSlot(slot), value);
     }
@@ -155,7 +155,7 @@ public interface WasmNodeInterface {
         return Double.longBitsToDouble(pop(frame, slot));
     }
 
-    // MSWasm
+    // MSWasm - pop local handle
     default Handle popHandle(VirtualFrame frame, int slot) {
         try {
             return (Handle)frame.getObject(codeEntry().stackSlot(slot));
