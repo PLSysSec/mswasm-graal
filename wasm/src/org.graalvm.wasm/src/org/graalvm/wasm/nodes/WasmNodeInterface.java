@@ -43,7 +43,7 @@ package org.graalvm.wasm.nodes;
 import com.oracle.truffle.api.frame.FrameSlotTypeException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import org.graalvm.wasm.WasmCodeEntry;
-import org.graalvm.wasm.mswasm.MSWasmHandle; // MSWasm
+import org.graalvm.wasm.mswasm.Handle; // MSWasm
 
 public interface WasmNodeInterface {
     WasmCodeEntry codeEntry();
@@ -83,9 +83,9 @@ public interface WasmNodeInterface {
     }
 
     // MSWasm - get local handle
-    default MSWasmHandle getHandle(VirtualFrame frame, int slot) {
+    default Handle getHandle(VirtualFrame frame, int slot) {
         try {
-            return (MSWasmHandle) frame.getObject(codeEntry().localSlot(slot));
+            return (Handle) frame.getObject(codeEntry().localSlot(slot));
         } catch (FrameSlotTypeException e) {
             throw new RuntimeException(e);
         }
@@ -108,7 +108,7 @@ public interface WasmNodeInterface {
     }
 
     // MSWasm - set local handle
-    default void setHandle(VirtualFrame frame, int slot, MSWasmHandle value) {
+    default void setHandle(VirtualFrame frame, int slot, Handle value) {
         frame.setObject(codeEntry().localSlot(slot), value);
     }
 
@@ -131,7 +131,7 @@ public interface WasmNodeInterface {
     }
 
     // MSWasm - push local handle
-    default void pushHandle(VirtualFrame frame, int slot, MSWasmHandle value) {
+    default void pushHandle(VirtualFrame frame, int slot, Handle value) {
         frame.setObject(codeEntry().stackSlot(slot), value);
     }
 
@@ -156,9 +156,9 @@ public interface WasmNodeInterface {
     }
 
     // MSWasm - pop local handle
-    default MSWasmHandle popHandle(VirtualFrame frame, int slot) {
+    default Handle popHandle(VirtualFrame frame, int slot) {
         try {
-            return (MSWasmHandle)frame.getObject(codeEntry().stackSlot(slot));
+            return (Handle)frame.getObject(codeEntry().stackSlot(slot));
         } catch (FrameSlotTypeException e) {
             throw new RuntimeException(e);
         }

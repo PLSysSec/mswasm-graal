@@ -44,7 +44,7 @@ import java.util.List;
 import java.util.ArrayList;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 
-import jdk.internal.org.objectweb.asm.Handle;
+import org.graalvm.wasm.mswasm.Handle;
 
 public class GlobalRegistry {
     private static final int INITIAL_GLOBALS_SIZE = 2048;
@@ -102,7 +102,7 @@ public class GlobalRegistry {
     }
 
     // MSWasm - load global handle
-    public MSWasmHandle loadAsHandle(int address) {
+    public Handle loadAsHandle(int address) {
         int index = (int) globals[address];
         return handles.get(index);
     }
@@ -132,7 +132,7 @@ public class GlobalRegistry {
     }
 
     // MSWasm - store global handle
-    public void storeHandle(int address, MSWasmHandle value) {
+    public void storeHandle(int address, Handle value) {
         globals[address] = handles.size();
         handles.add(new Handle(value));
     }

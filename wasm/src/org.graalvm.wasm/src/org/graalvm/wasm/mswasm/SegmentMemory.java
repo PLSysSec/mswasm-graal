@@ -4,7 +4,7 @@ import java.util.Map;
 import java.util.HashMap;
 
 public class SegmentMemory {
-    private Map<MSWasmHandle,SegmentValue> segments;
+    private Map<Handle,SegmentValue> segments;
     int size;
 
     public SegmentMemory() {
@@ -17,7 +17,7 @@ public class SegmentMemory {
     }
 
     // Return true iff store operation is successful. Prohibits null values
-    public boolean storeToSegment(MSWasmHandle handle, Object value) {
+    public boolean storeToSegment(Handle handle, Object value) {
         if ( ! handle.isValid() || value == null) {
             return false;
         }
@@ -26,7 +26,7 @@ public class SegmentMemory {
             size = Math.max(size, handle.getBound());
         }
 
-        if (value instanceof MSWasmHandle) {
+        if (value instanceof Handle) {
             segments.put(handle, new SegmentValue(value, SegmentType.HANDLE_SEGMENT));
         } else {
             segments.put(handle, new SegmentValue(value, SegmentType.DATA_SEGMENT));
@@ -36,16 +36,16 @@ public class SegmentMemory {
     }
 
     // Return null if load operation is unsuccessful
-    public Object loadFromSegment(MSWasmHandle handle) {
+    public Object loadFromSegment(Handle handle) {
         if ( ! handle.isValid() || ! segments.containsKey(handle)) {
             return null;
         }
 
         SegmentValue storedValue = segments.get(handle);
 
-        if (storedValue.getValue() instanceof MSWasmHandle && 
+        if (storedValue.getValue() instanceof Handle && 
             storedValue.getType() == SegmentType.DATA_SEGMENT) {
-            MSWasmHandle result = (MSWasmHandle)storedValue.getValue();
+            Handle result = (Handle)storedValue.getValue();
             result.setCorrupted();
             return result;
         }
