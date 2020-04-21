@@ -102,7 +102,7 @@ public class GlobalRegistry {
     }
 
     // MSWasm - load global handle
-    public Handle loadAsHandle(int address) {
+    public MSWasmHandle loadAsHandle(int address) {
         int index = (int) globals[address];
         return handles.get(index);
     }
@@ -132,7 +132,7 @@ public class GlobalRegistry {
     }
 
     // MSWasm - store global handle
-    public void storeHandle(int address, Handle value) {
+    public void storeHandle(int address, MSWasmHandle value) {
         globals[address] = handles.size();
         handles.add(new Handle(value));
     }

@@ -213,6 +213,17 @@ import static org.graalvm.wasm.constants.Instructions.NOP;
 import static org.graalvm.wasm.constants.Instructions.RETURN;
 import static org.graalvm.wasm.constants.Instructions.SELECT;
 import static org.graalvm.wasm.constants.Instructions.UNREACHABLE;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_STORE;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE;
+import static org.graalvm.wasm.constants.Instructions.NEW_SEGMENT;
+import static org.graalvm.wasm.constants.Instructions.FREE_SEGMENT;
+import static org.graalvm.wasm.constants.Instructions.SEGMENT_SLICE;
+import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_LOAD;
+import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_STORE;
+import static org.graalvm.wasm.constants.Instructions.HANDLE_ADD;
+import static org.graalvm.wasm.constants.Instructions.HANDLE_SUB;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerAsserts;
