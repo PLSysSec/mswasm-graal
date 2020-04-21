@@ -985,7 +985,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             // MSWasm
                             stackPointer--;
                             Handle value = popHandle(frame, stackPointer);
-                            int address = module.symbolTable().globalAddress(index);
+                            int address = module().symbolTable().globalAddress(index);
                             trace("global.set %d, value = " + value, index);
                             break; 
                         }
