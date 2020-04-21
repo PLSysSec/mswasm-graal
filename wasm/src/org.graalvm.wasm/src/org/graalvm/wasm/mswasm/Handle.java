@@ -65,6 +65,7 @@ public class Handle {
         return ! isCorrupted && base + offset <= bound && base + offset >= base;
     }
 
+    /* MSWASM-TODO: remove?
     // Converts to long containing base & offset
     public long convertToLongBaseOffset() {
         return ((long)base << 32) | ((long)offset);
@@ -81,5 +82,5 @@ public class Handle {
         int bound = (int) (boundIsC >> 32);
         boolean isCorrupted = (boolean) boundIsC;
         return new Handle(base, offset, bound, isCorrupted);
-    }
+    }*/
 }

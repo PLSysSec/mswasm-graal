@@ -743,7 +743,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = getHandle(frame, index);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
-                            trace("local.get %d, value = " + hresult, index);
+                            trace("local.get %d, value = " + value, index);
                             break; 
                         }
                         default: {

@@ -161,6 +161,7 @@ public interface WasmNodeInterface {
             return (Handle)frame.getObject(codeEntry().stackSlot(slot));
         } catch (FrameSlotTypeException e) {
             throw new RuntimeException(e);
+        }
     }
 
 }
