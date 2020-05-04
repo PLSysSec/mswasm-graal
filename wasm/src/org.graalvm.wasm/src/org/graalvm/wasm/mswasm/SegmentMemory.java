@@ -16,6 +16,41 @@ public class SegmentMemory {
         return size;
     }
 
+    public Handle makeSegment(int segSize) {
+        Handle result = new Handle(size, 0, segSize, false);
+        if ( ! segments.containsKey(result)) {
+            segments.put(result, new SegmentValue(null, SegmentType.DATA_SEGMENT));
+        }
+        return result;
+    }
+
+    public Handle shiftSegment(Handle handle, int offset) {
+        Handle result = new Handle(handle.getBase(), handle.getOffset() + offset,
+                                   handle.getBound(), false);
+        if ( ! segments.containsKey(result)) {
+            segments.put(result, new SegmentValue(null, SegmentType.DATA_SEGMENT));
+        }
+        return result;
+    }
+
+    public boolean freeSegment(Handle handle) {
+        if ( ! segments.containsKey(handle)) {
+            return false;
+        }
+        segments.remove(handle);
+        return true;
+    }
+
+    public Handle sliceSegment(Handle handle, int base, int bound) {
+        Handle result = new Handle(Math.max(handle.getBase(), base), handle.getOffset(),
+                                   Math.min(handle.getBound(), bound), false);
+
+        if ( ! segments.containsKey(result)) {
+            segments.put(result, new SegmentValue(null, SegmentType.DATA_SEGMENT));
+        }
+        return result;
+    }
+
     // Return true iff store operation is successful. Prohibits null values
     public boolean storeToSegment(Handle handle, Object value) {
         if ( ! handle.isValid() || value == null) {

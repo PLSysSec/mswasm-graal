@@ -868,18 +868,34 @@ public class BinaryParser extends BinaryStreamParser {
                     state.pop();
                     state.push();
                     break;
-                case Instructions.I32_SEGMENT_LOAD:
-                case Instructions.I64_SEGMENT_LOAD:
+                // MSWasm instructions
                 case Instructions.I32_SEGMENT_STORE:
                 case Instructions.I64_SEGMENT_STORE:
-                case Instructions.NEW_SEGMENT:
-                case Instructions.FREE_SEGMENT:
-                case Instructions.SEGMENT_SLICE:
-                case Instructions.HANDLE_SEGMENT_LOAD:
                 case Instructions.HANDLE_SEGMENT_STORE:
+                    state.pop();
+                    state.pop();
+                    break;
+                case Instructions.I32_SEGMENT_LOAD:
+                case Instructions.I64_SEGMENT_LOAD:
+                case Instructions.HANDLE_SEGMENT_LOAD:
+                case Instructions.NEW_SEGMENT:
+                    state.pop();
+                    state.push();
+                    break;
+                case Instructions.FREE_SEGMENT:
+                    state.pop();
+                    break;
+                case Instructions.SEGMENT_SLICE:
+                    state.pop();
+                    state.pop();
+                    state.pop();
+                    state.push();
+                    break;
                 case Instructions.HANDLE_ADD:
                 case Instructions.HANDLE_SUB:
-                    // MSWASM-TODO
+                    state.pop();
+                    state.pop();
+                    state.push();
                     break;
                 default:
                     Assert.fail(Assert.format("Unknown opcode: 0x%02x", opcode));

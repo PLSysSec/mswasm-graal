@@ -38,7 +38,8 @@ public class Handle {
 
     @Override
     public int hashCode() {
-        return this.toString().hashCode();
+        String eq = "" + base + " " + offset + " " + bound;
+        return eq.hashCode();
     }
 
     public int getOffset() {
