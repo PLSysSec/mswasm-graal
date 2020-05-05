@@ -2545,6 +2545,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer++;
                     trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, 
                           base, bound);
+                    break;
                 }
                 case HANDLE_SEGMENT_LOAD: {
                     // MSWasm
@@ -2583,22 +2584,24 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
                     stackPointer--;
-                    int offset = popInt(frame, stackPointer);
+                    int shift = popInt(frame, stackPointer);
 
-                    Handle result = context.segmentMemory().shiftSegment(handle, offset);
+                    Handle result = context.segmentMemory().shiftSegment(handle, shift);
                     pushHandle(frame, stackPointer, result);
-                    trace("push handle.add %d [i32] ; " +_handle + " --> " + result);
+                    trace("push handle.add %d [i32] ; " + handle + " --> " + result, shift);
+                    break;
                 }
                 case HANDLE_SUB: {
                     // MSWasm
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
                     stackPointer--;
-                    int offset = popInt(frame, stackPointer);
+                    int shift = popInt(frame, stackPointer);
 
-                    Handle result = context.segmentMemory().shiftSegment(handle, -1 * offset);
+                    Handle result = context.segmentMemory().shiftSegment(handle, -1 * shift);
                     pushHandle(frame, stackPointer, result);
-                    trace("push handle.sub %d [i32] ; " +_handle + " --> " + result);
+                    trace("push handle.sub %d [i32] ; " + handle + " --> " + result, shift);
+                    break;
                 }
                 default:
                     Assert.fail(Assert.format("Unknown opcode: 0x%02X", opcode));

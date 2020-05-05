@@ -58,6 +58,9 @@ import org.graalvm.wasm.WasmContext;
 import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.WasmVoidResult;
 
+//mswasm
+import org.graalvm.wasm.mswasm.Handle;
+
 @NodeInfo(language = "wasm", description = "The root node of all WebAssembly functions")
 public class WasmRootNode extends RootNode implements WasmNodeInterface {
 
@@ -186,11 +189,13 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
                     frame.setDouble(slot, argument);
                     break;
                 }
-                case Handle: {
+                case Object: {
                     // MSWasm
-                    Handle argument = (Handle) args[i];
-                    trace("argument: " + argument);
-                    frame.setObject(slot, argument);
+                    if (args[i] instanceof Handle) {
+                        Handle argument = (Handle) args[i];
+                        trace("argument: " + argument);
+                        frame.setObject(slot, argument);
+                    }
                     break;
                 }
             }
@@ -217,7 +222,7 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
                     break;
                 case ValueTypes.HANDLE_TYPE:
                     // MSWasm
-                    body.setHandle(frame, i, 0);
+                    body.setHandle(frame, i, null);
                     break;
             }
         }
