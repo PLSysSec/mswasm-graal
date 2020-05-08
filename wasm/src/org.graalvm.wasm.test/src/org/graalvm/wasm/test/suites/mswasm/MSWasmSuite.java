@@ -49,13 +49,15 @@ import java.util.Arrays;
 import java.util.Collection;
 
 import org.graalvm.wasm.utils.cases.WasmCase;
-import org.graalvm.wasm.utils.cases.WasmStringCase;
+import org.graalvm.wasm.utils.cases.WasmBinaryCase;
 import org.junit.Test;
 
 import org.graalvm.wasm.test.WasmSuiteBase;
 
+import java.util.Properties;
+
 public class MSWasmSuite extends WasmSuiteBase {
-    private WasmStringCase[] testCases = {
+    private WasmBinaryCase[] testCases = {
                     WasmCase.create("STORE_AND_LOAD", WasmCase.expected(0xfedc6543),
                                     parseWasmFile("mswasm_store-load.wasm"),
                                     null, new Properties()), 
@@ -75,6 +77,9 @@ public class MSWasmSuite extends WasmSuiteBase {
             return binStr.toString().getBytes();
 
         } catch (RuntimeException e) {
+            return new byte[0];
+        } catch (FileNotFoundException e){
+            e.printStackTrace();
             return new byte[0];
         }
     }
