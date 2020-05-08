@@ -49,19 +49,24 @@ import java.util.Arrays;
 import java.util.Collection;
 
 import org.graalvm.wasm.utils.cases.WasmCase;
-import org.graalvm.wasm.utils.cases.WasmStringCase;
+import org.graalvm.wasm.utils.cases.WasmBinaryCase;
 import org.junit.Test;
 
 import org.graalvm.wasm.test.WasmSuiteBase;
+import java.io.InputStream;
+import java.io.FileInputStream;
+
+import java.util.Properties;
 
 public class MSWasmSuite extends WasmSuiteBase {
-    private WasmStringCase[] testCases = {
+    private WasmBinaryCase[] testCases = {
                     WasmCase.create("STORE_AND_LOAD", WasmCase.expected(0xfedc6543),
-                                    parseWasmFile("mswasm_store-load.wasm"),
+                                    parseWasmFile("./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/mswasm_store-load.wasm"),
                                     null, new Properties()), 
     };
 
     private byte[] parseWasmFile(String fileName) {
+        /*
         try {
             File file = new File(fileName);
             Scanner in = new Scanner(file);
@@ -71,11 +76,22 @@ public class MSWasmSuite extends WasmSuiteBase {
                 binStr.append(in.next());
             }
             in.close();
+            */
 
-            return binStr.toString().getBytes();
+        try {
+            File file = new File(fileName);
+            InputStream input = new FileInputStream(file);
+            byte[] bytes = new byte[(int) file.length()];
+            input.read(bytes);
+            input.close();
+            
+            System.out.println("byte arr: " + bytes);
 
-        } catch (RuntimeException e) {
-            return new byte[0];
+            System.out.println("byte arr length: " + bytes.length);
+            return bytes;
+        } catch (RuntimeException | IOException e) {
+            e.printStackTrace();
+            return new byte[0];  
         }
     }
                     
