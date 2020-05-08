@@ -57,20 +57,26 @@ import org.graalvm.wasm.test.WasmSuiteBase;
 public class MSWasmSuite extends WasmSuiteBase {
     private WasmStringCase[] testCases = {
                     WasmCase.create("STORE_AND_LOAD", WasmCase.expected(0xfedc6543),
-                                    parseWasmFile("mswasm_store-load.wasm")), 
+                                    parseWasmFile("mswasm_store-load.wasm"),
+                                    null, new Properties()), 
     };
 
     private byte[] parseWasmFile(String fileName) {
-        File file = new File(fileName);
-        Scanner in = new Scanner(file);
-        StringBuilder binStr = new StringBuilder();
+        try {
+            File file = new File(fileName);
+            Scanner in = new Scanner(file);
+            StringBuilder binStr = new StringBuilder();
 
-        while (in.hasNext()) {
-            binStr.append(in.next());
+            while (in.hasNext()) {
+                binStr.append(in.next());
+            }
+            in.close();
+
+            return binStr.toString().getBytes();
+
+        } catch (RuntimeException e) {
+            return new byte[0];
         }
-        in.close();
-
-        return binStr.toString().getBytes();
     }
                     
     @Override
