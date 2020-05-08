@@ -38,54 +38,33 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-package org.graalvm.wasm.test;
+package org.graalvm.wasm.test.suites.mswasm;
 
-import org.graalvm.wasm.test.suites.arithmetic.Float32Suite;
-import org.graalvm.wasm.test.suites.arithmetic.Float64Suite;
-import org.graalvm.wasm.test.suites.arithmetic.Integer32Suite;
-import org.graalvm.wasm.test.suites.arithmetic.Integer64Suite;
-import org.graalvm.wasm.test.suites.control.BlockWithLocalsSuite;
-import org.graalvm.wasm.test.suites.control.BranchBlockSuite;
-import org.graalvm.wasm.test.suites.control.IfThenElseSuite;
-import org.graalvm.wasm.test.suites.control.LoopBlockSuite;
-import org.graalvm.wasm.test.suites.control.SimpleBlockSuite;
-import org.graalvm.wasm.test.suites.linker.LinkerSuite;
-import org.graalvm.wasm.test.suites.memory.MemorySuite;
-import org.graalvm.wasm.test.suites.wasi.WasiSdkSuite;
-import org.graalvm.wasm.test.suites.control.MultipleFunctionsSuite;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collection;
+
+import org.graalvm.wasm.utils.cases.WasmCase;
+import org.graalvm.wasm.utils.cases.WasmStringCase;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
 
-import org.graalvm.wasm.test.suites.webassembly.EmscriptenSuite;
-import org.graalvm.wasm.test.suites.webassembly.IssueSuite;
+import org.graalvm.wasm.test.WasmSuiteBase;
 
-//MS-Wasm
-import org.graalvm.wasm.test.suites.mswasm.MSWasmSuite;
+public class MSWasmSuite extends WasmSuiteBase {
+    private WasmStringCase[] testCases = {
+                    WasmCase.create("STORE_AND_LOAD", WasmCase.expected(0xfedc6543),
+                                    "(module (memory 1) (func $store_and_load (param $h handle) (param $i i32) (result i32) (i32.segment_store (get_local $h) (get_local $i)) (i32.segment_load (get_local $h)) (free_segment (get_local $h))) (func (export \"_main\") (result i32)) (call $store_and_load (new_segment (i32.const 8)) (i32.const 0xfedc6543)))"), 
+    };
+                    
+    @Override
+    protected Collection<? extends WasmCase> collectStringTestCases() {
+        return Arrays.asList(testCases);
+    }
 
-@RunWith(Suite.class)
-@Suite.SuiteClasses({
-                Integer32Suite.class,
-                Integer64Suite.class,
-                Float32Suite.class,
-                Float64Suite.class,
-                SimpleBlockSuite.class,
-                BlockWithLocalsSuite.class,
-                BranchBlockSuite.class,
-                LoopBlockSuite.class,
-                IfThenElseSuite.class,
-                MemorySuite.class,
-                IssueSuite.class,
-                MultipleFunctionsSuite.class,
-                EmscriptenSuite.class,
-                WasiSdkSuite.class,
-                LinkerSuite.class,
-                WasmPolyglotTestSuite.class,
-                MSWasmSuite.class,
-})
-public class WasmTestSuite {
+    @Override
     @Test
-    public void test() {
+    public void test() throws IOException {
         // This is here just to make mx aware of the test suite class.
+        super.test();
     }
 }
