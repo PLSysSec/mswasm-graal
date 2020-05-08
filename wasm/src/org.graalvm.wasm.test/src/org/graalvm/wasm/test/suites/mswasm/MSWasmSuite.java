@@ -40,6 +40,10 @@
  */
 package org.graalvm.wasm.test.suites.mswasm;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.util.Scanner;
+
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
@@ -53,8 +57,21 @@ import org.graalvm.wasm.test.WasmSuiteBase;
 public class MSWasmSuite extends WasmSuiteBase {
     private WasmStringCase[] testCases = {
                     WasmCase.create("STORE_AND_LOAD", WasmCase.expected(0xfedc6543),
-                                    "(module (memory 1) (func $store_and_load (param $h handle) (param $i i32) (result i32) (i32.segment_store (get_local $h) (get_local $i)) (i32.segment_load (get_local $h)) (free_segment (get_local $h))) (func (export \"_main\") (result i32)) (call $store_and_load (new_segment (i32.const 8)) (i32.const 0xfedc6543)))"), 
+                                    parseWasmFile("mswasm_store-load.wasm")), 
     };
+
+    private byte[] parseWasmFile(String fileName) {
+        File file = new File(fileName);
+        Scanner in = new Scanner(file);
+        StringBuilder binStr = new StringBuilder();
+
+        while (in.hasNext()) {
+            binStr.append(in.next());
+        }
+        in.close();
+
+        return binStr.toString().getBytes();
+    }
                     
     @Override
     protected Collection<? extends WasmCase> collectStringTestCases() {
