@@ -2487,16 +2487,19 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     int value = popInt(frame, stackPointer);
                     stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    throw new WasmTrap(this, "i32.segment_store " + value + ", " + key);
+                    String init = "i32.segment_store " + value + ", " + key;
 
-                    /*boolean success = context.segmentMemory()
+                    boolean success = context.segmentMemory()
                                              .storeToSegment(key, new Integer(value));
+                    throw new WasmTrap(this,
+                                        init + " // " + success + ": (" + value + ", " + key + ")");
 
-                    if ( ! success) {
+                    /*if ( ! success) {
                         throw new WasmTrap(this,
                                         "i32.segment_store failed: (" + key + ", " + value + ")");
                     }
-                    break;*/
+
+                    //break;*/
                 }
                 case I64_SEGMENT_STORE: {
                     // MSWasm
