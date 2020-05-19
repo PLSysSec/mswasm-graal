@@ -16,11 +16,13 @@ public class SegmentMemory {
         return size;
     }
 
-    public Handle makeSegment(int segSize) {
+    public Handle newSegment(int segSize) {
         Handle result = new Handle(size, 0, segSize, false);
         if ( ! segments.containsKey(result)) {
             segments.put(result, new SegmentValue(null, SegmentType.DATA_SEGMENT));
+            size = size + segSize;
         }
+
         return result;
     }
 

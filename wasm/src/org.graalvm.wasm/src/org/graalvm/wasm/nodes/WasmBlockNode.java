@@ -2514,7 +2514,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // MSWasm
                     stackPointer--;
                     int segSize = popInt(frame, stackPointer);
-                    Handle result = context.segmentMemory().makeSegment(segSize);
+                    Handle result = context.segmentMemory().newSegment(segSize);
                     pushHandle(frame, stackPointer, result);
                     stackPointer++;
                     trace("push new_segment " + segSize + " --> " + result);
