@@ -2545,9 +2545,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer++;
                     trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, 
                           base, bound); 
-
-                    throw new WasmTrap(this, "sliceSegment " + handle + " " + base + " " + bound + " --> " + result);
-                    //break;
+                    break;
                 }
                 case HANDLE_SEGMENT_LOAD: {
                     // MSWasm
