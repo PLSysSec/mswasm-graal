@@ -59,35 +59,30 @@ import java.io.FileInputStream;
 import java.util.Properties;
 
 public class MSWasmSuite extends WasmSuiteBase {
+    private String folderPath = "./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/tests/";
+
     private WasmBinaryCase[] testCases = {
-                    WasmCase.create("STORE_AND_LOAD", WasmCase.expected(0xfedc6543),
-                                    parseWasmFile("./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/mswasm_store-load.wasm"),
+                    WasmCase.create("STORE_AND_LOAD_1", WasmCase.expected(10),
+                                    parseWasmFile(folderPath + "mswasm_store-load_1.wasm"),
+                                    null, new Properties()), 
+                    WasmCase.create("STORE_AND_LOAD_2", WasmCase.expected(0xfedc6543),
+                                    parseWasmFile(folderPath + "mswasm_store-load_2.wasm"),
+                                    null, new Properties()), 
+                    WasmCase.create("ADD_NO_FREE", WasmCase.expected(11),
+                                    parseWasmFile(folderPath + "mswasm_add_1_no_free.wasm"),
+                                    null, new Properties()), 
+                     WasmCase.create("ADD", WasmCase.expected(11),
+                                    parseWasmFile(folderPath + "mswasm_add_1.wasm"),
                                     null, new Properties()), 
     };
 
     private byte[] parseWasmFile(String fileName) {
-        /*
-        try {
-            File file = new File(fileName);
-            Scanner in = new Scanner(file);
-            StringBuilder binStr = new StringBuilder();
-
-            while (in.hasNext()) {
-                binStr.append(in.next());
-            }
-            in.close();
-            */
-
         try {
             File file = new File(fileName);
             InputStream input = new FileInputStream(file);
             byte[] bytes = new byte[(int) file.length()];
             input.read(bytes);
             input.close();
-            
-            System.out.println("byte arr: " + bytes);
-
-            System.out.println("byte arr length: " + bytes.length);
             return bytes;
         } catch (RuntimeException | IOException e) {
             e.printStackTrace();
