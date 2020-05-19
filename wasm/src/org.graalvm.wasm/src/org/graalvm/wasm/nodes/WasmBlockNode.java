@@ -755,8 +755,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = getHandle(frame, index);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
-                            trace("local.get %d, value = " + value, index);
-                            break; 
+
+                            throw new WasmTrap(this, "get_local handle " + value);
+                            //trace("local.get %d, value = " + value, index);
+                            //break; 
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -809,8 +811,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             setHandle(frame, index, value);
 
                             throw new WasmTrap(this, "set_local handle " + value);
-                            //trace("local.set %d, value = " + value, index);
-                            //break; 
+                            trace("local.set %d, value = " + value, index);
+                            break; 
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
