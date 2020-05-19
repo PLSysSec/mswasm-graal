@@ -50,6 +50,7 @@ import java.util.Collection;
 
 import org.graalvm.wasm.utils.cases.WasmCase;
 import org.graalvm.wasm.utils.cases.WasmBinaryCase;
+import org.graalvm.wasm.utils.cases.WasmCaseData;
 import org.junit.Test;
 
 import org.graalvm.wasm.test.WasmSuiteBase;
@@ -92,7 +93,12 @@ public class MSWasmSuite extends WasmSuiteBase {
                     WasmCase.create("HANDLEADDSUB_2", WasmCase.expected(-19),
                                     parseWasmFile(folderPath + "mswasm_handleaddsub_2.wasm"),
                                     null, new Properties()),
-
+                    WasmCase.create("SEGMENTSLICE_1", WasmCase.expected(10),
+                                    parseWasmFile(folderPath + "mswasm_segmentslice_1.wasm"),
+                                    null, new Properties()),
+                    WasmCase.create("SEGMENTSLICE_2", WasmCase.expectedThrows("out-of-bounds handle", WasmCaseData.ErrorType.Runtime),
+                                    parseWasmFile(folderPath + "mswasm_segmentslice_2.wasm"),
+                                    null, new Properties()),
     };
 
     private byte[] parseWasmFile(String fileName) {
