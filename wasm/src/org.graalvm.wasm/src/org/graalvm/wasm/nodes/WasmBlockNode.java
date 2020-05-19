@@ -810,7 +810,6 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = popHandle(frame, stackPointer);
                             setHandle(frame, index, value);
 
-                            throw new WasmTrap(this, "set_local handle " + value);
                             trace("local.set %d, value = " + value, index);
                             break; 
                         }
