@@ -2588,6 +2588,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     Handle result = context.segmentMemory().shiftSegment(handle, shift);
                     pushHandle(frame, stackPointer, result);
+                    stackPointer++;
                     trace("push handle.add %d [i32] ; " + handle + " --> " + result, shift);
                     break;
                 }
@@ -2600,6 +2601,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     Handle result = context.segmentMemory().shiftSegment(handle, -1 * shift);
                     pushHandle(frame, stackPointer, result);
+                    stackPointer++;
                     trace("push handle.sub %d [i32] ; " + handle + " --> " + result, shift);
                     break;
                 }
