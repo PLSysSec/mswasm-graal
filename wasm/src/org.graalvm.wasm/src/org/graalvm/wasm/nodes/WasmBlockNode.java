@@ -2542,12 +2542,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     throw new WasmTrap(this, "sliceSegment: " + handle);
 
+                    /*
                     Handle result = context.segmentMemory().sliceSegment(handle, base, bound);
                     pushHandle(frame, stackPointer, result);
                     stackPointer++;
                     trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, 
-                          base, bound);
-                    break;
+                          base, bound); 
+                    break; */
                 }
                 case HANDLE_SEGMENT_LOAD: {
                     // MSWasm
