@@ -2491,15 +2491,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     boolean success = context.segmentMemory()
                                              .storeToSegment(key, new Integer(value));
-                    throw new WasmTrap(this,
-                                        init + " // " + success + ": (" + value + ", " + key + ")");
-
-                    /*if ( ! success) {
+                    if ( ! success) {
                         throw new WasmTrap(this,
                                         "i32.segment_store failed: (" + key + ", " + value + ")");
                     }
 
-                    //break;*/
+                    break;
                 }
                 case I64_SEGMENT_STORE: {
                     // MSWasm
