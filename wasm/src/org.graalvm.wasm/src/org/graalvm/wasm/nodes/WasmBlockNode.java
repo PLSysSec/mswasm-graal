@@ -2540,6 +2540,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
 
+                    throw new WasmTrap(this, "sliceSegment: " + handle);
+
                     Handle result = context.segmentMemory().sliceSegment(handle, base, bound);
                     pushHandle(frame, stackPointer, result);
                     stackPointer++;
