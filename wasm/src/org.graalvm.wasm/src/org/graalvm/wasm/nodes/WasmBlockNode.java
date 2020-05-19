@@ -2551,7 +2551,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle handle = popHandle(frame, stackPointer);
                     boolean success = context.segmentMemory().freeSegment(handle);
 
-                    mswasmErr += "freeSegment " + handle + " --> " + success;
+                    mswasmErr += "freeSegment " + handle + " --> " + success + "\n";
 
                     if ( ! success) {
                         throw new WasmTrap(this,

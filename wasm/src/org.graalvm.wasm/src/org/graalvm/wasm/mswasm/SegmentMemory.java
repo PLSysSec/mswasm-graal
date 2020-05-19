@@ -45,8 +45,8 @@ public class SegmentMemory {
     }
 
     public Handle sliceSegment(Handle handle, int base, int bound) {
-        Handle result = new Handle(Math.max(handle.getBase(), base), handle.getOffset(),
-                                   Math.min(handle.getBound(), bound), false);
+        Handle result = new Handle(handle.getBase() + base, handle.getOffset(),
+                                   handle.getBound() - bound, false);
 
         if ( ! segments.containsKey(result)) {
             segments.put(result, new SegmentValue(null, SegmentType.DATA_SEGMENT));
