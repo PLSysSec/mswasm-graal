@@ -63,7 +63,7 @@ public class Handle {
     }
 
     public boolean isValid() {
-        return ! isCorrupted && base + offset <= bound && base + offset >= base;
+        return ! isCorrupted && base + offset <= bound;
     }
 
     /* MSWASM-TODO: remove?

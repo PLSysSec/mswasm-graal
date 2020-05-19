@@ -55,7 +55,7 @@ public class SegmentMemory {
 
     // Return true iff store operation is successful. Prohibits null values
     public boolean storeToSegment(Handle handle, Object value) {
-        if ( ! handle.isValid() || value == null) {
+        if ( ! handle.isValid()/* || value == null*/) {
             return false;
         }
 
