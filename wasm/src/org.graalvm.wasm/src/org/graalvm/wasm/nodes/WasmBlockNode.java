@@ -755,10 +755,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = getHandle(frame, index);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
-
-                            throw new WasmTrap(this, "get_local handle " + value);
-                            //trace("local.get %d, value = " + value, index);
-                            //break; 
+                            trace("local.get %d, value = " + value, index);
+                            break; 
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -2489,14 +2487,16 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     int value = popInt(frame, stackPointer);
                     stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    boolean success = context.segmentMemory()
+                    throw new WasmTrap(this, "i32.segment_store " + value + ", " + key);
+
+                    /*boolean success = context.segmentMemory()
                                              .storeToSegment(key, new Integer(value));
 
                     if ( ! success) {
                         throw new WasmTrap(this,
                                         "i32.segment_store failed: (" + key + ", " + value + ")");
                     }
-                    break;
+                    break;*/
                 }
                 case I64_SEGMENT_STORE: {
                     // MSWasm
