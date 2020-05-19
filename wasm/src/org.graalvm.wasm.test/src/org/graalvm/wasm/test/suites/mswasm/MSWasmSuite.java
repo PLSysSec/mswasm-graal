@@ -90,12 +90,16 @@ public class MSWasmSuite extends WasmSuiteBase {
                     WasmCase.create("HANDLEADDSUB_2", WasmCase.expected(-19),
                                     parseWasmFile(folderPath + "mswasm_handleaddsub_2.wasm"),
                                     null, new Properties()),
+                    WasmCase.create("SEGMENTSLICE_0", WasmCase.expected(10),
+                                    parseWasmFile(folderPath + "mswasm_segmentslice_0.wasm"),
+                                    null, new Properties()),
                     WasmCase.create("SEGMENTSLICE_1", WasmCase.expected(10),
                                     parseWasmFile(folderPath + "mswasm_segmentslice_1.wasm"),
                                     null, new Properties()),
                     WasmCase.create("SEGMENTSLICE_2", WasmCase.expectedThrows("out-of-bounds handle", WasmCaseData.ErrorType.Runtime),
                                     parseWasmFile(folderPath + "mswasm_segmentslice_2.wasm"),
                                     null, new Properties()),
+                                    /*
                     WasmCase.create("HANDLELOADSTORE", WasmCase.expected(17),
                                     parseWasmFile(folderPath + "mswasm_handleloadstore_1.wasm"),
                                     null, new Properties()),
@@ -113,7 +117,7 @@ public class MSWasmSuite extends WasmSuiteBase {
                                     null, new Properties()),
                     WasmCase.create("HANDLELOADSTOREADD_TRAP", WasmCase.expectedThrows("invalid handle load", WasmCaseData.ErrorType.Runtime),
                                     parseWasmFile(folderPath + "mswasm_handleloadstoreadd_trap.wasm"),
-                                    null, new Properties()),
+                                    null, new Properties()), */
         
     };
 
