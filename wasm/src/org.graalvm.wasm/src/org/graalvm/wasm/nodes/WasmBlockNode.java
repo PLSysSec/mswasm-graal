@@ -2583,9 +2583,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle x = popHandle(frame, stackPointer);
                     Object value = context.segmentMemory().loadFromSegment(x);
                     
-                    if (value == null || ! (value instanceof Handle)) { // load failed
+                    if (value == null) { // load failed
                         throw new WasmTrap(this,
                                     "handle.segment_load failed due to invalid handle: " + x);
+                    } else if (! (value instanceof Handle)) {
+                        throw new WasmTrap(this,
+                                    "handle.segment_load failed due to non-handle segment");
                     }
 
                     Handle result = (Handle)value;
