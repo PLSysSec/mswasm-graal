@@ -96,6 +96,25 @@ public class MSWasmSuite extends WasmSuiteBase {
                     WasmCase.create("SEGMENTSLICE_2", WasmCase.expectedThrows("out-of-bounds handle", WasmCaseData.ErrorType.Runtime),
                                     parseWasmFile(folderPath + "mswasm_segmentslice_2.wasm"),
                                     null, new Properties()),
+                    WasmCase.create("HANDLELOADSTORE", WasmCase.expected(17),
+                                    parseWasmFile(folderPath + "mswasm_handleloadstore_1.wasm"),
+                                    null, new Properties()),
+                    WasmCase.create("FREESEGMENT_ADD", WasmCase.expected(24),
+                                    parseWasmFile(folderPath + "mswasm_freesegment_add.wasm"),
+                                    null, new Properties()),
+                    WasmCase.create("FREESEGMENT_TRAP", WasmCase.expectedThrows("segment cannot be freed", WasmCaseData.ErrorType.Runtime),
+                                    parseWasmFile(folderPath + "mswasm_freesegment_trap.wasm"),
+                                    null, new Properties()),
+                    WasmCase.create("HANDLELOADSTOREADD_1", WasmCase.expected(-1),
+                                    parseWasmFile(folderPath + "mswasm_handleloadstoreadd_1.wasm"),
+                                    null, new Properties()),
+                    WasmCase.create("HANDLELOADSTOREADD_2", WasmCase.expected(1040),
+                                    parseWasmFile(folderPath + "mswasm_handleloadstoreadd_2.wasm"),
+                                    null, new Properties()),
+                    WasmCase.create("HANDLELOADSTOREADD_TRAP", WasmCase.expectedThrows("invalid handle load", WasmCaseData.ErrorType.Runtime),
+                                    parseWasmFile(folderPath + "mswasm_handleloadstoreadd_trap.wasm"),
+                                    null, new Properties()),
+        
     };
 
     private byte[] parseWasmFile(String fileName) {
