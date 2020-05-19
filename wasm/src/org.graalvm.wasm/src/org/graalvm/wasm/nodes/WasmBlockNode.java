@@ -2508,8 +2508,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     mswasmErr += "i32.segment_store " + value + " to " + key + " --> " + success + "\n";
 
                     if ( ! success) {
-                        throw new WasmTrap(this,
-                                        "i32.segment_store failed: (" + key + ", " + value + ")");
+                        //throw new WasmTrap(this,
+                         //               "i32.segment_store failed: (" + key + ", " + value + ")");
+                        throw new WasmTrap(this, "FAILURE: " + mswasmErr);
                     }
 
                     break;
@@ -2551,13 +2552,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     boolean success = context.segmentMemory().freeSegment(handle);
 
                     mswasmErr += "freeSegment " + handle + " --> " + success;
-                    throw new WasmTrap(this, mswasmErr);
 
-                    /*if ( ! success) {
+                    if ( ! success) {
                         throw new WasmTrap(this,
                                            "free_segment failed: " + handle + " does not exist");
                     }
-                    break;*/
+                    break;
                 }
                 case SEGMENT_SLICE: {
                     // MSWasm
