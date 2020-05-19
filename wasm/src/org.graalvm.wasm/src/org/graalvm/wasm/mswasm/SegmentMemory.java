@@ -17,7 +17,8 @@ public class SegmentMemory {
     }
 
     public Handle newSegment(int segSize) {
-        Handle result = new Handle(size, 0, segSize, false);
+        Handle result = new Handle(size, 0, size + segSize, false);
+
         if ( ! segments.containsKey(result)) {
             segments.put(result, new SegmentValue(null, SegmentType.DATA_SEGMENT));
             size = size + segSize;
@@ -55,7 +56,7 @@ public class SegmentMemory {
 
     // Return true iff store operation is successful. Prohibits null values
     public boolean storeToSegment(Handle handle, Object value) {
-        if ( ! handle.isValid()/* || value == null*/) {
+        if ( ! handle.isValid() || value == null) {
             return false;
         }
 
