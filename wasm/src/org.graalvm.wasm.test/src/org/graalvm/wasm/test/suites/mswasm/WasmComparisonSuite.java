@@ -18,14 +18,22 @@ import java.io.InputStream;
 import java.io.FileInputStream;
 
 import java.util.Properties;
+import org.graalvm.wasm.utils.SystemProperties;
 
 public class WasmComparisonSuite extends WasmSuiteBase {
     private String folderPath = "./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/wasmTests/";
 
+     private static Properties opts = SystemProperties.createFromOptions(
+                    "zero-memory = false\n" +
+                                    "interpreter-iterations = 0\n" +
+                                    "sync-noinline-iterations = 10\n" +
+                                    "sync-inline-iterations = 10\n" +
+                                    "async-iterations = 10\n");
+
     private WasmBinaryCase[] testCases = {
                     WasmCase.create("ADD_1", WasmCase.expected(11),
                                     parseWasmFile(folderPath + "wasm_add_1.wasm"),
-                                    null, new Properties()), 
+                                    null, opts), 
     };
 
     private byte[] parseWasmFile(String fileName) {
