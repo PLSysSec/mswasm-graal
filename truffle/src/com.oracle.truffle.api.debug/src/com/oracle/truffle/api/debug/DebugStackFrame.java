@@ -40,21 +40,21 @@
  */
 package com.oracle.truffle.api.debug;
 
-import java.util.Iterator;
+import java.util.Objects;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.RootCallTarget;
-import com.oracle.truffle.api.Scope;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.debug.DebugValue.HeapValue;
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameInstance;
 import com.oracle.truffle.api.frame.FrameInstance.FrameAccess;
+import com.oracle.truffle.api.instrumentation.InstrumentableNode;
+import com.oracle.truffle.api.interop.NodeLibrary;
 import com.oracle.truffle.api.nodes.LanguageInfo;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
-import java.util.Objects;
 
 /**
  * Represents a frame in the guest language stack. A guest language stack frame consists of a
@@ -212,26 +212,25 @@ public final class DebugStackFrame {
             node = context.getInstrumentedNode();
         } else {
             node = currentFrame.getCallNode();
-        }
-        LanguageInfo languageInfo = node.getRootNode().getLanguageInfo();
-        if (languageInfo == null) {
-            // no language, no scopes
-            return null;
+            node = InstrumentableNode.findInstrumentableParent(node);
         }
         DebuggerSession session = event.getSession();
         Frame frame = findTruffleFrame(FrameAccess.READ_WRITE);
         try {
-            Iterable<Scope> scopes = session.getDebugger().getEnv().findLocalScopes(node, frame);
-            Iterator<Scope> it = scopes.iterator();
-            if (!it.hasNext()) {
+            if (!NodeLibrary.getUncached().hasScope(node, frame)) {
                 return null;
             }
-            return new DebugScope(it.next(), it, session, event, frame, root);
+            Object scope = NodeLibrary.getUncached().getScope(node, frame, isEnter());
+            return new DebugScope(scope, session, event, node, frame, root);
         } catch (ThreadDeath td) {
             throw td;
         } catch (Throwable ex) {
-            throw new DebugException(session, ex, languageInfo, null, true, null);
+            throw new DebugException(session, ex, root.getLanguageInfo(), null, true, null);
         }
+    }
+
+    private boolean isEnter() {
+        return depth == 0 && SuspendAnchor.BEFORE.equals(event.getSuspendAnchor());
     }
 
     /**
@@ -371,15 +370,16 @@ public final class DebugStackFrame {
         if (currentFrame == null) {
             return context.getInstrumentedNode().getRootNode();
         } else {
-            Node callNode = currentFrame.getCallNode();
-            if (callNode != null) {
-                return callNode.getRootNode();
-            }
-            CallTarget target = currentFrame.getCallTarget();
-            if (target instanceof RootCallTarget) {
-                return ((RootCallTarget) target).getRootNode();
-            }
-            return null;
+            return ((RootCallTarget) currentFrame.getCallTarget()).getRootNode();
+        }
+    }
+
+    RootCallTarget getCallTarget() {
+        SuspendedContext context = getContext();
+        if (currentFrame == null) {
+            return context.getInstrumentedNode().getRootNode().getCallTarget();
+        } else {
+            return (RootCallTarget) currentFrame.getCallTarget();
         }
     }
 

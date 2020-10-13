@@ -42,7 +42,6 @@ import com.oracle.truffle.api.dsl.CachedLanguage;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.InteropException;
 import com.oracle.truffle.api.interop.InteropLibrary;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.library.CachedLibrary;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.llvm.runtime.LLVMContext;
@@ -298,67 +297,6 @@ public final class LLVM80BitFloat implements LLVMArithmetic {
         return fraction >>> (FRACTION_BIT_WIDTH - getUnbiasedExponent() - EXPLICIT_LEADING_ONE_BITS);
     }
 
-    private long compareNoSign(LLVM80BitFloat val) {
-        if (getExponent() != val.getExponent()) {
-            return getExponent() - val.getExponent();
-        } else {
-            return (getFraction() - val.getFraction());
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private LLVM80BitFloat add2(LLVM80BitFloat right) {
-        int leftExponent = getExponent();
-        int rightExponent = right.getExponent();
-        long leftFraction = getFraction();
-        long rightFraction = right.getFraction();
-
-        int shiftAmount = Math.abs(leftExponent - rightExponent);
-        if (leftExponent < rightExponent) {
-            leftFraction >>>= shiftAmount;
-            leftExponent = rightExponent;
-        } else {
-            rightFraction >>>= shiftAmount;
-            rightExponent = leftExponent;
-        }
-        boolean newSign;
-        if (getSign() == right.getSign()) {
-            newSign = getSign();
-        } else {
-            newSign = compareNoSign(right) < 0 ? right.getSign() : getSign();
-        }
-        boolean addition = getSign() == right.getSign();
-        long resultLo;
-        long resultHi;
-        long leftFractionLowerPart = leftFraction & BinaryHelper.getBitMask(Integer.SIZE);
-        long rightFractionLowerPart = rightFraction & BinaryHelper.getBitMask(Integer.SIZE);
-        long leftFractionHigherPart = leftFraction >>> Integer.SIZE;
-        long rightFractionHigherPart = rightFraction >>> Integer.SIZE;
-        if (addition) {
-            resultLo = -leftFractionLowerPart + rightFractionLowerPart;
-            long overFlowLowerPart = resultLo >>> Integer.SIZE;
-            resultHi = leftFractionHigherPart + rightFractionHigherPart + overFlowLowerPart;
-        } else if (getSign()) { // left is negative
-            resultLo = -leftFractionLowerPart + rightFractionLowerPart;
-            long overFlowLowerPart = resultLo >>> Integer.SIZE;
-            resultHi = -leftFractionHigherPart - rightFractionHigherPart - overFlowLowerPart;
-        } else {
-            resultLo = leftFractionLowerPart - rightFractionLowerPart;
-            long overFlowLowerPart = resultLo >>> Integer.SIZE;
-            resultHi = leftFractionHigherPart - rightFractionHigherPart - overFlowLowerPart;
-        }
-        int overFlow = (int) (resultHi >>> Integer.SIZE);
-        if (overFlow > 0) {
-            resultHi = resultHi >>> overFlow;
-            long lostBits = resultHi & overFlow;
-            long shiftedLostBits = lostBits << Integer.SIZE - overFlow;
-            resultLo = resultLo >>> overFlow | shiftedLostBits;
-        }
-        int newExponent = leftExponent + overFlow;
-        long newFraction = resultLo + resultHi << Integer.SIZE;
-        return LLVM80BitFloat.fromRawValues(newSign, newExponent, newFraction);
-    }
-
     public LLVM80BitFloat abs() {
         return LLVM80BitFloat.fromRawValues(false, biasedExponent, fraction);
     }
@@ -482,25 +420,27 @@ public final class LLVM80BitFloat implements LLVMArithmetic {
     }
 
     public byte[] getBytesBigEndian() {
-        ByteBuffer bb = ByteBuffer.allocate(BYTE_WIDTH);
+        byte[] array = new byte[BYTE_WIDTH];
+        ByteBuffer bb = ByteBuffer.wrap(array);
         bb.order(ByteOrder.BIG_ENDIAN);
         short signWithExponent = getExponent();
         short signBit = sign ? (short) bit(Short.SIZE - 1) : 0;
         signWithExponent |= signBit;
         bb.putShort(signWithExponent);
         bb.putLong(getFraction());
-        return bb.array();
+        return array;
     }
 
     public byte[] getBytes() {
-        ByteBuffer bb = ByteBuffer.allocate(BYTE_WIDTH);
+        byte[] array = new byte[BYTE_WIDTH];
+        ByteBuffer bb = ByteBuffer.wrap(array);
         bb.order(ByteOrder.LITTLE_ENDIAN);
         short signWithExponent = getExponent();
         short signBit = sign ? (short) bit(Short.SIZE - 1) : 0;
         signWithExponent |= signBit;
         bb.putLong(getFraction());
         bb.putShort(signWithExponent);
-        return bb.array();
+        return array;
     }
 
     public static LLVM80BitFloat fromBytesBigEndian(byte[] bytes) {
@@ -651,9 +591,9 @@ public final class LLVM80BitFloat implements LLVMArithmetic {
             this.name = name;
         }
 
-        protected TruffleObject createFunction() {
+        protected Object createFunction() {
             LLVMContext context = lookupContextReference(LLVMLanguage.class).get();
-            NFIContextExtension nfiContextExtension = context.getLanguage().getContextExtensionOrNull(NFIContextExtension.class);
+            NFIContextExtension nfiContextExtension = context.getContextExtensionOrNull(NFIContextExtension.class);
             return nfiContextExtension == null ? null : nfiContextExtension.getNativeFunction(context, "__sulong_fp80_" + name, "(UINT64,UINT64,UINT64):VOID");
         }
 
@@ -661,25 +601,25 @@ public final class LLVM80BitFloat implements LLVMArithmetic {
 
         @Specialization(guards = "function != null")
         protected LLVM80BitFloat doCall(LLVM80BitFloat x, LLVM80BitFloat y,
-                        @Cached("createFunction()") TruffleObject function,
+                        @Cached("createFunction()") Object function,
                         @CachedLibrary("function") InteropLibrary nativeExecute,
                         @CachedLanguage LLVMLanguage language) {
             LLVMMemory memory = language.getLLVMMemory();
-            LLVMNativePointer mem = memory.allocateMemory(3 * 16);
+            LLVMNativePointer mem = memory.allocateMemory(this, 3 * 16);
             LLVMNativePointer ptrX = mem;
             LLVMNativePointer ptrY = ptrX.increment(16);
             LLVMNativePointer ptrZ = ptrY.increment(16);
-            memory.put80BitFloat(ptrX, x);
-            memory.put80BitFloat(ptrY, y);
+            memory.put80BitFloat(this, ptrX, x);
+            memory.put80BitFloat(this, ptrY, y);
             try {
                 nativeExecute.execute(function, ptrZ.asNative(), ptrX.asNative(), ptrY.asNative());
-                LLVM80BitFloat z = memory.get80BitFloat(ptrZ);
+                LLVM80BitFloat z = memory.get80BitFloat(this, ptrZ);
                 return z;
             } catch (InteropException e) {
                 CompilerDirectives.transferToInterpreter();
                 throw new AssertionError(e);
             } finally {
-                memory.free(mem);
+                memory.free(this, mem);
             }
         }
 

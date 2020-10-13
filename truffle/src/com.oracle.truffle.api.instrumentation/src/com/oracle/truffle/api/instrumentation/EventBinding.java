@@ -73,12 +73,20 @@ public class EventBinding<T> {
     private final AbstractInstrumenter instrumenter;
     private final T element;
 
+    volatile boolean disposing;
     /* language bindings needs special treatment. */
     private volatile boolean disposed;
 
     EventBinding(AbstractInstrumenter instrumenter, T element) {
+        if (element == null) {
+            throw new NullPointerException();
+        }
         this.instrumenter = instrumenter;
         this.element = element;
+    }
+
+    final AbstractInstrumenter getInstrumenter() {
+        return instrumenter;
     }
 
     /**
@@ -108,9 +116,14 @@ public class EventBinding<T> {
     public synchronized void dispose() {
         CompilerAsserts.neverPartOfCompilation();
         if (!disposed) {
+            disposing = true;
             instrumenter.disposeBinding(this);
             disposed = true;
         }
+    }
+
+    synchronized void setDisposingBulk() {
+        this.disposing = true;
     }
 
     synchronized void disposeBulk() {
@@ -119,14 +132,12 @@ public class EventBinding<T> {
 
     static final class Source<T> extends EventBinding<T> {
 
-        private final AbstractInstrumenter instrumenter;
         private final SourceSectionFilter filterSourceSection;
         private final SourceSectionFilter inputFilter;
         private final boolean isExecutionEvent;
 
         Source(AbstractInstrumenter instrumenter, SourceSectionFilter filterSourceSection, SourceSectionFilter inputFilter, T element, boolean isExecutionEvent) {
             super(instrumenter, element);
-            this.instrumenter = instrumenter;
             this.inputFilter = inputFilter;
             this.filterSourceSection = filterSourceSection;
             this.isExecutionEvent = isExecutionEvent;
@@ -277,11 +288,7 @@ public class EventBinding<T> {
         }
 
         boolean isLanguageBinding() {
-            return instrumenter instanceof LanguageClientInstrumenter;
-        }
-
-        AbstractInstrumenter getInstrumenter() {
-            return instrumenter;
+            return getInstrumenter() instanceof LanguageClientInstrumenter;
         }
 
     }

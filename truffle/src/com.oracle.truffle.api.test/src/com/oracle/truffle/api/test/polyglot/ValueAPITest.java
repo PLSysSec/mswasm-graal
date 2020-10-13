@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -120,6 +120,7 @@ import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.dsl.Cached;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.api.interop.TruffleObject;
@@ -1032,15 +1033,15 @@ public class ValueAPITest {
         assertFails(() -> nofloat.as(Float.class), ClassCastException.class,
                         "Cannot convert '1.7976931348623157E308'(language: Java, type: java.lang.Double) to Java type 'java.lang.Float': Invalid or lossy primitive coercion.");
 
-        Value nodouble = context.asValue(9007199254740992L);
+        Value nodouble = context.asValue(9007199254740993L);
 
         assertFails(() -> nodouble.asDouble(), ClassCastException.class,
-                        "Cannot convert '9007199254740992'(language: Java, type: java.lang.Long) to Java type 'double' using Value.asDouble(): Invalid or lossy primitive coercion. " +
+                        "Cannot convert '9007199254740993'(language: Java, type: java.lang.Long) to Java type 'double' using Value.asDouble(): Invalid or lossy primitive coercion. " +
                                         "You can ensure that the value can be converted using Value.fitsInDouble().");
         assertFails(() -> nodouble.as(double.class), ClassCastException.class,
-                        "Cannot convert '9007199254740992'(language: Java, type: java.lang.Long) to Java type 'double': Invalid or lossy primitive coercion.");
+                        "Cannot convert '9007199254740993'(language: Java, type: java.lang.Long) to Java type 'double': Invalid or lossy primitive coercion.");
         assertFails(() -> nodouble.as(Double.class), ClassCastException.class,
-                        "Cannot convert '9007199254740992'(language: Java, type: java.lang.Long) to Java type 'java.lang.Double': Invalid or lossy primitive coercion.");
+                        "Cannot convert '9007199254740993'(language: Java, type: java.lang.Long) to Java type 'java.lang.Double': Invalid or lossy primitive coercion.");
 
         Value noString = context.asValue(false);
 
@@ -1829,7 +1830,7 @@ public class ValueAPITest {
 
     @Test
     public void testGuestException() {
-        Value exceptionValue = context.asValue(new ExceptionWrapper(new RuntimeException("expected")));
+        Value exceptionValue = context.asValue(new ExceptionWrapper(new LanguageException("expected")));
         assertValue(exceptionValue, EXCEPTION);
         try {
             exceptionValue.throwException();
@@ -1864,6 +1865,26 @@ public class ValueAPITest {
                 return null;
             }
         }));
+    }
+
+    @Test
+    public void testMetaObjectNull() {
+        Value nullValue = context.asValue(null);
+        assertFalse(context.asValue(nullValue).isMetaObject());
+        assertNull(context.asValue(nullValue).getMetaObject());
+
+        assertFalse(context.asValue(null).isMetaObject());
+        assertNull(context.asValue(null).getMetaObject());
+    }
+
+    @Test
+    public void testIsMetaInstanceNull() {
+        Value nullValue = context.asValue(null);
+        assertFalse(context.asValue(Object.class).isMetaInstance(nullValue));
+        assertFalse(context.asValue(Void.class).isMetaInstance(nullValue));
+
+        assertFalse(context.asValue(Object.class).isMetaInstance(null));
+        assertFalse(context.asValue(Void.class).isMetaInstance(null));
     }
 
     @ExportLibrary(InteropLibrary.class)
@@ -2000,6 +2021,14 @@ public class ValueAPITest {
                 throw InvalidArrayIndexException.create(idx);
             }
             return members[(int) idx];
+        }
+    }
+
+    @SuppressWarnings("serial")
+    private static final class LanguageException extends AbstractTruffleException {
+
+        LanguageException(String message) {
+            super(message);
         }
     }
 

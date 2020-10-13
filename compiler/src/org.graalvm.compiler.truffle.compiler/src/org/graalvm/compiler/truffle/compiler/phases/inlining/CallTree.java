@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,6 +29,7 @@ import static org.graalvm.compiler.truffle.compiler.TruffleCompilerOptions.getPo
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.graph.Graph;
 import org.graalvm.compiler.truffle.common.TruffleCompilerRuntime;
+import org.graalvm.compiler.truffle.common.TruffleMetaAccessProvider;
 import org.graalvm.compiler.truffle.compiler.PartialEvaluator;
 import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
 
@@ -40,6 +41,8 @@ public final class CallTree extends Graph {
     private final PartialEvaluator.Request request;
     int expanded = 1;
     int inlined = 1;
+    int frontierSize;
+    private int nextId = 0;
 
     CallTree(PartialEvaluator partialEvaluator, PartialEvaluator.Request request, InliningPolicy policy) {
         super(request.graph.getOptions(), request.debug);
@@ -48,6 +51,10 @@ public final class CallTree extends Graph {
         this.graphManager = new GraphManager(partialEvaluator, request);
         // Should be kept as the last call in the constructor, as this is an argument.
         this.root = CallNode.makeRoot(this, request);
+    }
+
+    int nextId() {
+        return nextId++;
     }
 
     InliningPolicy getPolicy() {
@@ -74,34 +81,19 @@ public final class CallTree extends Graph {
         Boolean details = getPolyglotOptionValue(request.options, PolyglotCompilerOptions.TraceInliningDetails);
         if (getPolyglotOptionValue(request.options, PolyglotCompilerOptions.TraceInlining) || details) {
             TruffleCompilerRuntime runtime = TruffleCompilerRuntime.getRuntime();
-            runtime.logEvent(0, "inline start", root.getName(), root.getStringProperties());
+            runtime.logEvent(root.getTruffleAST(), 0, "Inline start", root.getName(), root.getStringProperties(), null);
             traceRecursive(runtime, root, details, 0);
-            runtime.logEvent(0, "inline done", root.getName(), root.getStringProperties());
+            runtime.logEvent(root.getTruffleAST(), 0, "Inline done", root.getName(), root.getStringProperties(), null);
         }
     }
 
     private void traceRecursive(TruffleCompilerRuntime runtime, CallNode node, boolean details, int depth) {
         if (depth != 0) {
-            runtime.logEvent(depth, node.getState().toString(), node.getName(), node.getStringProperties());
+            runtime.logEvent(root.getTruffleAST(), depth, node.getState().toString(), node.getName(), node.getStringProperties(), null);
         }
         if (node.getState() == CallNode.State.Inlined || details) {
             for (CallNode child : node.getChildren()) {
                 traceRecursive(runtime, child, details, depth + 1);
-            }
-        }
-    }
-
-    void dequeueInlined() {
-        dequeueInlined(root);
-    }
-
-    private void dequeueInlined(CallNode node) {
-        if (node.getState() == CallNode.State.Inlined) {
-            for (CallNode child : node.getChildren()) {
-                dequeueInlined(child);
-            }
-            if (!node.isRoot()) {
-                node.cancelCompilationIfSingleCallsite();
             }
         }
     }
@@ -117,5 +109,19 @@ public final class CallTree extends Graph {
 
     public void dumpInfo(String format, Object arg) {
         getDebug().dump(DebugContext.INFO_LEVEL, this, format, arg);
+    }
+
+    public void finalizeGraph() {
+        root.finalizeGraph();
+    }
+
+    void collectTargetsToDequeue(TruffleMetaAccessProvider provider) {
+        root.collectTargetsToDequeue(provider);
+    }
+
+    public void updateTracingInfo(TruffleMetaAccessProvider inliningPlan) {
+        final int inlinedWithoutRoot = inlined - 1;
+        inliningPlan.setCallCount(inlinedWithoutRoot + frontierSize);
+        inliningPlan.setInlinedCallCount(inlinedWithoutRoot);
     }
 }

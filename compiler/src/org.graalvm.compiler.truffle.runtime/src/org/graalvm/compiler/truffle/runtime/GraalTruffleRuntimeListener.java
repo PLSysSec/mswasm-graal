@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -184,13 +184,9 @@ public interface GraalTruffleRuntimeListener {
     default void onEngineClosed(EngineData runtimeData) {
     }
 
-    static void addASTSizeProperty(OptimizedCallTarget target, TruffleInlining inliningDecision, Map<String, Object> properties) {
+    static void addASTSizeProperty(OptimizedCallTarget target, Map<String, Object> properties) {
         int nodeCount = target.getNonTrivialNodeCount();
-        int deepNodeCount = nodeCount;
-        if (inliningDecision != null) {
-            deepNodeCount += inliningDecision.getInlinedNodeCount();
-        }
-        properties.put("ASTSize", String.format("%5d/%5d", nodeCount, deepNodeCount));
+        properties.put("AST", String.format("%4d", nodeCount));
     }
 
     /**

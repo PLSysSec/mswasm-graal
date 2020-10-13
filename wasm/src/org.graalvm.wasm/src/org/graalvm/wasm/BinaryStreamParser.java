@@ -97,7 +97,7 @@ public abstract class BinaryStreamParser {
     }
 
     @ExplodeLoop(kind = FULL_EXPLODE_UNTIL_RETURN)
-    public int peekUnsignedInt32(int ahead) {
+    protected int peekUnsignedInt32(int ahead) {
         int result = 0;
         int shift = 0;
         int i = 0;
@@ -176,6 +176,9 @@ public abstract class BinaryStreamParser {
     }
 
     public static byte peek1(byte[] data, int offset) {
+        if (offset < 0 || offset >= data.length) {
+            throw BinaryParserException.format("The binary is truncated at: %d", offset);
+        }
         return data[offset];
     }
 
@@ -218,10 +221,16 @@ public abstract class BinaryStreamParser {
     }
 
     protected byte peek1() {
+        if (offset < 0 || offset >= data.length) {
+            throw BinaryParserException.format("The binary is truncated at: %d", offset);
+        }
         return data[offset];
     }
 
     protected byte peek1(int ahead) {
+        if (offset + ahead < 0 || offset + ahead >= data.length) {
+            throw BinaryParserException.format("The binary is truncated at: %d", offset + ahead);
+        }
         return data[offset + ahead];
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,6 +28,7 @@ import static org.graalvm.compiler.truffle.compiler.TruffleCompilerOptions.getPo
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Objects;
 
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
@@ -67,21 +68,32 @@ public final class AgnosticInliningPhase extends BasePhase<CoreProviders> {
         throw new IllegalStateException("No inlining policy provider with provided name: " + name);
     }
 
-    private InliningPolicyProvider getInliningPolicyProvider() {
-        final String policy = getPolyglotOptionValue(request.options, PolyglotCompilerOptions.InliningPolicy);
-        return policy.equals("") ? POLICY_PROVIDERS.get(0) : chosenProvider(policy);
+    private InliningPolicyProvider getInliningPolicyProvider(boolean firstTier) {
+        final String policy = getPolyglotOptionValue(request.options, firstTier ? PolyglotCompilerOptions.FirstTierInliningPolicy : PolyglotCompilerOptions.InliningPolicy);
+        if (Objects.equals(policy, "")) {
+            return POLICY_PROVIDERS.get(firstTier ? POLICY_PROVIDERS.size() - 1 : 0);
+        } else {
+            return chosenProvider(policy);
+        }
     }
 
     @Override
     protected void run(StructuredGraph graph, CoreProviders coreProviders) {
-        final InliningPolicy policy = getInliningPolicyProvider().get(request.options, coreProviders);
+        final InliningPolicy policy = getInliningPolicyProvider(request.isFirstTier()).get(request.options, coreProviders);
         final CallTree tree = new CallTree(partialEvaluator, request, policy);
         tree.dumpBasic("Before Inline");
-        if (getPolyglotOptionValue(request.options, PolyglotCompilerOptions.Inlining)) {
+        if (optionsAllowInlining()) {
             policy.run(tree);
             tree.dumpBasic("After Inline");
-            tree.dequeueInlined();
+            tree.collectTargetsToDequeue(request.inliningPlan);
+            tree.updateTracingInfo(request.inliningPlan);
         }
+        tree.finalizeGraph();
         tree.trace();
+    }
+
+    private Boolean optionsAllowInlining() {
+        return getPolyglotOptionValue(request.options, PolyglotCompilerOptions.Inlining) &&
+                        (getPolyglotOptionValue(request.options, PolyglotCompilerOptions.Mode) != PolyglotCompilerOptions.EngineModeEnum.LATENCY);
     }
 }

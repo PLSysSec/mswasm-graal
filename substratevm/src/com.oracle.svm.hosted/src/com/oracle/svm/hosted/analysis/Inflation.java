@@ -36,6 +36,7 @@ import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -44,6 +45,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.graalvm.compiler.core.common.SuppressSVMWarnings;
 import org.graalvm.compiler.graph.NodeSourcePosition;
@@ -69,11 +71,11 @@ import com.oracle.svm.core.annotate.UnknownObjectField;
 import com.oracle.svm.core.annotate.UnknownPrimitiveField;
 import com.oracle.svm.core.graal.meta.SubstrateReplacements;
 import com.oracle.svm.core.hub.AnnotatedSuperInfo;
+import com.oracle.svm.core.hub.AnnotationsEncoding;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.hub.GenericInfo;
 import com.oracle.svm.core.meta.SubstrateObjectConstant;
 import com.oracle.svm.core.util.UserError;
-import com.oracle.svm.hosted.NativeImageClassLoader;
 import com.oracle.svm.hosted.SVMHost;
 import com.oracle.svm.hosted.analysis.flow.SVMMethodTypeFlowBuilder;
 import com.oracle.svm.hosted.meta.HostedType;
@@ -117,24 +119,12 @@ public class Inflation extends BigBang {
     }
 
     @Override
-    public boolean addRoot(JavaConstant constant, Object root) {
-        SubstrateObjectConstant sConstant = (SubstrateObjectConstant) constant;
-        return sConstant.setRoot(root);
-    }
-
-    @Override
-    public Object getRoot(JavaConstant constant) {
-        SubstrateObjectConstant sConstant = (SubstrateObjectConstant) constant;
-        return sConstant.getRoot();
-    }
-
-    @Override
     protected void checkObjectGraph(ObjectScanner objectScanner) {
         universe.getFields().forEach(this::handleUnknownValueField);
         universe.getTypes().forEach(this::checkType);
 
         /* Scan hubs of all types that end up in the native image. */
-        universe.getTypes().stream().filter(type -> type.isInstantiated() || type.isInTypeCheck() || type.isPrimitive()).forEach(type -> scanHub(objectScanner, type));
+        universe.getTypes().stream().filter(type -> type.isInstantiated() || type.isReachable() || type.isPrimitive()).forEach(type -> scanHub(objectScanner, type));
     }
 
     @Override
@@ -152,7 +142,7 @@ public class Inflation extends BigBang {
         }
 
         if (type.getJavaKind() == JavaKind.Object) {
-            if (type.isArray() && (type.isInstantiated() || type.isInTypeCheck())) {
+            if (type.isArray() && (type.isInstantiated() || type.isReachable())) {
                 hub.getComponentHub().setArrayHub(hub);
             }
 
@@ -178,7 +168,8 @@ public class Inflation extends BigBang {
                  * defends against JDK-7183985 and we want to get the original behavior.
                  */
                 Annotation[] annotations = type.getWrappedWithoutResolve().getAnnotations();
-                hub.setAnnotationsEncoding(encodeAnnotations(metaAccess, annotations, hub.getAnnotationsEncoding()));
+                Annotation[] declared = type.getWrappedWithoutResolve().getDeclaredAnnotations();
+                hub.setAnnotationsEncoding(encodeAnnotations(metaAccess, annotations, declared, hub.getAnnotationsEncoding()));
             } catch (ArrayStoreException e) {
                 /* If we hit JDK-7183985 just encode the exception. */
                 hub.setAnnotationsEncoding(e);
@@ -200,6 +191,7 @@ public class Inflation extends BigBang {
                      * name.
                      */
                     AnalysisField found = null;
+                    type.registerAsReachable();
                     for (AnalysisField f : type.getStaticFields()) {
                         if (f.getName().endsWith("$VALUES")) {
                             if (found != null) {
@@ -244,12 +236,6 @@ public class Inflation extends BigBang {
     }
 
     @Override
-    public boolean isValidClassLoader(Object valueObj) {
-        return valueObj.getClass().getClassLoader() == null || // boot class loader
-                        !(valueObj.getClass().getClassLoader() instanceof NativeImageClassLoader) || valueObj.getClass().getClassLoader() == Thread.currentThread().getContextClassLoader();
-    }
-
-    @Override
     public void checkUserLimitations() {
         int maxReachableTypes = MaxReachableTypes.getValue();
         if (maxReachableTypes >= 0) {
@@ -257,10 +243,8 @@ public class Inflation extends BigBang {
             callTreePrinter.buildCallTree();
             int numberOfTypes = callTreePrinter.classesSet(false).size();
             if (numberOfTypes > maxReachableTypes) {
-                throw UserError.abort("Reachable " + numberOfTypes + " types but only " + maxReachableTypes + " allowed (because the " + MaxReachableTypes.getName() +
-                                " option is set). To see all reachable types use " + PrintAnalysisCallTree.getName() + "; to change the maximum number of allowed types use " +
-                                MaxReachableTypes.getName() +
-                                ".");
+                throw UserError.abort("Reachable %d types but only %d allowed (because the %s option is set). To see all reachable types use %s; to change the maximum number of allowed types use %s.",
+                                numberOfTypes, maxReachableTypes, MaxReachableTypes.getName(), PrintAnalysisCallTree.getName(), MaxReachableTypes.getName());
             }
         }
     }
@@ -364,7 +348,18 @@ public class Inflation extends BigBang {
         }
 
         Type[] genericInterfaces = Arrays.stream(allGenericInterfaces).filter(this::isTypeAllowed).toArray(Type[]::new);
-        Type[] cachedGenericInterfaces = genericInterfacesMap.computeIfAbsent(new GenericInterfacesEncodingKey(genericInterfaces), k -> genericInterfaces);
+        Type[] cachedGenericInterfaces;
+        try {
+            cachedGenericInterfaces = genericInterfacesMap.computeIfAbsent(new GenericInterfacesEncodingKey(genericInterfaces), k -> genericInterfaces);
+        } catch (MalformedParameterizedTypeException | TypeNotPresentException | NoClassDefFoundError t) {
+            /*
+             * Computing the hash code of generic interfaces can fail due to missing types. Ignore
+             * the exception and proceed without caching. De-duplication of generic interfaces is an
+             * optimization and not necessary for correctness.
+             */
+            cachedGenericInterfaces = genericInterfaces;
+        }
+
         Type genericSuperClass;
         try {
             genericSuperClass = javaClass.getGenericSuperclass();
@@ -597,32 +592,45 @@ public class Inflation extends BigBang {
         }
     }
 
-    public static Object encodeAnnotations(AnalysisMetaAccess metaAccess, Annotation[] allAnnotations, Object oldEncoding) {
+    private static Set<Annotation> filterUsedAnnotation(Set<Annotation> used, Annotation[] rest) {
+        if (rest == null) {
+            return null;
+        }
+
+        Set<Annotation> restUsed = new HashSet<>();
+        for (Annotation a : rest) {
+            if (used.contains(a)) {
+                restUsed.add(a);
+            }
+        }
+        return restUsed;
+    }
+
+    public static Object encodeAnnotations(AnalysisMetaAccess metaAccess, Annotation[] allAnnotations, Annotation[] declaredAnnotations, Object oldEncoding) {
         Object newEncoding;
-        if (allAnnotations.length == 0) {
+        if (allAnnotations.length == 0 && declaredAnnotations.length == 0) {
             newEncoding = null;
         } else {
-            List<Annotation> usedAnnotations = new ArrayList<>();
-            for (Annotation annotation : allAnnotations) {
-                try {
-                    AnalysisType annotationClass = metaAccess.lookupJavaType(annotation.getClass());
-                    if (isAnnotationUsed(annotationClass)) {
-                        usedAnnotations.add(annotation);
-                    }
-                } catch (TypeNotFoundError e) {
-                    /*
-                     * Silently ignore the annotation if its type was not discovered by the static
-                     * analysis.
-                     */
-                }
-            }
-            if (usedAnnotations.size() == 0) {
-                newEncoding = null;
-            } else if (usedAnnotations.size() == 1) {
-                newEncoding = usedAnnotations.get(0);
-            } else {
-                newEncoding = usedAnnotations.toArray(new Annotation[0]);
-            }
+            Set<Annotation> all = new HashSet<>();
+            Collections.addAll(all, allAnnotations);
+            Collections.addAll(all, declaredAnnotations);
+            final Set<Annotation> usedAnnotations = all.stream()
+                            .filter(a -> {
+                                try {
+                                    AnalysisType annotationClass = metaAccess.lookupJavaType(a.getClass());
+                                    return isAnnotationUsed(annotationClass);
+                                } catch (TypeNotFoundError e) {
+                                    /*
+                                     * Silently ignore the annotation if its type was not discovered
+                                     * by the static analysis.
+                                     */
+                                    return false;
+                                }
+                            }).collect(Collectors.toSet());
+            Set<Annotation> usedDeclared = filterUsedAnnotation(usedAnnotations, declaredAnnotations);
+            newEncoding = usedAnnotations.size() == 0
+                            ? null
+                            : AnnotationsEncoding.encodeAnnotations(usedAnnotations, usedDeclared);
         }
 
         /*
@@ -630,7 +638,7 @@ public class Inflation extends BigBang {
          * for tests that do runtime compilation, the field appears as being continuously updated
          * during BigBang.checkObjectGraph.
          */
-        if (oldEncoding == newEncoding || (oldEncoding instanceof Annotation[] && newEncoding instanceof Annotation[] && Arrays.equals((Annotation[]) oldEncoding, (Annotation[]) newEncoding))) {
+        if (oldEncoding != null && oldEncoding.equals(newEncoding)) {
             return oldEncoding;
         } else {
             return newEncoding;
@@ -644,13 +652,13 @@ public class Inflation extends BigBang {
      * number of annotations on a class, then we might return a lower number.
      */
     private static boolean isAnnotationUsed(AnalysisType annotationType) {
-        if (annotationType.isInstantiated() || annotationType.isInTypeCheck()) {
+        if (annotationType.isInstantiated() || annotationType.isReachable()) {
             return true;
         }
         assert annotationType.getInterfaces().length == 1 : annotationType;
 
         AnalysisType annotationInterfaceType = annotationType.getInterfaces()[0];
-        return annotationInterfaceType.isInstantiated() || annotationInterfaceType.isInTypeCheck();
+        return annotationInterfaceType.isInstantiated() || annotationInterfaceType.isReachable();
     }
 
     public static ResolvedJavaType toWrappedType(ResolvedJavaType type) {

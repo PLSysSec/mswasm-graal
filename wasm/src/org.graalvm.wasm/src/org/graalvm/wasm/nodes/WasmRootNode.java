@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,8 +40,6 @@
  */
 package org.graalvm.wasm.nodes;
 
-import static org.graalvm.wasm.WasmTracing.trace;
-
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.TruffleLanguage;
@@ -57,6 +55,8 @@ import org.graalvm.wasm.WasmCodeEntry;
 import org.graalvm.wasm.WasmContext;
 import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.WasmVoidResult;
+
+import static org.graalvm.wasm.WasmTracing.trace;
 
 @NodeInfo(language = "wasm", description = "The root node of all WebAssembly functions")
 public class WasmRootNode extends RootNode implements WasmNodeInterface {
@@ -156,7 +156,7 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
     @ExplodeLoop
     private void argumentsToLocals(VirtualFrame frame) {
         Object[] args = frame.getArguments();
-        int numArgs = body.module().symbolTable().function(codeEntry().functionIndex()).numArguments();
+        int numArgs = body.instance().symbolTable().function(codeEntry().functionIndex()).numArguments();
         assert args.length == numArgs : "Expected number of arguments " + numArgs + ", actual " + args.length;
         for (int i = 0; i != numArgs; ++i) {
             FrameSlot slot = codeEntry.localSlot(i);
@@ -192,7 +192,7 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
 
     @ExplodeLoop
     private void initializeLocals(VirtualFrame frame) {
-        int numArgs = body.module().symbolTable().function(codeEntry().functionIndex()).numArguments();
+        int numArgs = body.instance().symbolTable().function(codeEntry().functionIndex()).numArguments();
         for (int i = numArgs; i != body.codeEntry().numLocals(); ++i) {
             byte type = body.codeEntry().localType(i);
             switch (type) {

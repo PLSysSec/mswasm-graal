@@ -72,6 +72,15 @@ public class ConfigurationTool {
             }
             Iterator<String> argsIter = Arrays.asList(args).iterator();
             String first = argsIter.next();
+
+            if (first.equals("command-file")) {
+                argsIter = handleCommandFile(argsIter);
+                if (!argsIter.hasNext()) {
+                    throw new UsageException("No arguments provided in the command file.");
+                }
+                first = argsIter.next();
+            }
+
             switch (first) {
                 case "generate":
                     generate(argsIter, false);
@@ -108,6 +117,24 @@ public class ConfigurationTool {
 
     private static URI requirePathUri(String current, String value) {
         return requirePath(current, value).toUri();
+    }
+
+    private static Iterator<String> handleCommandFile(Iterator<String> args) {
+        if (!args.hasNext()) {
+            throw new UsageException("Path to a command file must be provided.");
+        }
+        Path filePath = Paths.get(args.next());
+
+        if (args.hasNext()) {
+            throw new UsageException("Too many arguments to command-file passed. Expected a single argument: <path to a command file>.");
+        }
+
+        try {
+            List<String> lines = Files.readAllLines(filePath);
+            return lines.iterator();
+        } catch (IOException e) {
+            throw new UsageException("Failed to read the command file at " + filePath + ". Check if the file exists, you have the required permissions and that the file is actually a text file.");
+        }
     }
 
     @SuppressWarnings("fallthrough")
@@ -201,7 +228,7 @@ public class ConfigurationTool {
         }
         if (!callerFilterFiles.isEmpty()) {
             if (callersFilter == null) {
-                callersFilter = AccessAdvisor.copyBuiltinFilterTree();
+                callersFilter = AccessAdvisor.copyBuiltinCallerFilterTree();
             }
             for (Path path : callerFilterFiles) {
                 try {
@@ -214,18 +241,19 @@ public class ConfigurationTool {
             callersFilter.removeRedundantNodes();
         }
 
+        AccessAdvisor advisor = new AccessAdvisor();
+        advisor.setHeuristicsEnabled(builtinHeuristicFilter);
+        if (callersFilter != null) {
+            advisor.setCallerFilterTree(callersFilter);
+        }
         TraceProcessor p;
         try {
-            p = new TraceProcessor(inputSet.loadJniConfig(ConfigurationSet.FAIL_ON_EXCEPTION), inputSet.loadReflectConfig(ConfigurationSet.FAIL_ON_EXCEPTION),
+            p = new TraceProcessor(advisor, inputSet.loadJniConfig(ConfigurationSet.FAIL_ON_EXCEPTION), inputSet.loadReflectConfig(ConfigurationSet.FAIL_ON_EXCEPTION),
                             inputSet.loadProxyConfig(ConfigurationSet.FAIL_ON_EXCEPTION), inputSet.loadResourceConfig(ConfigurationSet.FAIL_ON_EXCEPTION));
         } catch (IOException e) {
             throw e;
         } catch (Throwable t) {
             throw new RuntimeException(t);
-        }
-        p.setHeuristicsEnabled(builtinHeuristicFilter);
-        if (callersFilter != null) {
-            p.setCallerFilterTree(callersFilter);
         }
         if (traceInputs.isEmpty() && inputSet.isEmpty()) {
             throw new UsageException("No inputs specified.");

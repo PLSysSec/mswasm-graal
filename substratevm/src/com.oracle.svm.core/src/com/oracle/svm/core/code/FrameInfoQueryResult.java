@@ -27,6 +27,7 @@ package com.oracle.svm.core.code;
 import org.graalvm.nativeimage.c.function.CodePointer;
 
 import com.oracle.svm.core.CalleeSavedRegisters;
+import com.oracle.svm.core.ReservedRegisters;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.meta.SharedMethod;
@@ -60,6 +61,12 @@ public class FrameInfoQueryResult {
         Register(true),
 
         /**
+         * A reserved register that has a fixed value as defined in {@link ReservedRegisters}. The
+         * {@link ValueInfo#data} is the {@link Register#number}.
+         */
+        ReservedRegister(true),
+
+        /**
          * A {@link Constant} value. The {@link ValueInfo#data} is the primitive data value of the
          * constant for {@link JavaKind#isPrimitive()} values, or the index into the object constant
          * array for {@link JavaKind#Object} values.
@@ -89,6 +96,7 @@ public class FrameInfoQueryResult {
         protected ValueType type;
         protected JavaKind kind;
         protected boolean isCompressedReference; // for JavaKind.Object
+        protected boolean isEliminatedMonitor;
         protected long data;
         protected JavaConstant value;
         protected String name;
@@ -115,6 +123,15 @@ public class FrameInfoQueryResult {
          */
         public boolean isCompressedReference() {
             return isCompressedReference;
+        }
+
+        /**
+         * When true, the value is a monitor (a {@link FrameInfoQueryResult#numLocks lock slot},
+         * located after the local variables and expression stack slots) that was eliminated and
+         * re-locking must be performed during deoptimization.
+         */
+        public boolean isEliminatedMonitor() {
+            return isEliminatedMonitor;
         }
 
         /**

@@ -71,7 +71,7 @@ public final class LLVMFunctionDescriptor extends LLVMInternalTruffleObject impl
     private final LLVMFunction llvmFunction;
     private final LLVMFunctionCode functionCode;
 
-    @CompilationFinal private TruffleObject nativeWrapper;
+    @CompilationFinal private Object nativeWrapper;
     @CompilationFinal private long nativePointer;
 
     // used for calls from foreign languages
@@ -172,10 +172,9 @@ public final class LLVMFunctionDescriptor extends LLVMInternalTruffleObject impl
     static class Execute {
 
         @Specialization(limit = "5", guards = "self == cachedSelf")
-        @SuppressWarnings("unused")
-        static Object doCached(LLVMFunctionDescriptor self, Object[] args,
-                        @Cached("self") LLVMFunctionDescriptor cachedSelf,
-                        @Cached("create(cachedSelf.getForeignCallTarget())") DirectCallNode call) {
+        static Object doCached(@SuppressWarnings("unused") LLVMFunctionDescriptor self, Object[] args,
+                        @Cached("self") @SuppressWarnings("unused") LLVMFunctionDescriptor cachedSelf,
+                        @Cached("createCall(cachedSelf)") DirectCallNode call) {
             return call.call(args);
         }
 
@@ -183,6 +182,12 @@ public final class LLVMFunctionDescriptor extends LLVMInternalTruffleObject impl
         static Object doPolymorphic(LLVMFunctionDescriptor self, Object[] args,
                         @Cached IndirectCallNode call) {
             return call.call(self.getForeignCallTarget(), args);
+        }
+
+        protected static DirectCallNode createCall(LLVMFunctionDescriptor self) {
+            DirectCallNode callNode = DirectCallNode.create(self.getForeignCallTarget());
+            callNode.forceInlining();
+            return callNode;
         }
     }
 

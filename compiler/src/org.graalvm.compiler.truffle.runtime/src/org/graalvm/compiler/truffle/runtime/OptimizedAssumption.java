@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,8 +32,10 @@ import org.graalvm.compiler.truffle.common.OptimizedAssumptionDependency;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.TruffleLogger;
 import com.oracle.truffle.api.impl.AbstractAssumption;
 import com.oracle.truffle.api.nodes.InvalidAssumptionException;
+import java.util.logging.Level;
 
 import jdk.vm.ci.meta.JavaKind.FormatWithToString;
 import org.graalvm.options.OptionValues;
@@ -72,13 +74,18 @@ public final class OptimizedAssumption extends AbstractAssumption implements For
         }
 
         synchronized OptimizedAssumptionDependency awaitDependency() {
+            boolean interrupted = false;
             while (dependency == null && weakDependency == null) {
                 try {
                     this.wait();
                 } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    interrupted = true;
                 }
             }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+
             if (dependency != null) {
                 return dependency;
             }
@@ -163,25 +170,43 @@ public final class OptimizedAssumption extends AbstractAssumption implements For
         }
 
         OptionValues engineOptions = null;
+        TruffleLogger logger = null;
         boolean logStackTrace = false;
 
         Entry e = dependencies;
+        CharSequence reason = null;
         while (e != null) {
             OptimizedAssumptionDependency dependency = e.awaitDependency();
             if (dependency != null) {
-                OptimizedCallTarget callTarget = invalidateWithReason(dependency, "assumption invalidated");
+                if (reason == null) {
+                    String useName = name != null ? name : "";
+                    String useMessage = message != null ? message : "";
+                    if (useName.isEmpty() && useMessage.isEmpty()) {
+                        reason = "assumption invalidated";
+                    } else if (useName.isEmpty()) {
+                        reason = useMessage;
+                    } else if (useMessage.isEmpty()) {
+                        reason = useName;
+                    } else {
+                        reason = new LazyReason(useName, useMessage);
+                    }
+                }
+                OptimizedCallTarget callTarget = invalidateWithReason(dependency, reason);
 
                 if (engineOptions == null) {
                     if (callTarget != null) {
                         engineOptions = callTarget.getOptionValues();
+                        logger = callTarget.engine.getEngineLogger();
                     } else {
-                        engineOptions = GraalTVMCI.getEngineData(null).engineOptions;
+                        EngineData engineData = GraalTVMCI.getEngineData(null);
+                        engineOptions = engineData.engineOptions;
+                        logger = engineData.getEngineLogger();
                     }
                 }
 
                 if (TruffleRuntimeOptions.getPolyglotOptionValue(engineOptions, PolyglotCompilerOptions.TraceAssumptions)) {
                     logStackTrace = true;
-                    logInvalidatedDependency(dependency, message);
+                    logInvalidatedDependency(dependency, message, logger);
                 }
             }
             e = e.next;
@@ -192,7 +217,7 @@ public final class OptimizedAssumption extends AbstractAssumption implements For
         isValid = false;
 
         if (logStackTrace) {
-            logStackTrace(engineOptions);
+            logStackTrace(engineOptions, logger);
         }
     }
 
@@ -259,7 +284,7 @@ public final class OptimizedAssumption extends AbstractAssumption implements For
         }
     }
 
-    private OptimizedCallTarget invalidateWithReason(OptimizedAssumptionDependency dependency, String reason) {
+    private OptimizedCallTarget invalidateWithReason(OptimizedAssumptionDependency dependency, CharSequence reason) {
         if (dependency.getCompilable() != null) {
             OptimizedCallTarget callTarget = (OptimizedCallTarget) dependency.getCompilable();
             callTarget.invalidate(this, reason);
@@ -275,15 +300,15 @@ public final class OptimizedAssumption extends AbstractAssumption implements For
         return isValid;
     }
 
-    private void logInvalidatedDependency(OptimizedAssumptionDependency dependency, String message) {
+    private void logInvalidatedDependency(OptimizedAssumptionDependency dependency, String message, TruffleLogger logger) {
         final StringBuilder sb = new StringBuilder("assumption '").append(name).append("' invalidated installed code '").append(dependency);
         if (message != null && !message.isEmpty()) {
             sb.append("' with message '").append(message);
         }
-        GraalTruffleRuntime.getRuntime().log(sb.toString());
+        logger.log(Level.INFO, sb.toString());
     }
 
-    private static void logStackTrace(OptionValues engineOptions) {
+    private static void logStackTrace(OptionValues engineOptions, TruffleLogger logger) {
         final int skip = 1;
         final int limit = TruffleRuntimeOptions.getPolyglotOptionValue(engineOptions, PolyglotCompilerOptions.TraceStackTraceLimit);
         StackTraceElement[] stackTrace = new Throwable().getStackTrace();
@@ -297,6 +322,41 @@ public final class OptimizedAssumption extends AbstractAssumption implements For
             strb.append("\n    ...");
         }
 
-        GraalTruffleRuntime.getRuntime().log(strb.toString());
+        logger.log(Level.INFO, strb.toString());
+    }
+
+    private static final class LazyReason implements CharSequence {
+
+        private final String assumptionName;
+        private final String message;
+        private String strValue;
+
+        LazyReason(String assumptionName, String message) {
+            this.assumptionName = assumptionName;
+            this.message = message;
+        }
+
+        @Override
+        public int length() {
+            return toString().length();
+        }
+
+        @Override
+        public char charAt(int index) {
+            return toString().charAt(index);
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int end) {
+            return toString().subSequence(start, end);
+        }
+
+        @Override
+        public String toString() {
+            if (strValue == null) {
+                strValue = assumptionName + ' ' + message;
+            }
+            return strValue;
+        }
     }
 }

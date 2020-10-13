@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -54,6 +54,7 @@ import org.graalvm.compiler.hotspot.HotSpotDataBuilder;
 import org.graalvm.compiler.hotspot.HotSpotGraalRuntimeProvider;
 import org.graalvm.compiler.hotspot.HotSpotHostBackend;
 import org.graalvm.compiler.hotspot.HotSpotLIRGenerationResult;
+import org.graalvm.compiler.hotspot.HotSpotMarkId;
 import org.graalvm.compiler.hotspot.meta.HotSpotConstantLoadAction;
 import org.graalvm.compiler.hotspot.meta.HotSpotForeignCallsProvider;
 import org.graalvm.compiler.hotspot.meta.HotSpotProviders;
@@ -81,7 +82,6 @@ import jdk.vm.ci.code.InstalledCode;
 import jdk.vm.ci.code.Register;
 import jdk.vm.ci.code.RegisterConfig;
 import jdk.vm.ci.code.StackSlot;
-import jdk.vm.ci.code.site.Mark;
 import jdk.vm.ci.hotspot.HotSpotCallingConventionType;
 import jdk.vm.ci.hotspot.HotSpotSentinelConstant;
 import jdk.vm.ci.hotspot.aarch64.AArch64HotSpotRegisterConfig;
@@ -152,9 +152,8 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
     private boolean hasInvalidatePlaceholder(CompilationResult compilationResult) {
         byte[] targetCode = compilationResult.getTargetCode();
         int verifiedEntryOffset = 0;
-        for (Mark mark : compilationResult.getMarks()) {
-            Object markId = mark.id;
-            if (markId instanceof Integer && (int) markId == config.MARKID_VERIFIED_ENTRY) {
+        for (CompilationResult.CodeMark mark : compilationResult.getMarks()) {
+            if (mark.id == HotSpotMarkId.VERIFIED_ENTRY || mark.id == HotSpotMarkId.OSR_ENTRY) {
                 // The nmethod verified entry is located at some pc offset.
                 verifiedEntryOffset = mark.pcOffset;
                 break;
@@ -187,14 +186,14 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
             crb.blockComment("[method prologue]");
 
             try (ScratchRegister sc = masm.getScratchRegister()) {
-                int wordSize = crb.target.arch.getWordSize();
+                int wordSize = 8;
                 Register rscratch1 = sc.getRegister();
                 assert totalFrameSize > 0;
                 if (frameSize < 1 << 9) {
                     masm.sub(64, sp, sp, totalFrameSize);
-                    masm.stp(64, fp, lr, AArch64Address.createScaledImmediateAddress(sp, frameSize / wordSize));
+                    masm.stp(64, fp, lr, AArch64Address.createImmediateAddress(64, AArch64Address.AddressingMode.IMMEDIATE_PAIR_SIGNED_SCALED, sp, frameSize));
                 } else {
-                    masm.stp(64, fp, lr, AArch64Address.createPreIndexedImmediateAddress(sp, -2));
+                    masm.stp(64, fp, lr, AArch64Address.createImmediateAddress(64, AArch64Address.AddressingMode.IMMEDIATE_PAIR_PRE_INDEXED, sp, -2 * wordSize));
                     if (frameSize < 1 << 12) {
                         masm.sub(64, sp, sp, totalFrameSize - 2 * wordSize);
                     } else {
@@ -203,15 +202,15 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
                     }
                 }
             }
-            if (config.MARKID_FRAME_COMPLETE != -1) {
-                crb.recordMark(config.MARKID_FRAME_COMPLETE);
+            if (HotSpotMarkId.FRAME_COMPLETE.isAvailable()) {
+                crb.recordMark(HotSpotMarkId.FRAME_COMPLETE);
             }
             if (ZapStackOnMethodEntry.getValue(crb.getOptions())) {
                 try (ScratchRegister sc = masm.getScratchRegister()) {
                     Register scratch = sc.getRegister();
                     int longSize = 8;
                     masm.mov(64, scratch, sp);
-                    AArch64Address address = AArch64Address.createPostIndexedImmediateAddress(scratch, longSize);
+                    AArch64Address address = AArch64Address.createImmediateAddress(64, AArch64Address.AddressingMode.IMMEDIATE_POST_INDEXED, scratch, longSize);
                     try (ScratchRegister sc2 = masm.getScratchRegister()) {
                         Register value = sc2.getRegister();
                         masm.mov(value, 0xBADDECAFFC0FFEEL);
@@ -233,12 +232,12 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
 
             crb.blockComment("[method epilogue]");
             try (ScratchRegister sc = masm.getScratchRegister()) {
-                int wordSize = crb.target.arch.getWordSize();
+                int wordSize = 8;
                 Register rscratch1 = sc.getRegister();
                 final int frameSize = frameMap.frameSize();
                 assert totalFrameSize > 0;
                 if (frameSize < 1 << 9) {
-                    masm.ldp(64, fp, lr, AArch64Address.createScaledImmediateAddress(sp, frameSize / wordSize));
+                    masm.ldp(64, fp, lr, AArch64Address.createImmediateAddress(64, AArch64Address.AddressingMode.IMMEDIATE_PAIR_SIGNED_SCALED, sp, frameSize));
                     masm.add(64, sp, sp, totalFrameSize);
                 } else {
                     if (frameSize < 1 << 12) {
@@ -247,10 +246,15 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
                         masm.mov(rscratch1, totalFrameSize - 2 * wordSize);
                         masm.add(64, sp, sp, rscratch1);
                     }
-                    masm.ldp(64, fp, lr, AArch64Address.createPostIndexedImmediateAddress(sp, 2));
+                    masm.ldp(64, fp, lr, AArch64Address.createImmediateAddress(64, AArch64Address.AddressingMode.IMMEDIATE_PAIR_POST_INDEXED, sp, 2 * wordSize));
                 }
             }
 
+        }
+
+        @Override
+        public void returned(CompilationResultBuilder crb) {
+            // nothing to do
         }
 
         @Override
@@ -315,7 +319,7 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
     private void emitCodePrefix(CompilationResultBuilder crb, ResolvedJavaMethod installedCodeOwner, AArch64MacroAssembler masm, RegisterConfig regConfig, Label verifiedStub) {
         HotSpotProviders providers = getProviders();
         if (installedCodeOwner != null && !isStatic(installedCodeOwner.getModifiers())) {
-            crb.recordMark(config.MARKID_UNVERIFIED_ENTRY);
+            crb.recordMark(HotSpotMarkId.UNVERIFIED_ENTRY);
             CallingConvention cc = regConfig.getCallingConvention(HotSpotCallingConventionType.JavaCallee, null, new JavaType[]{providers.getMetaAccess().lookupJavaType(Object.class)}, this);
             // See definition of IC_Klass in c1_LIRAssembler_aarch64.cpp
             // equal to scratch(1) careful!
@@ -328,7 +332,7 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
             Register klass = r10;
             if (config.useCompressedClassPointers) {
                 masm.ldr(32, klass, klassAddress);
-                AArch64HotSpotMove.decodeKlassPointer(crb, masm, klass, klass, config.getKlassEncoding(), config);
+                AArch64HotSpotMove.decodeKlassPointer(crb, masm, klass, klass, config.getKlassEncoding());
             } else {
                 masm.ldr(64, klass, klassAddress);
             }
@@ -341,9 +345,8 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
             AArch64Call.directJmp(crb, masm, getForeignCalls().lookupForeignCall(IC_MISS_HANDLER));
         }
         masm.align(config.codeEntryAlignment);
-        crb.recordMark(config.MARKID_OSR_ENTRY);
         masm.bind(verifiedStub);
-        crb.recordMark(config.MARKID_VERIFIED_ENTRY);
+        crb.recordMark(crb.compilationResult.getEntryBCI() != -1 ? HotSpotMarkId.OSR_ENTRY : HotSpotMarkId.VERIFIED_ENTRY);
 
         if (GeneratePIC.getValue(crb.getOptions())) {
             // Check for method state
@@ -352,7 +355,7 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
                 crb.recordInlineDataInCodeWithNote(new HotSpotSentinelConstant(LIRKind.value(AArch64Kind.QWORD), JavaKind.Long), HotSpotConstantLoadAction.MAKE_NOT_ENTRANT);
                 try (ScratchRegister sc = masm.getScratchRegister()) {
                     Register scratch = sc.getRegister();
-                    masm.addressOf(scratch);
+                    masm.adrpAdd(scratch);
                     masm.ldr(64, scratch, AArch64Address.createBaseRegisterOnlyAddress(scratch));
                     Label noCall = new Label();
                     masm.cbz(64, scratch, noCall);
@@ -388,15 +391,20 @@ public class AArch64HotSpotBackend extends HotSpotHostBackend implements LIRGene
             HotSpotForeignCallsProvider foreignCalls = providers.getForeignCalls();
             try (ScratchRegister sc = masm.getScratchRegister()) {
                 Register scratch = sc.getRegister();
-                crb.recordMark(config.MARKID_EXCEPTION_HANDLER_ENTRY);
+                crb.recordMark(HotSpotMarkId.EXCEPTION_HANDLER_ENTRY);
                 ForeignCallLinkage linkage = foreignCalls.lookupForeignCall(EXCEPTION_HANDLER);
                 Register helper = AArch64Call.isNearCall(linkage) ? null : scratch;
                 AArch64Call.directCall(crb, masm, linkage, helper, null);
             }
-            crb.recordMark(config.MARKID_DEOPT_HANDLER_ENTRY);
+            crb.recordMark(HotSpotMarkId.DEOPT_HANDLER_ENTRY);
             ForeignCallLinkage linkage = foreignCalls.lookupForeignCall(DEOPT_BLOB_UNPACK);
             masm.adr(lr, 0); // Warning: the argument is an offset from the instruction!
             AArch64Call.directJmp(crb, masm, linkage);
+            if (config.supportsMethodHandleDeoptimizationEntry() && crb.needsMHDeoptHandler()) {
+                crb.recordMark(HotSpotMarkId.DEOPT_MH_HANDLER_ENTRY);
+                masm.adr(lr, 0);
+                AArch64Call.directJmp(crb, masm, linkage);
+            }
         } else {
             // No need to emit the stubs for entries back into the method since
             // it has no calls that can cause such "return" entries

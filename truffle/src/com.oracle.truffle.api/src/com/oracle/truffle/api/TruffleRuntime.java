@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -166,6 +166,10 @@ public interface TruffleRuntime {
      * Iteration continues as long as {@link FrameInstanceVisitor#visitFrame}, which is invoked for
      * every {@link FrameInstance}, returns null. Any non-null result of the visitor indicates that
      * frame iteration should stop.
+     *
+     * To get possible asynchronous stack frames, use
+     * {@link TruffleStackTrace#getAsynchronousStackTrace(CallTarget, Frame)} and provide call
+     * target and frame from the last {@link FrameInstance}.
      *
      * @param visitor the visitor that is called for every matching frame.
      * @return the last result returned by the visitor (which is non-null to indicate that iteration

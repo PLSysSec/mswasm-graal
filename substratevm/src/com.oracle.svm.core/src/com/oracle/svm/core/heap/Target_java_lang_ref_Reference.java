@@ -29,11 +29,13 @@ package com.oracle.svm.core.heap;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.reflect.Field;
+import java.util.function.BooleanSupplier;
 
 import org.graalvm.compiler.api.directives.GraalDirectives;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 
+import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.annotate.Alias;
 import com.oracle.svm.core.annotate.Delete;
 import com.oracle.svm.core.annotate.ExcludeFromReferenceMap;
@@ -92,18 +94,19 @@ public final class Target_java_lang_ref_Reference<T> {
      * stores by the garbage collector do not change the type of the referent.
      */
     @Alias @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.Custom, declClass = ComputeReferenceValue.class) //
-    @ExcludeFromReferenceMap("Field is manually processed by the garbage collector.") //
+    @ExcludeFromReferenceMap(reason = "Field is manually processed by the garbage collector.") //
     T referent;
 
     @SuppressWarnings("unused") //
     @Alias @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.Reset) //
-    Target_java_lang_ref_Reference<?> discovered;
+    @ExcludeFromReferenceMap(reason = "Some GCs process this field manually.", onlyIf = NotCardRememberedSetHeap.class) //
+    transient Target_java_lang_ref_Reference<?> discovered;
 
     @Alias @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.Custom, declClass = ComputeQueueValue.class) //
     volatile Target_java_lang_ref_ReferenceQueue<? super T> queue;
 
     @Alias @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.Reset) //
-    Reference<?> next;
+    volatile Reference<?> next;
 
     @Substitute
     Target_java_lang_ref_Reference(T referent) {
@@ -133,7 +136,25 @@ public final class Target_java_lang_ref_Reference<T> {
     @TargetElement(onlyWith = JDK8OrEarlier.class)
     @SuppressWarnings("unused")
     static boolean tryHandlePending(boolean waitForNotify) {
-        throw VMError.unimplemented();
+        /*
+         * This method in JDK 8 was replaced by waitForReferenceProcessing in JDK 11. On JDK 8, it
+         * helped with reference handling by handling a single reference (if one is available). The
+         * only caller (apart from the reference handling thread itself) in the JDK is
+         * `Bits.reserveMemory`, which passes `false` as the parameter `waitForNotify`. So our
+         * substitution, which always waits, is a considerable change in semantics. However, since
+         * `Bits.reserveMemory` did not change much between JDK 8 and JDK 11, this is OK.
+         */
+        try {
+            return ReferenceInternals.waitForReferenceProcessing();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            /*
+             * The caller might loop until "there is no more progress", i.e., until this method
+             * returns false. So returning true could lead to an infinite loop in the caller that is
+             * not interruptible.
+             */
+            return false;
+        }
     }
 
     /** May be used by {@code JavaLangRefAccess} via {@code SharedSecrets}. */
@@ -205,9 +226,9 @@ class ComputeQueueValue implements CustomFieldValueComputer {
 }
 
 @Platforms(Platform.HOSTED_ONLY.class)
-class ComputeTrue implements CustomFieldValueComputer {
+class NotCardRememberedSetHeap implements BooleanSupplier {
     @Override
-    public Object compute(MetaAccessProvider metaAccess, ResolvedJavaField original, ResolvedJavaField annotated, Object receiver) {
-        return true;
+    public boolean getAsBoolean() {
+        return !SubstrateOptions.UseCardRememberedSetHeap.getValue();
     }
 }

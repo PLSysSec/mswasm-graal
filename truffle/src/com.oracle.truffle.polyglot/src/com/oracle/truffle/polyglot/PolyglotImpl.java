@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -44,7 +44,6 @@ import static com.oracle.truffle.polyglot.EngineAccessor.INSTRUMENT;
 
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.time.Duration;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -59,6 +58,7 @@ import java.util.logging.Handler;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.HostAccess.TargetMappingPrecedence;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.ResourceLimitEvent;
 import org.graalvm.polyglot.Value;
@@ -72,6 +72,7 @@ import com.oracle.truffle.api.impl.DispatchOutputStream;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
+import org.graalvm.polyglot.io.FileSystem;
 
 /*
  * This class is exported to the GraalVM SDK. Keep that in mind when changing its class or package name.
@@ -128,10 +129,9 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
 
     @Override
     public Object buildLimits(long statementLimit, Predicate<org.graalvm.polyglot.Source> statementLimitSourceFilter,
-                    Duration timeLimit, Duration timeLimitAccuracy,
                     Consumer<ResourceLimitEvent> onLimit) {
         try {
-            return new PolyglotLimits(statementLimit, statementLimitSourceFilter, timeLimit, timeLimitAccuracy, onLimit);
+            return new PolyglotLimits(statementLimit, statementLimitSourceFilter, onLimit);
         } catch (Throwable t) {
             throw PolyglotImpl.guestToHostException(this, t);
         }
@@ -196,8 +196,7 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
             InputStream resolvedIn = in == null ? System.in : in;
             DispatchOutputStream dispatchOut = INSTRUMENT.createDispatchOutput(resolvedOut);
             DispatchOutputStream dispatchErr = INSTRUMENT.createDispatchOutput(resolvedErr);
-            Handler logHandler = PolyglotLogHandler.asHandler(logHandlerOrStream);
-            logHandler = logHandler != null ? logHandler : PolyglotLogHandler.createStreamHandler(resolvedErr, false, true);
+            Handler logHandler = PolyglotLoggers.asHandler(logHandlerOrStream);
             ClassLoader contextClassLoader = TruffleOptions.AOT ? null : Thread.currentThread().getContextClassLoader();
 
             impl = boundEngine ? preInitializedEngineRef.getAndSet(null) : null;
@@ -230,7 +229,7 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
      */
     @Override
     public void preInitializeEngine() {
-        final Handler logHandler = PolyglotLogHandler.createStreamHandler(System.err, false, true);
+        final Handler logHandler = PolyglotLoggers.createStreamHandler(System.err, false, true);
         try {
             final PolyglotEngineImpl preInitializedEngine = PolyglotEngineImpl.preInitialize(
                             this,
@@ -286,9 +285,9 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
     }
 
     @Override
-    public <S, T> Object newTargetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> acceptsValue, Function<S, T> convertValue) {
+    public <S, T> Object newTargetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> acceptsValue, Function<S, T> convertValue, TargetMappingPrecedence precedence) {
         try {
-            return new PolyglotTargetMapping(sourceType, targetType, acceptsValue, convertValue);
+            return new PolyglotTargetMapping(sourceType, targetType, acceptsValue, convertValue, precedence);
         } catch (Throwable t) {
             throw PolyglotImpl.guestToHostException(this, t);
         }
@@ -303,7 +302,6 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
          * No entered context. Try to do something reasonable.
          */
         assert !(hostValue instanceof Value);
-        PolyglotContextImpl valueContext = null;
         Object guestValue = null;
         if (hostValue == null) {
             return hostNull;
@@ -312,9 +310,10 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
         } else if (HostWrapper.isInstance(hostValue)) {
             HostWrapper hostWrapper = HostWrapper.asInstance(hostValue);
             // host wrappers can nicely reuse the associated context
+            PolyglotLanguageContext languageContext = hostWrapper.getLanguageContext();
+            assert languageContext != null : "HostWrappers must be guaranteed to have non-null language context.";
             guestValue = hostWrapper.getGuestObject();
-            valueContext = hostWrapper.getContext();
-            return valueContext.asValue(guestValue);
+            return languageContext.asValue(guestValue);
         } else {
             /*
              * We currently cannot support doing interop without a context so we create our own
@@ -324,7 +323,7 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
             if (hostValue instanceof TruffleObject) {
                 guestValue = hostValue;
             } else if (hostValue instanceof Proxy) {
-                guestValue = PolyglotProxy.toProxyGuestObject(null, (Proxy) hostValue);
+                guestValue = PolyglotProxy.toProxyGuestObject((Proxy) hostValue);
             } else if (hostValue instanceof Class) {
                 guestValue = HostObject.forClass((Class<?>) hostValue, null);
             } else {
@@ -343,6 +342,11 @@ public final class PolyglotImpl extends AbstractPolyglotImpl {
         } catch (Throwable t) {
             throw PolyglotImpl.guestToHostException(this, t);
         }
+    }
+
+    @Override
+    public FileSystem newDefaultFileSystem() {
+        return FileSystems.newDefaultFileSystem();
     }
 
     org.graalvm.polyglot.Source getPolyglotSource(Source source) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,7 +40,6 @@ import org.graalvm.compiler.nodes.AbstractMergeNode;
 import org.graalvm.compiler.nodes.BeginNode;
 import org.graalvm.compiler.nodes.CallTargetNode;
 import org.graalvm.compiler.nodes.CallTargetNode.InvokeKind;
-import org.graalvm.compiler.nodes.ConstantNode;
 import org.graalvm.compiler.nodes.DynamicPiNode;
 import org.graalvm.compiler.nodes.FixedGuardNode;
 import org.graalvm.compiler.nodes.IfNode;
@@ -48,6 +47,7 @@ import org.graalvm.compiler.nodes.Invoke;
 import org.graalvm.compiler.nodes.LogicNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.PiNode;
+import org.graalvm.compiler.nodes.PluginReplacementNode;
 import org.graalvm.compiler.nodes.StateSplit;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
@@ -100,8 +100,8 @@ public interface GraphBuilderContext extends GraphBuilderTool {
      * immediately. If the node is a {@link StateSplit} with a null
      * {@linkplain StateSplit#stateAfter() frame state} , the frame state is initialized.
      *
-     * @param value the value to add to the graph and push to the stack. The
-     *            {@code value.getJavaKind()} kind is used when type checking this operation.
+     * @param value the value to add to the graph. The {@code value.getJavaKind()} kind is used when
+     *            type checking this operation.
      * @return a node equivalent to {@code value} in the graph
      */
     default <T extends ValueNode> T add(T value) {
@@ -318,11 +318,6 @@ public interface GraphBuilderContext extends GraphBuilderTool {
         }
     }
 
-    @SuppressWarnings("unused")
-    default void notifyReplacedCall(ResolvedJavaMethod targetMethod, ConstantNode node) {
-
-    }
-
     /**
      * Interface whose instances hold inlining information about the current context, in a wider
      * sense. The wider sense in this case concerns graph building approaches that don't necessarily
@@ -376,6 +371,17 @@ public interface GraphBuilderContext extends GraphBuilderTool {
      */
     default AbstractBeginNode genExplicitExceptionEdge(@SuppressWarnings("ununsed") BytecodeExceptionKind exceptionKind) {
         return null;
+    }
+
+    /**
+     *
+     * @param plugin
+     * @param targetMethod
+     * @param args
+     * @param replacementFunction
+     */
+    default void replacePlugin(GeneratedInvocationPlugin plugin, ResolvedJavaMethod targetMethod, ValueNode[] args, PluginReplacementNode.ReplacementFunction replacementFunction) {
+        throw GraalError.unimplemented();
     }
 }
 

@@ -43,6 +43,8 @@ package org.graalvm.wasm;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import org.graalvm.wasm.memory.WasmMemory;
 
+import java.util.function.BiFunction;
+
 public class MemoryRegistry {
     private static final int INITIAL_MEMORIES_SIZE = 4;
 
@@ -66,12 +68,20 @@ public class MemoryRegistry {
         return numMemories;
     }
 
-    public int allocateMemory(WasmMemory memory) {
+    private int allocateMemoryWith(WasmMemory memory) {
         ensureCapacity();
         memories[numMemories] = memory;
         int idx = numMemories;
         numMemories++;
         return idx;
+    }
+
+    public int allocateExternalMemory(WasmMemory externalMemory) {
+        return allocateMemoryWith(externalMemory);
+    }
+
+    public int allocateMemory(SymbolTable.MemoryInfo info, BiFunction<Integer, Integer, WasmMemory> makeMemory) {
+        return allocateMemoryWith(makeMemory.apply(info.initialSize, info.maximumSize));
     }
 
     public WasmMemory memory(int index) {

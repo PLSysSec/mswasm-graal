@@ -35,9 +35,10 @@ import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.WordFactory;
 
-import com.oracle.svm.core.annotate.AlwaysInline;
 import com.oracle.svm.core.annotate.AutomaticFeature;
+import com.oracle.svm.core.annotate.RestrictHeapAccess;
 import com.oracle.svm.core.annotate.Uninterruptible;
+import com.oracle.svm.core.annotate.RestrictHeapAccess.Access;
 import com.oracle.svm.core.c.NonmovableArray;
 import com.oracle.svm.core.c.NonmovableArrays;
 import com.oracle.svm.core.deopt.DeoptimizedFrame;
@@ -119,7 +120,6 @@ public class CodeInfoTable {
         return result;
     }
 
-    @AlwaysInline("de-virtualize calls to ObjectReferenceVisitor")
     public static boolean visitObjectReferences(Pointer sp, CodePointer ip, CodeInfo info, DeoptimizedFrame deoptimizedFrame, ObjectReferenceVisitor visitor) {
         counters().visitObjectReferencesCount.inc();
 
@@ -140,18 +140,17 @@ public class CodeInfoTable {
         NonmovableArray<Byte> referenceMapEncoding = NonmovableArrays.nullArray();
         long referenceMapIndex = CodeInfoQueryResult.NO_REFERENCE_MAP;
         if (info.isNonNull()) {
-            referenceMapEncoding = CodeInfoAccess.getReferenceMapEncoding(info);
-            referenceMapIndex = CodeInfoAccess.lookupReferenceMapIndex(info, CodeInfoAccess.relativeIP(info, ip));
+            referenceMapEncoding = CodeInfoAccess.getStackReferenceMapEncoding(info);
+            referenceMapIndex = CodeInfoAccess.lookupStackReferenceMapIndex(info, CodeInfoAccess.relativeIP(info, ip));
         }
         if (referenceMapIndex == CodeInfoQueryResult.NO_REFERENCE_MAP) {
-            throw reportNoReferenceMap(sp, ip, deoptimizedFrame, info);
+            throw reportNoReferenceMap(sp, ip, info);
         }
         return CodeReferenceMapDecoder.walkOffsetsFromPointer(sp, referenceMapEncoding, referenceMapIndex, visitor);
     }
 
-    private static RuntimeException reportNoReferenceMap(Pointer sp, CodePointer ip, DeoptimizedFrame deoptimizedFrame, CodeInfo info) {
-        Log.log().string("ip: ").hex(ip).string("  sp: ").hex(sp);
-        Log.log().string("  deoptFrame: ").object(deoptimizedFrame).string("  info:");
+    public static RuntimeException reportNoReferenceMap(Pointer sp, CodePointer ip, CodeInfo info) {
+        Log.log().string("ip: ").hex(ip).string("  sp: ").hex(sp).string("  info:");
         CodeInfoAccess.log(info, Log.log()).newline();
         throw VMError.shouldNotReachHere("No reference map information found");
     }
@@ -227,6 +226,7 @@ public class CodeInfoTable {
         codeCache.logMethodOperationEnd(num);
     }
 
+    @RestrictHeapAccess(access = Access.NO_ALLOCATION, reason = "Called by the GC")
     public static void invalidateNonStackCodeAtSafepoint(CodeInfo info) {
         VMOperation.guaranteeGCInProgress("Must only be called during a GC.");
         RuntimeCodeCache codeCache = getRuntimeCodeCache();

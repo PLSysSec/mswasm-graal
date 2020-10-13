@@ -1,7 +1,7 @@
 #
 # ----------------------------------------------------------------------------------------------------
 #
-# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -28,13 +28,15 @@
 
 from __future__ import print_function
 
-import os, shutil, re
+import os
+import shutil
+import re
+import sys
 from os.path import join, exists
 from argparse import ArgumentParser, REMAINDER
 
 import mx
-
-import sys
+from mx_urlrewrites import rewriteurl
 
 if sys.version_info[0] < 3:
     _long = long # pylint: disable=undefined-variable
@@ -71,10 +73,9 @@ def run_netbeans_app(app_name, env=None, args=None):
 def netbeans_jdk(appName):
     v8u20 = mx.VersionSpec("1.8.0_20")
     v8u40 = mx.VersionSpec("1.8.0_40")
-    v11 = mx.VersionSpec("11") # IGV requires java.xml.bind which has been removed in 11 (JEP320)
     def _igvJdkVersionCheck(version):
-        return (version < v8u20 or version >= v8u40) and version < v11
-    return mx.get_jdk(_igvJdkVersionCheck, versionDescription='(< 1.8.0u20 or >= 1.8.0u40) and < 11', purpose="running " + appName).home
+        return version < v8u20 or version >= v8u40
+    return mx.get_jdk(_igvJdkVersionCheck, versionDescription='(< 1.8.0u20 or >= 1.8.0u40)', purpose="running " + appName).home
 
 def igv(args):
     """(obsolete) informs about IGV"""
@@ -132,7 +133,7 @@ def hsdis(args, copyToDir=None):
     path = join(_suite.get_output_root(), lib)
     if not exists(path):
         sha1path = path + '.sha1'
-        mx.download_file_with_sha1('hsdis', path, ['https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/hsdis/' + lib.replace(os.sep, '/')], sha1, sha1path, True, True, sources=False)
+        mx.download_file_with_sha1('hsdis', path, [rewriteurl('https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/hsdis/' + lib.replace(os.sep, '/'))], sha1, sha1path, True, True, sources=False)
 
     overwrite = True
     if copyToDir is None:

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,10 @@
  */
 package com.oracle.truffle.polyglot;
 
+import static com.oracle.truffle.api.CompilerDirectives.shouldNotReachHere;
+import static com.oracle.truffle.polyglot.EngineAccessor.RUNTIME;
+import static com.oracle.truffle.polyglot.EngineAccessor.SOURCE;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -61,12 +65,10 @@ import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractValueImpl;
 
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Specialization;
-import com.oracle.truffle.api.impl.Accessor.CallProfiled;
 import com.oracle.truffle.api.interop.ArityException;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
@@ -118,10 +120,11 @@ abstract class PolyglotValue extends AbstractValueImpl {
 
     private static final String TRUNCATION_SUFFIX = "...";
 
+    private static final String UNKNOWN = "Unknown";
+
     protected final PolyglotLanguageContext languageContext;
 
     static final InteropLibrary UNCACHED_INTEROP = InteropLibrary.getFactory().getUncached();
-    static final CallProfiled CALL_PROFILED = EngineAccessor.ACCESSOR.getCallProfiled();
 
     PolyglotValue(PolyglotLanguageContext languageContext) {
         super(languageContext.getEngine().impl);
@@ -576,8 +579,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
             try {
                 return asValue(lib.getMetaObject(receiver));
             } catch (UnsupportedMessageException e) {
-                CompilerDirectives.transferToInterpreter();
-                throw new AssertionError("Unexpected unsupported message.", e);
+                throw shouldNotReachHere("Unexpected unsupported message.", e);
             }
         }
         return null;
@@ -648,7 +650,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
             }
 
             String valueToString;
-            String metaObjectToString = "Unknown";
+            String metaObjectToString = UNKNOWN;
             try {
                 InteropLibrary uncached = InteropLibrary.getFactory().getUncached(view);
                 if (uncached.hasMetaObject(view)) {
@@ -657,8 +659,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
                 }
                 valueToString = truncateString(INTEROP.asString(uncached.toDisplayString(view)), CHARACTER_LIMIT);
             } catch (UnsupportedMessageException e) {
-                CompilerDirectives.transferToInterpreter();
-                throw new AssertionError(e);
+                throw shouldNotReachHere(e);
             }
             String languageName = null;
             boolean hideType = false;
@@ -666,7 +667,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
                 languageName = "Java"; // java is our host language for now
 
                 // hide meta objects of null
-                if (metaObjectToString.equals("java.lang.Void")) {
+                if (UNKNOWN.equals(metaObjectToString) && INTEROP.isNull(receiver)) {
                     hideType = true;
                 }
             } else {
@@ -829,7 +830,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
         try {
             return resultLib.asString(result);
         } catch (UnsupportedMessageException e) {
-            throw new AssertionError("toDisplayString must be coercible to java.lang.String, but is not.");
+            throw shouldNotReachHere("toDisplayString must be coercible to java.lang.String, but is not.", e);
         }
     }
 
@@ -849,7 +850,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
                 if (result == null) {
                     return null;
                 }
-                return EngineImpl.createSourceSectionStatic(EngineAccessor.SOURCE.getPolyglotSource(result.getSource()), result);
+                return EngineImpl.createSourceSectionStatic(SOURCE.getPolyglotSource(result.getSource()), result);
             } finally {
                 hostLeave(languageContext, prev);
             }
@@ -865,30 +866,15 @@ abstract class PolyglotValue extends AbstractValueImpl {
 
     @Override
     public boolean equalsImpl(Object receiver, Object obj) {
-        try {
-            Object prev = hostEnter(languageContext);
-            try {
-                return Objects.equals(receiver, obj);
-            } finally {
-                hostLeave(languageContext, prev);
-            }
-        } catch (Throwable t) {
-            throw PolyglotImpl.guestToHostException(languageContext, t);
+        if (receiver == obj) {
+            return true;
         }
+        return HostWrapper.equals(languageContext, receiver, obj);
     }
 
     @Override
     public int hashCodeImpl(Object receiver) {
-        try {
-            Object prev = hostEnter(languageContext);
-            try {
-                return receiver.hashCode();
-            } finally {
-                hostLeave(languageContext, prev);
-            }
-        } catch (Throwable t) {
-            throw PolyglotImpl.guestToHostException(languageContext, t);
-        }
+        return HostWrapper.hashCode(languageContext, receiver);
     }
 
     @Override
@@ -922,7 +908,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
         CallTarget target = Truffle.getRuntime().createCallTarget(root);
         Class<?>[] types = root.getArgumentTypes();
         if (types != null) {
-            EngineAccessor.ACCESSOR.initializeProfile(target, types);
+            RUNTIME.initializeProfile(target, types);
         }
         return target;
     }
@@ -2297,7 +2283,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
 
             @Override
             protected Class<?>[] getArgumentTypes() {
-                return new Class<?>[]{PolyglotLanguageContext.class, polyglot.receiverType, Object.class};
+                return new Class<?>[]{PolyglotLanguageContext.class, polyglot.receiverType, null};
             }
 
             @Override
@@ -2623,73 +2609,73 @@ abstract class PolyglotValue extends AbstractValueImpl {
         @SuppressWarnings("unchecked")
         @Override
         public <T> T as(Object receiver, Class<T> targetType) {
-            return (T) CALL_PROFILED.call(cache.asClassLiteral, languageContext, receiver, targetType);
+            return (T) RUNTIME.callProfiled(cache.asClassLiteral, languageContext, receiver, targetType);
         }
 
         @SuppressWarnings("unchecked")
         @Override
         public <T> T as(Object receiver, TypeLiteral<T> targetType) {
-            return (T) CALL_PROFILED.call(cache.asTypeLiteral, languageContext, receiver, targetType);
+            return (T) RUNTIME.callProfiled(cache.asTypeLiteral, languageContext, receiver, targetType);
         }
 
         @Override
         public boolean isNativePointer(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isNativePointer, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isNativePointer, languageContext, receiver);
         }
 
         @Override
         public boolean hasArrayElements(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.hasArrayElements, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.hasArrayElements, languageContext, receiver);
         }
 
         @Override
         public Value getArrayElement(Object receiver, long index) {
-            return (Value) CALL_PROFILED.call(cache.getArrayElement, languageContext, receiver, index);
+            return (Value) RUNTIME.callProfiled(cache.getArrayElement, languageContext, receiver, index);
         }
 
         @Override
         public void setArrayElement(Object receiver, long index, Object value) {
-            CALL_PROFILED.call(cache.setArrayElement, languageContext, receiver, index, value);
+            RUNTIME.callProfiled(cache.setArrayElement, languageContext, receiver, index, value);
         }
 
         @Override
         public boolean removeArrayElement(Object receiver, long index) {
-            return (boolean) CALL_PROFILED.call(cache.removeArrayElement, languageContext, receiver, index);
+            return (boolean) RUNTIME.callProfiled(cache.removeArrayElement, languageContext, receiver, index);
         }
 
         @Override
         public long getArraySize(Object receiver) {
-            return (long) CALL_PROFILED.call(cache.getArraySize, languageContext, receiver);
+            return (long) RUNTIME.callProfiled(cache.getArraySize, languageContext, receiver);
         }
 
         @Override
         public boolean hasMembers(Object receiver) {
-            return (boolean) cache.hasMembers.call(languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.hasMembers, languageContext, receiver);
         }
 
         @Override
         public Value getMember(Object receiver, String key) {
-            return (Value) CALL_PROFILED.call(cache.getMember, languageContext, receiver, key);
+            return (Value) RUNTIME.callProfiled(cache.getMember, languageContext, receiver, key);
         }
 
         @Override
         public boolean hasMember(Object receiver, String key) {
-            return (boolean) CALL_PROFILED.call(cache.hasMember, languageContext, receiver, key);
+            return (boolean) RUNTIME.callProfiled(cache.hasMember, languageContext, receiver, key);
         }
 
         @Override
         public void putMember(Object receiver, String key, Object member) {
-            CALL_PROFILED.call(cache.putMember, languageContext, receiver, key, member);
+            RUNTIME.callProfiled(cache.putMember, languageContext, receiver, key, member);
         }
 
         @Override
         public boolean removeMember(Object receiver, String key) {
-            return (boolean) CALL_PROFILED.call(cache.removeMember, languageContext, receiver, key);
+            return (boolean) RUNTIME.callProfiled(cache.removeMember, languageContext, receiver, key);
         }
 
         @Override
         public Set<String> getMemberKeys(Object receiver) {
-            Value keys = (Value) CALL_PROFILED.call(cache.getMemberKeys, languageContext, receiver);
+            Value keys = (Value) RUNTIME.callProfiled(cache.getMemberKeys, languageContext, receiver);
             if (keys == null) {
                 // unsupported
                 return Collections.emptySet();
@@ -2699,52 +2685,52 @@ abstract class PolyglotValue extends AbstractValueImpl {
 
         @Override
         public long asNativePointer(Object receiver) {
-            return (long) CALL_PROFILED.call(cache.asNativePointer, languageContext, receiver);
+            return (long) RUNTIME.callProfiled(cache.asNativePointer, languageContext, receiver);
         }
 
         @Override
         public boolean isDate(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isDate, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isDate, languageContext, receiver);
         }
 
         @Override
         public LocalDate asDate(Object receiver) {
-            return (LocalDate) CALL_PROFILED.call(cache.asDate, languageContext, receiver);
+            return (LocalDate) RUNTIME.callProfiled(cache.asDate, languageContext, receiver);
         }
 
         @Override
         public boolean isTime(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isTime, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isTime, languageContext, receiver);
         }
 
         @Override
         public LocalTime asTime(Object receiver) {
-            return (LocalTime) CALL_PROFILED.call(cache.asTime, languageContext, receiver);
+            return (LocalTime) RUNTIME.callProfiled(cache.asTime, languageContext, receiver);
         }
 
         @Override
         public boolean isTimeZone(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isTimeZone, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isTimeZone, languageContext, receiver);
         }
 
         @Override
         public ZoneId asTimeZone(Object receiver) {
-            return (ZoneId) CALL_PROFILED.call(cache.asTimeZone, languageContext, receiver);
+            return (ZoneId) RUNTIME.callProfiled(cache.asTimeZone, languageContext, receiver);
         }
 
         @Override
         public Instant asInstant(Object receiver) {
-            return (Instant) CALL_PROFILED.call(cache.asInstant, languageContext, receiver);
+            return (Instant) RUNTIME.callProfiled(cache.asInstant, languageContext, receiver);
         }
 
         @Override
         public boolean isDuration(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isDuration, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isDuration, languageContext, receiver);
         }
 
         @Override
         public Duration asDuration(Object receiver) {
-            return (Duration) CALL_PROFILED.call(cache.asDuration, languageContext, receiver);
+            return (Duration) RUNTIME.callProfiled(cache.asDuration, languageContext, receiver);
         }
 
         @Override
@@ -2769,7 +2755,7 @@ abstract class PolyglotValue extends AbstractValueImpl {
         @Override
         public Object asHostObject(Object receiver) {
             if (cache.isHost) {
-                return ((HostObject) receiver).obj;
+                return HostObject.valueOf(receiver);
             } else {
                 return super.asHostObject(receiver);
             }
@@ -2777,67 +2763,67 @@ abstract class PolyglotValue extends AbstractValueImpl {
 
         @Override
         public boolean isNull(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isNull, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isNull, languageContext, receiver);
         }
 
         @Override
         public boolean canExecute(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.canExecute, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.canExecute, languageContext, receiver);
         }
 
         @Override
         public void executeVoid(Object receiver, Object[] arguments) {
-            CALL_PROFILED.call(cache.executeVoid, languageContext, receiver, arguments);
+            RUNTIME.callProfiled(cache.executeVoid, languageContext, receiver, arguments);
         }
 
         @Override
         public void executeVoid(Object receiver) {
-            CALL_PROFILED.call(cache.executeVoidNoArgs, languageContext, receiver);
+            RUNTIME.callProfiled(cache.executeVoidNoArgs, languageContext, receiver);
         }
 
         @Override
         public Value execute(Object receiver, Object[] arguments) {
-            return (Value) CALL_PROFILED.call(cache.execute, languageContext, receiver, arguments);
+            return (Value) RUNTIME.callProfiled(cache.execute, languageContext, receiver, arguments);
         }
 
         @Override
         public Value execute(Object receiver) {
-            return (Value) CALL_PROFILED.call(cache.executeNoArgs, languageContext, receiver);
+            return (Value) RUNTIME.callProfiled(cache.executeNoArgs, languageContext, receiver);
         }
 
         @Override
         public boolean canInstantiate(Object receiver) {
-            return (boolean) cache.canInstantiate.call(languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.canInstantiate, languageContext, receiver);
         }
 
         @Override
         public Value newInstance(Object receiver, Object[] arguments) {
-            return (Value) cache.newInstance.call(languageContext, receiver, arguments);
+            return (Value) RUNTIME.callProfiled(cache.newInstance, languageContext, receiver, arguments);
         }
 
         @Override
         public boolean canInvoke(String identifier, Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.canInvoke, languageContext, receiver, identifier);
+            return (boolean) RUNTIME.callProfiled(cache.canInvoke, languageContext, receiver, identifier);
         }
 
         @Override
         public Value invoke(Object receiver, String identifier, Object[] arguments) {
-            return (Value) CALL_PROFILED.call(cache.invoke, languageContext, receiver, identifier, arguments);
+            return (Value) RUNTIME.callProfiled(cache.invoke, languageContext, receiver, identifier, arguments);
         }
 
         @Override
         public Value invoke(Object receiver, String identifier) {
-            return (Value) CALL_PROFILED.call(cache.invokeNoArgs, languageContext, receiver, identifier);
+            return (Value) RUNTIME.callProfiled(cache.invokeNoArgs, languageContext, receiver, identifier);
         }
 
         @Override
         public boolean isException(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isException, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isException, languageContext, receiver);
         }
 
         @Override
         public RuntimeException throwException(Object receiver) {
-            CALL_PROFILED.call(cache.throwException, languageContext, receiver);
+            RUNTIME.callProfiled(cache.throwException, languageContext, receiver);
             throw super.throwException(receiver);
         }
 
@@ -3100,22 +3086,22 @@ abstract class PolyglotValue extends AbstractValueImpl {
 
         @Override
         public boolean isMetaObject(Object receiver) {
-            return (boolean) CALL_PROFILED.call(cache.isMetaObject, languageContext, receiver);
+            return (boolean) RUNTIME.callProfiled(cache.isMetaObject, languageContext, receiver);
         }
 
         @Override
         public boolean isMetaInstance(Object receiver, Object instance) {
-            return (boolean) CALL_PROFILED.call(cache.isMetaInstance, languageContext, receiver, instance);
+            return (boolean) RUNTIME.callProfiled(cache.isMetaInstance, languageContext, receiver, instance);
         }
 
         @Override
         public String getMetaQualifiedName(Object receiver) {
-            return (String) CALL_PROFILED.call(cache.getMetaQualifiedName, languageContext, receiver);
+            return (String) RUNTIME.callProfiled(cache.getMetaQualifiedName, languageContext, receiver);
         }
 
         @Override
         public String getMetaSimpleName(Object receiver) {
-            return (String) CALL_PROFILED.call(cache.getMetaSimpleName, languageContext, receiver);
+            return (String) RUNTIME.callProfiled(cache.getMetaSimpleName, languageContext, receiver);
         }
 
         private final class MemberSet extends AbstractSet<String> {

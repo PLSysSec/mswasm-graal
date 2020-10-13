@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,8 @@
  */
 package com.oracle.truffle.api.test.interop;
 
+import com.oracle.truffle.api.exception.AbstractTruffleException;
+import com.oracle.truffle.api.interop.ExceptionType;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertFalse;
@@ -54,6 +56,7 @@ import com.oracle.truffle.api.interop.InteropException;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
+import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.api.test.polyglot.ProxyLanguage;
@@ -93,7 +96,7 @@ public class InteropDefaultsTest extends InteropLibraryBaseTest {
         assertNoDuration(v);
         assertNoSourceLocation(v);
         assertNoLanguage(v);
-
+        assertNoIdentity(v);
     }
 
     @Test
@@ -116,7 +119,7 @@ public class InteropDefaultsTest extends InteropLibraryBaseTest {
 
     @Test
     public void testIntDefault() throws InteropException {
-        assertNumber(Integer.MIN_VALUE, false, false, true, true, false, true);
+        assertNumber(Integer.MIN_VALUE, false, false, true, true, true, true);
         assertNumber(Short.MIN_VALUE - 1, false, false, true, true, true, true);
         assertNumber((int) Short.MIN_VALUE, false, true, true, true, true, true);
         assertNumber(Byte.MIN_VALUE - 1, false, true, true, true, true, true);
@@ -126,14 +129,17 @@ public class InteropDefaultsTest extends InteropLibraryBaseTest {
         assertNumber(Byte.MAX_VALUE + 1, false, true, true, true, true, true);
         assertNumber((int) Short.MAX_VALUE, false, true, true, true, true, true);
         assertNumber(Short.MAX_VALUE + 1, false, false, true, true, true, true);
-        assertNumber(Integer.MAX_VALUE, false, false, true, true, false, true);
+        assertNumber(1 << 24, false, false, true, true, true, true);
+        assertNumber((1 << 24) + 1, false, false, true, true, false, true);
+        assertNumber(1 << 25, false, false, true, true, true, true);
+        assertNumber(Integer.MAX_VALUE, false, false, true, true, true, true);
     }
 
     @Test
     public void testLongDefault() throws InteropException {
-        assertNumber(Long.MIN_VALUE, false, false, false, true, false, false);
+        assertNumber(Long.MIN_VALUE, false, false, false, true, true, true);
         assertNumber((long) Integer.MIN_VALUE - 1, false, false, false, true, false, true);
-        assertNumber((long) Integer.MIN_VALUE, false, false, true, true, false, true);
+        assertNumber((long) Integer.MIN_VALUE, false, false, true, true, true, true);
         assertNumber((long) Short.MIN_VALUE - 1, false, false, true, true, true, true);
         assertNumber((long) Short.MIN_VALUE, false, true, true, true, true, true);
         assertNumber((long) Byte.MIN_VALUE - 1, false, true, true, true, true, true);
@@ -144,7 +150,12 @@ public class InteropDefaultsTest extends InteropLibraryBaseTest {
         assertNumber((long) Short.MAX_VALUE, false, true, true, true, true, true);
         assertNumber((long) Short.MAX_VALUE + 1, false, false, true, true, true, true);
         assertNumber((long) Integer.MAX_VALUE, false, false, true, true, false, true);
-        assertNumber(Long.MAX_VALUE, false, false, false, true, false, false);
+        assertNumber(1L << 24, false, false, true, true, true, true);
+        assertNumber((1L << 24) + 1, false, false, true, true, false, true);
+        assertNumber(1L << 25, false, false, true, true, true, true);
+        assertNumber((1L << 53) + 1, false, false, false, true, false, false);
+        assertNumber(1L << 54, false, false, false, true, true, true);
+        assertNumber(Long.MAX_VALUE, false, false, false, true, true, true);
     }
 
     @Test
@@ -231,7 +242,7 @@ public class InteropDefaultsTest extends InteropLibraryBaseTest {
         assertNoDuration(v);
         assertNoSourceLocation(v);
         assertNoLanguage(v);
-
+        assertNoIdentity(v);
     }
 
     private void assertNumber(Object v, boolean supportsByte, boolean supportsShort,
@@ -299,6 +310,7 @@ public class InteropDefaultsTest extends InteropLibraryBaseTest {
         assertNoDuration(v);
         assertNoSourceLocation(v);
         assertNoLanguage(v);
+        assertNoIdentity(v);
     }
 
     @Test
@@ -455,6 +467,142 @@ public class InteropDefaultsTest extends InteropLibraryBaseTest {
         assertNoDuration(v);
         assertNoSourceLocation(v);
         assertNoLanguage(v);
+        assertNoIdentity(v);
     }
 
+    @Test
+    public void testScopeDefault() {
+        Object v = new TruffleObject() {
+        };
+        InteropLibrary l = createLibrary(InteropLibrary.class, v);
+        assertFalse(l.isScope(v));
+        assertFalse(l.hasScopeParent(v));
+        assertFails(() -> l.getScopeParent(v), UnsupportedMessageException.class);
+    }
+
+    @Test
+    public void testExceptionDefaults() throws UnsupportedMessageException {
+        Object empty = new TruffleObject() {
+        };
+        InteropLibrary emptyLib = createLibrary(InteropLibrary.class, empty);
+        assertFalse(emptyLib.isException(empty));
+        assertFalse(emptyLib.hasExceptionCause(empty));
+        assertFalse(emptyLib.hasExceptionMessage(empty));
+        assertFalse(emptyLib.hasExceptionStackTrace(empty));
+        assertFails(() -> emptyLib.getExceptionCause(empty), UnsupportedMessageException.class);
+        assertFails(() -> emptyLib.getExceptionExitStatus(empty), UnsupportedMessageException.class);
+        assertFails(() -> emptyLib.isExceptionIncompleteSource(empty), UnsupportedMessageException.class);
+        assertFails(() -> emptyLib.getExceptionMessage(empty), UnsupportedMessageException.class);
+        assertFails(() -> emptyLib.getExceptionStackTrace(empty), UnsupportedMessageException.class);
+        assertFails(() -> emptyLib.getExceptionType(empty), UnsupportedMessageException.class);
+
+        AbstractTruffleException cause = new Exception("Cause Exception");
+        String message = "Enclosing exception";
+        AbstractTruffleException exception = new Exception(message, cause);
+        InteropLibrary exceptionLib = createLibrary(InteropLibrary.class, exception);
+        assertTrue(exceptionLib.isException(exception));
+        assertTrue(exceptionLib.hasExceptionCause(exception));
+        assertTrue(exceptionLib.hasExceptionMessage(exception));
+        assertTrue(exceptionLib.hasExceptionStackTrace(exception));
+        assertEquals(cause, exceptionLib.getExceptionCause(exception));
+        assertEquals(message, exceptionLib.getExceptionMessage(exception));
+        assertEquals(ExceptionType.RUNTIME_ERROR, exceptionLib.getExceptionType(exception));
+        assertFalse(exceptionLib.isExceptionIncompleteSource(exception));
+        assertFails(() -> exceptionLib.getExceptionExitStatus(exception), UnsupportedMessageException.class);
+        exceptionLib.getExceptionStackTrace(exception);
+
+        LegacyCatchableException legacyCatchableException = new LegacyCatchableException(message);
+        InteropLibrary legacyCatchableExceptionLib = createLibrary(InteropLibrary.class, legacyCatchableException);
+        assertTrue(legacyCatchableExceptionLib.isException(legacyCatchableException));
+        assertFalse(legacyCatchableExceptionLib.hasExceptionCause(legacyCatchableException));
+        assertTrue(legacyCatchableExceptionLib.hasExceptionMessage(legacyCatchableException));
+        assertTrue(legacyCatchableExceptionLib.hasExceptionStackTrace(legacyCatchableException));
+        assertFails(() -> legacyCatchableExceptionLib.getExceptionCause(legacyCatchableException), UnsupportedMessageException.class);
+        assertEquals(message, legacyCatchableExceptionLib.getExceptionMessage(legacyCatchableException));
+        assertEquals(ExceptionType.RUNTIME_ERROR, legacyCatchableExceptionLib.getExceptionType(legacyCatchableException));
+        assertFails(() -> legacyCatchableExceptionLib.getExceptionExitStatus(legacyCatchableException), UnsupportedMessageException.class);
+        assertFalse(legacyCatchableExceptionLib.isExceptionIncompleteSource(legacyCatchableException));
+        legacyCatchableExceptionLib.getExceptionStackTrace(legacyCatchableException);
+
+        LegacyUncatchableException legacyUncatchableException = new LegacyUncatchableException();
+        InteropLibrary legacyUncatchableExceptionLib = createLibrary(InteropLibrary.class, legacyUncatchableException);
+        assertFalse(legacyUncatchableExceptionLib.isException(legacyUncatchableException));
+        assertFalse(legacyUncatchableExceptionLib.hasExceptionCause(legacyUncatchableException));
+        assertFalse(legacyUncatchableExceptionLib.hasExceptionMessage(legacyUncatchableException));
+        assertFalse(legacyUncatchableExceptionLib.hasExceptionStackTrace(legacyUncatchableException));
+        assertFails(() -> legacyUncatchableExceptionLib.getExceptionCause(legacyUncatchableException), UnsupportedMessageException.class);
+        assertFails(() -> legacyUncatchableExceptionLib.getExceptionMessage(legacyUncatchableException), UnsupportedMessageException.class);
+        assertFails(() -> legacyUncatchableExceptionLib.getExceptionType(legacyUncatchableException), UnsupportedMessageException.class);
+        assertFails(() -> legacyUncatchableExceptionLib.getExceptionExitStatus(legacyUncatchableException), UnsupportedMessageException.class);
+        assertFails(() -> legacyUncatchableExceptionLib.isExceptionIncompleteSource(legacyUncatchableException), UnsupportedMessageException.class);
+        assertFails(() -> legacyUncatchableExceptionLib.getExceptionStackTrace(legacyUncatchableException), UnsupportedMessageException.class);
+
+        LegacyInternalError legacyInternalError = new LegacyInternalError(message);
+        InteropLibrary legacyInternalErrorLib = createLibrary(InteropLibrary.class, legacyInternalError);
+        assertFalse(legacyInternalErrorLib.isException(legacyInternalError));
+        assertFalse(legacyInternalErrorLib.hasExceptionCause(legacyInternalError));
+        assertFalse(legacyInternalErrorLib.hasExceptionMessage(legacyInternalError));
+        assertFalse(legacyInternalErrorLib.hasExceptionStackTrace(legacyInternalError));
+        assertFails(() -> legacyInternalErrorLib.getExceptionCause(legacyInternalError), UnsupportedMessageException.class);
+        assertFails(() -> legacyInternalErrorLib.getExceptionMessage(legacyInternalError), UnsupportedMessageException.class);
+        assertFails(() -> legacyInternalErrorLib.getExceptionType(legacyInternalError), UnsupportedMessageException.class);
+        assertFails(() -> legacyInternalErrorLib.getExceptionExitStatus(legacyInternalError), UnsupportedMessageException.class);
+        assertFails(() -> legacyInternalErrorLib.isExceptionIncompleteSource(legacyInternalError), UnsupportedMessageException.class);
+        assertFails(() -> legacyInternalErrorLib.getExceptionStackTrace(legacyInternalError), UnsupportedMessageException.class);
+    }
+
+    @SuppressWarnings("serial")
+    private static final class Exception extends AbstractTruffleException {
+
+        Exception(String message) {
+            super(message);
+        }
+
+        Exception(String message, Throwable cause) {
+            super(message, cause, UNLIMITED_STACK_TRACE, null);
+        }
+    }
+
+    @SuppressWarnings({"serial", "deprecation"})
+    private static final class LegacyCatchableException extends RuntimeException implements com.oracle.truffle.api.TruffleException {
+
+        LegacyCatchableException(String message) {
+            super(message);
+        }
+
+        @Override
+        public Node getLocation() {
+            return null;
+        }
+    }
+
+    @SuppressWarnings({"serial", "deprecation"})
+    private static final class LegacyUncatchableException extends ThreadDeath implements com.oracle.truffle.api.TruffleException {
+
+        LegacyUncatchableException() {
+        }
+
+        @Override
+        public Node getLocation() {
+            return null;
+        }
+    }
+
+    @SuppressWarnings({"serial", "deprecation"})
+    private static final class LegacyInternalError extends RuntimeException implements com.oracle.truffle.api.TruffleException {
+
+        LegacyInternalError(String message) {
+            super(message);
+        }
+
+        @Override
+        public Node getLocation() {
+            return null;
+        }
+
+        @Override
+        public boolean isInternalError() {
+            return true;
+        }
+    }
 }

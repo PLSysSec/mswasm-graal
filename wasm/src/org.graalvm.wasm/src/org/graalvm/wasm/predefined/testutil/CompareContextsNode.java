@@ -44,19 +44,19 @@ import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import org.graalvm.wasm.GlobalRegistry;
 import org.graalvm.wasm.WasmContext;
+import org.graalvm.wasm.WasmInstance;
 import org.graalvm.wasm.WasmLanguage;
-import org.graalvm.wasm.WasmModule;
 import org.graalvm.wasm.WasmVoidResult;
 import org.graalvm.wasm.exception.WasmExecutionException;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
-import org.graalvm.wasm.predefined.testutil.SaveContextNode.ContextState;
+import org.graalvm.wasm.predefined.testutil.SaveContextNodeNode.ContextState;
 
 /**
  * Records the context state (memory and global variables) into a custom object.
  */
 public class CompareContextsNode extends WasmBuiltinRootNode {
-    public CompareContextsNode(WasmLanguage language, WasmModule module) {
+    public CompareContextsNode(WasmLanguage language, WasmInstance module) {
         super(language, module);
     }
 
@@ -70,7 +70,7 @@ public class CompareContextsNode extends WasmBuiltinRootNode {
 
     @Override
     public String builtinNodeName() {
-        return TestutilModule.Names.RESET_CONTEXT;
+        return TestutilModule.Names.COMPARE_CONTEXTS;
     }
 
     @CompilerDirectives.TruffleBoundary
@@ -112,7 +112,7 @@ public class CompareContextsNode extends WasmBuiltinRootNode {
             byte first = (byte) firstMemory.load_i32_8s(this, ptr);
             byte last = (byte) lastMemory.load_i32_8s(this, ptr);
             if (first != last) {
-                long from = (ptr - 100) / 8 * 8;
+                int from = (ptr - 100) / 8 * 8;
                 throw new WasmExecutionException(this, "Memory mismatch.\n" +
                                 "-- Reference --\n" + firstMemory.hexView(from, 200) + "\n" +
                                 "-- Actual --\n" + firstMemory.hexView(from, 200) + "\n");

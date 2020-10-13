@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -43,8 +43,7 @@ package org.graalvm.wasm.predefined.wasi;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import org.graalvm.wasm.WasmContext;
 import org.graalvm.wasm.WasmLanguage;
-import org.graalvm.wasm.WasmModule;
-import org.graalvm.wasm.WasmVoidResult;
+import org.graalvm.wasm.WasmInstance;
 import org.graalvm.wasm.exception.WasmExecutionException;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
@@ -54,13 +53,13 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import java.nio.charset.StandardCharsets;
 
 public class WasiArgsGetNode extends WasmBuiltinRootNode {
-    WasiArgsGetNode(WasmLanguage language, WasmModule module) {
+    public WasiArgsGetNode(WasmLanguage language, WasmInstance module) {
         super(language, module);
     }
 
     @Override
     public Object executeWithContext(VirtualFrame frame, WasmContext context) {
-        final WasmMemory memory = module.symbolTable().memory();
+        final WasmMemory memory = instance.memory();
         final int argvAddress = (int) frame.getArguments()[0];
         final int argvBuffAddress = (int) frame.getArguments()[1];
 
@@ -81,7 +80,7 @@ public class WasiArgsGetNode extends WasmBuiltinRootNode {
             argvBuffPointer++;
         }
 
-        return WasmVoidResult.getInstance();
+        return 0;
     }
 
     @TruffleBoundary

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,16 +40,15 @@
  */
 package com.oracle.truffle.sl.runtime;
 
+import static com.oracle.truffle.api.CompilerDirectives.shouldNotReachHere;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.util.Collections;
 import java.util.List;
 
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.Scope;
 import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.TruffleLanguage.Env;
@@ -58,9 +57,6 @@ import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.instrumentation.AllocationReporter;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.nodes.NodeInfo;
-import com.oracle.truffle.api.object.DynamicObject;
-import com.oracle.truffle.api.object.Layout;
-import com.oracle.truffle.api.object.Shape;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.sl.SLLanguage;
 import com.oracle.truffle.sl.builtins.SLBuiltinNode;
@@ -97,16 +93,13 @@ import com.oracle.truffle.sl.nodes.local.SLReadArgumentNode;
 public final class SLContext {
 
     private static final Source BUILTIN_SOURCE = Source.newBuilder(SLLanguage.ID, "", "SL builtin").build();
-    static final Layout LAYOUT = Layout.createLayout();
 
     private final Env env;
     private final BufferedReader input;
     private final PrintWriter output;
     private final SLFunctionRegistry functionRegistry;
-    private final Shape emptyShape;
     private final SLLanguage language;
     private final AllocationReporter allocationReporter;
-    private final Iterable<Scope> topScopes; // Cache the top scopes
 
     public SLContext(SLLanguage language, TruffleLanguage.Env env, List<NodeFactory<? extends SLBuiltinNode>> externalBuiltins) {
         this.env = env;
@@ -115,12 +108,10 @@ public final class SLContext {
         this.language = language;
         this.allocationReporter = env.lookup(AllocationReporter.class);
         this.functionRegistry = new SLFunctionRegistry(language);
-        this.topScopes = Collections.singleton(Scope.newBuilder("global", functionRegistry.getFunctionsObject()).build());
         installBuiltins();
         for (NodeFactory<? extends SLBuiltinNode> builtin : externalBuiltins) {
             installBuiltin(builtin);
         }
-        this.emptyShape = LAYOUT.createShape(SLObjectType.SINGLETON);
     }
 
     /**
@@ -151,10 +142,6 @@ public final class SLContext {
      */
     public SLFunctionRegistry getFunctionRegistry() {
         return functionRegistry;
-    }
-
-    public Iterable<Scope> getTopScopes() {
-        return topScopes;
     }
 
     /**
@@ -230,26 +217,6 @@ public final class SLContext {
         return allocationReporter;
     }
 
-    /**
-     * Allocate an empty object. All new objects initially have no properties. Properties are added
-     * when they are first stored, i.e., the store triggers a shape change of the object.
-     */
-    public DynamicObject createObject(AllocationReporter reporter) {
-        DynamicObject object = null;
-        reporter.onEnter(null, 0, AllocationReporter.SIZE_UNKNOWN);
-        object = emptyShape.newInstance();
-        reporter.onReturnValue(object, 0, AllocationReporter.SIZE_UNKNOWN);
-        return object;
-    }
-
-    public static boolean isSLObject(Object value) {
-        /*
-         * LAYOUT.getType() returns a concrete implementation class, i.e., a class that is more
-         * precise than the base class DynamicObject. This makes the type check faster.
-         */
-        return LAYOUT.getType().isInstance(value) && LAYOUT.getType().cast(value).getShape().getObjectType() == SLObjectType.SINGLETON;
-    }
-
     /*
      * Methods for language interoperability.
      */
@@ -266,8 +233,7 @@ public final class SLContext {
         } else if (a instanceof SLContext) {
             return a;
         }
-        CompilerDirectives.transferToInterpreter();
-        throw new IllegalStateException(a + " is not a Truffle value");
+        throw shouldNotReachHere("Value is not a truffle value.");
     }
 
     @TruffleBoundary

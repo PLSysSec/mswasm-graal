@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.graalvm.collections.EconomicMap;
+import org.graalvm.compiler.core.Instrumentation;
 import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.debug.TTY;
@@ -95,6 +96,8 @@ public abstract class CompilerConfigurationFactory implements Comparable<Compile
     }
 
     public abstract CompilerConfiguration createCompilerConfiguration();
+
+    public abstract Instrumentation createInstrumentation(OptionValues options);
 
     /**
      * Collect the set of available {@linkplain HotSpotBackendFactory backends} for this compiler

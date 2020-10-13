@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,6 +45,7 @@ import org.graalvm.collections.UnmodifiableMapCursor;
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.api.runtime.GraalRuntime;
 import org.graalvm.compiler.core.CompilationWrapper.ExceptionAction;
+import org.graalvm.compiler.core.Instrumentation;
 import org.graalvm.compiler.core.common.CompilationIdentifier;
 import org.graalvm.compiler.core.common.CompilationListenerProfiler;
 import org.graalvm.compiler.core.common.CompilerProfiler;
@@ -103,8 +104,10 @@ import jdk.vm.ci.services.Services;
 public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
 
     private static final boolean IS_AOT = Boolean.parseBoolean(Services.getSavedProperties().get("com.oracle.graalvm.isaot"));
+
     /**
-     * A factory for {@link HotSpotGraalManagementRegistration} injected by {@code LibGraalFeature}.
+     * A factory for a {@link HotSpotGraalManagementRegistration} injected by
+     * {@code Target_org_graalvm_compiler_hotspot_HotSpotGraalRuntime}.
      */
     private static final Supplier<HotSpotGraalManagementRegistration> AOT_INJECTED_MANAGEMENT = null;
 
@@ -135,6 +138,8 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
     private final EconomicMap<Class<? extends Architecture>, HotSpotBackend> backends = EconomicMap.create(Equivalence.IDENTITY);
 
     private final GraalHotSpotVMConfig config;
+
+    private final Instrumentation instrumentation;
 
     /**
      * The options can be {@linkplain #setOptionValues(String[], String[]) updated} by external
@@ -175,6 +180,8 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
         snippetCounterGroups = GraalOptions.SnippetCounters.getValue(options) ? new ArrayList<>() : null;
         CompilerConfiguration compilerConfiguration = compilerConfigurationFactory.createCompilerConfiguration();
         compilerConfigurationName = compilerConfigurationFactory.getName();
+
+        this.instrumentation = compilerConfigurationFactory.createInstrumentation(options);
 
         if (IS_AOT) {
             management = AOT_INJECTED_MANAGEMENT == null ? null : AOT_INJECTED_MANAGEMENT.get();
@@ -425,12 +432,22 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
         return compilerConfigurationName;
     }
 
+    @Override
+    public Instrumentation getInstrumentation() {
+        return instrumentation;
+    }
+
     private long runtimeStartTime;
 
     /**
      * Called from compiler threads to check whether to bail out of a compilation.
      */
     private volatile boolean shutdown;
+
+    /**
+     * Shutdown hooks that should be run on the same thread doing the shutdown.
+     */
+    private List<Runnable> shutdownHooks = new ArrayList<>();
 
     /**
      * Take action related to entering a new execution phase.
@@ -443,8 +460,29 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
         }
     }
 
-    void shutdown() {
+    /**
+     * Adds a {@link Runnable} that will be run when this runtime is {@link #shutdown()}. The
+     * runnable will be run on the same thread doing the shutdown. All the advice for regular
+     * {@linkplain Runtime#addShutdownHook(Thread) shutdown hooks} also applies here but even more
+     * so since the hook runs on the shutdown thread.
+     */
+    public synchronized void addShutdownHook(Runnable hook) {
+        if (!shutdown) {
+            shutdownHooks.add(hook);
+        }
+    }
+
+    synchronized void shutdown() {
         shutdown = true;
+
+        for (Runnable r : shutdownHooks) {
+            try {
+                r.run();
+            } catch (Throwable e) {
+                e.printStackTrace(TTY.out);
+            }
+        }
+
         metricValues.print(optionsRef.get());
 
         phaseTransition("final");
@@ -458,15 +496,17 @@ public final class HotSpotGraalRuntime implements HotSpotGraalRuntimeProvider {
 
         outputDirectory.close();
 
-        shutdownLibGraal();
+        shutdownLibGraal(this);
     }
 
     /**
      * Substituted by
      * {@code com.oracle.svm.graal.hotspot.libgraal.Target_org_graalvm_compiler_hotspot_HotSpotGraalRuntime}
-     * to call {@code org.graalvm.nativeimage.VMRuntime.shutdown()}.
+     * to notify {@code org.graalvm.libgraal.LibGraalIsolate} and call
+     * {@code org.graalvm.nativeimage.VMRuntime.shutdown()}.
      */
-    private static void shutdownLibGraal() {
+    @SuppressWarnings("unused")
+    private static void shutdownLibGraal(HotSpotGraalRuntime runtime) {
     }
 
     void clearMetrics() {

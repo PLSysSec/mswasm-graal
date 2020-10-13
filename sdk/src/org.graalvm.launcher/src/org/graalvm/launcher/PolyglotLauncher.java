@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -194,7 +194,8 @@ public final class PolyglotLauncher extends LanguageLauncherBase {
 
     private void launchImpl(List<String> argumentsList) {
         if (isAOT()) {
-            maybeNativeExec(argumentsList, true, Collections.emptyMap());
+            List<String> originalArgs = Collections.unmodifiableList(new ArrayList<>(argumentsList));
+            maybeNativeExec(originalArgs, argumentsList, true);
         }
 
         final Deque<String> arguments = new ArrayDeque<>(argumentsList);
@@ -425,9 +426,9 @@ public final class PolyglotLauncher extends LanguageLauncherBase {
     }
 
     private void runShell(Context.Builder contextBuilder) {
-        try (Context context = contextBuilder.build()) {
-            MultiLanguageShell polyglotShell = new MultiLanguageShell(context, System.in, System.out, mainLanguage);
-            throw exit(polyglotShell.readEvalPrint());
+        try (Context context = contextBuilder.build();
+                        MultiLanguageShell polyglotShell = new MultiLanguageShell(context, mainLanguage)) {
+            throw exit(polyglotShell.runRepl());
         } catch (IOException e) {
             throw abort(e);
         }

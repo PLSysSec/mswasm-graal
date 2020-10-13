@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -47,6 +47,7 @@ import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.nodes.RootNode;
+import com.oracle.truffle.api.profiles.BranchProfile;
 import com.oracle.truffle.polyglot.PolyglotLanguage.ContextProfile;
 
 abstract class HostToGuestRootNode extends RootNode {
@@ -61,14 +62,27 @@ abstract class HostToGuestRootNode extends RootNode {
     @CompilationFinal private volatile ContextProfile profile;
 
     private final PolyglotEngineImpl engine;
+    private final BranchProfile error = BranchProfile.create();
 
     HostToGuestRootNode() {
-        super(null);
+        this(null);
+    }
+
+    HostToGuestRootNode(PolyglotLanguageContext languageContext) {
+        super(languageContext != null ? languageContext.getLanguageInstance().spi : null);
         this.engine = (PolyglotEngineImpl) EngineAccessor.NODES.getPolyglotEngine(this);
         assert this.engine != null : "all host to guest root nodes need to be initialized when entered";
     }
 
     protected abstract Class<?> getReceiverType();
+
+    protected boolean needsEnter() {
+        return true;
+    }
+
+    protected boolean needsExceptionWrapping() {
+        return true;
+    }
 
     @Override
     public final Object execute(VirtualFrame frame) {
@@ -77,7 +91,7 @@ abstract class HostToGuestRootNode extends RootNode {
         try {
             assert languageContext != null;
             PolyglotContextImpl context = languageContext.context;
-            boolean needsEnter = languageContext != null && engine.needsEnter(context);
+            boolean needsEnter = needsEnter() && languageContext != null && engine.needsEnter(context);
             Object prev;
             if (needsEnter) {
                 if (!seenEnter) {
@@ -105,8 +119,12 @@ abstract class HostToGuestRootNode extends RootNode {
                 }
             }
         } catch (Throwable e) {
-            CompilerDirectives.transferToInterpreter();
-            throw PolyglotImpl.guestToHostException((languageContext), e);
+            if (needsExceptionWrapping()) {
+                error.enter();
+                throw PolyglotImpl.guestToHostException((languageContext), e);
+            }
+            // no wrapping, just throw
+            throw e;
         }
     }
 

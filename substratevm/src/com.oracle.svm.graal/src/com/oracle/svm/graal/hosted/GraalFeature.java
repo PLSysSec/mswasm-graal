@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -44,6 +44,7 @@ import java.util.function.Predicate;
 
 import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.compiler.api.runtime.GraalRuntime;
+import org.graalvm.compiler.core.common.spi.MetaAccessExtensionProvider;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.Node.NodeIntrinsic;
@@ -68,6 +69,7 @@ import org.graalvm.compiler.nodes.java.MethodCallTargetNode;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.phases.OptimisticOptimizations;
 import org.graalvm.compiler.phases.common.CanonicalizerPhase;
+import org.graalvm.compiler.phases.common.IterativeConditionalEliminationPhase;
 import org.graalvm.compiler.phases.common.inlining.InliningUtil;
 import org.graalvm.compiler.phases.tiers.Suites;
 import org.graalvm.compiler.phases.util.Providers;
@@ -89,12 +91,15 @@ import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.graal.GraalConfiguration;
 import com.oracle.svm.core.graal.code.SubstrateBackend;
+import com.oracle.svm.core.graal.code.SubstrateMetaAccessExtensionProvider;
 import com.oracle.svm.core.graal.meta.RuntimeConfiguration;
 import com.oracle.svm.core.graal.meta.SubstrateReplacements;
 import com.oracle.svm.core.graal.stackvalue.StackValueNode;
 import com.oracle.svm.core.jdk.RuntimeSupport;
+import com.oracle.svm.core.meta.SharedType;
 import com.oracle.svm.core.option.HostedOptionKey;
 import com.oracle.svm.core.option.RuntimeOptionValues;
+import com.oracle.svm.core.util.UserError;
 import com.oracle.svm.core.util.VMError;
 import com.oracle.svm.graal.GraalSupport;
 import com.oracle.svm.graal.SubstrateGraalRuntime;
@@ -126,6 +131,7 @@ import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import jdk.vm.ci.meta.DeoptimizationAction;
 import jdk.vm.ci.meta.DeoptimizationReason;
 import jdk.vm.ci.meta.JavaKind;
+import jdk.vm.ci.meta.JavaType;
 import jdk.vm.ci.meta.ResolvedJavaField;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
@@ -147,7 +153,7 @@ public final class GraalFeature implements Feature {
         public static final HostedOptionKey<Boolean> PrintStaticTruffleBoundaries = new HostedOptionKey<>(false);
 
         @Option(help = "Maximum number of methods allowed for runtime compilation.")//
-        public static final HostedOptionKey<Integer[]> MaxRuntimeCompileMethods = new HostedOptionKey<>(new Integer[]{});
+        public static final HostedOptionKey<String[]> MaxRuntimeCompileMethods = new HostedOptionKey<>(new String[]{});
 
         @Option(help = "Enforce checking of maximum number of methods allowed for runtime compilation. Useful for checking in the gate that the number of methods does not go up without a good reason.")//
         public static final HostedOptionKey<Boolean> EnforceMaxRuntimeCompileMethods = new HostedOptionKey<>(false);
@@ -351,7 +357,7 @@ public final class GraalFeature implements Feature {
         WordTypes wordTypes = runtimeConfigBuilder.getWordTypes();
         hostedProviders = new HostedProviders(runtimeProviders.getMetaAccess(), runtimeProviders.getCodeCache(), runtimeProviders.getConstantReflection(), runtimeProviders.getConstantFieldProvider(),
                         runtimeProviders.getForeignCalls(), runtimeProviders.getLowerer(), runtimeProviders.getReplacements(), runtimeProviders.getStampProvider(),
-                        runtimeConfig.getSnippetReflection(), wordTypes, runtimeProviders.getPlatformConfigurationProvider());
+                        runtimeConfig.getSnippetReflection(), wordTypes, runtimeProviders.getPlatformConfigurationProvider(), new GraphPrepareMetaAccessExtensionProvider());
 
         SubstrateGraalRuntime graalRuntime = new SubstrateGraalRuntime();
         objectReplacer.setGraalRuntime(graalRuntime);
@@ -438,9 +444,10 @@ public final class GraalFeature implements Feature {
         AnalysisMethod aMethod = (AnalysisMethod) method;
         SubstrateMethod sMethod = objectReplacer.createMethod(aMethod);
 
-        assert !methods.containsKey(aMethod);
-        methods.put(aMethod, new CallTreeNode(aMethod, aMethod, null, 0, ""));
-        config.registerAsInvoked(aMethod);
+        if (!methods.containsKey(aMethod)) {
+            methods.put(aMethod, new CallTreeNode(aMethod, aMethod, null, 0, ""));
+            config.registerAsInvoked(aMethod);
+        }
 
         return sMethod;
     }
@@ -624,8 +631,15 @@ public final class GraalFeature implements Feature {
         }
 
         int maxMethods = 0;
-        for (Integer value : Options.MaxRuntimeCompileMethods.getValue()) {
-            maxMethods += value;
+        for (String value : Options.MaxRuntimeCompileMethods.getValue()) {
+            String numberStr = null;
+            try {
+                /* Strip optional comment string from MaxRuntimeCompileMethods value */
+                numberStr = value.split("#")[0];
+                maxMethods += Long.parseLong(numberStr);
+            } catch (NumberFormatException ex) {
+                throw UserError.abort("Invalid value for option 'MaxRuntimeCompileMethods': '%s' is not a valid number", numberStr);
+            }
         }
         if (Options.EnforceMaxRuntimeCompileMethods.getValue() && maxMethods != 0 && methods.size() > maxMethods) {
             printDeepestLevelPath();
@@ -643,6 +657,9 @@ public final class GraalFeature implements Feature {
 
         StrengthenStampsPhase strengthenStamps = new RuntimeStrengthenStampsPhase(config.getUniverse(), objectReplacer);
         CanonicalizerPhase canonicalizer = CanonicalizerPhase.create();
+        IterativeConditionalEliminationPhase conditionalElimination = new IterativeConditionalEliminationPhase(canonicalizer, true);
+        ConvertDeoptimizeToGuardPhase convertDeoptimizeToGuard = new ConvertDeoptimizeToGuardPhase();
+
         for (CallTreeNode node : methods.values()) {
             StructuredGraph graph = node.graph;
             if (graph != null) {
@@ -651,8 +668,15 @@ public final class GraalFeature implements Feature {
                     removeUnreachableInvokes(node);
                     strengthenStamps.apply(graph);
                     canonicalizer.apply(graph, hostedProviders);
-                    GraalConfiguration.instance().runAdditionalCompilerPhases(graph, this);
-                    canonicalizer.apply(graph, hostedProviders);
+
+                    conditionalElimination.apply(graph, hostedProviders);
+
+                    /*
+                     * ConvertDeoptimizeToGuardPhase was already executed after parsing, but
+                     * optimizations applied in between can provide new potential.
+                     */
+                    convertDeoptimizeToGuard.apply(graph, hostedProviders);
+
                     graphEncoder.prepare(graph);
                 } catch (Throwable ex) {
                     debug.handle(ex);
@@ -890,5 +914,29 @@ class RuntimeStrengthenStampsPhase extends StrengthenStampsPhase {
         }
 
         return result;
+    }
+}
+
+/**
+ * Same behavior as {@link SubstrateMetaAccessExtensionProvider}, but operating on
+ * {@link AnalysisType} instead of {@link SharedType} since parsing of graphs for runtime
+ * compilation happens in the Analysis universe.
+ */
+class GraphPrepareMetaAccessExtensionProvider implements MetaAccessExtensionProvider {
+
+    @Override
+    public JavaKind getStorageKind(JavaType type) {
+        return ((AnalysisType) type).getStorageKind();
+    }
+
+    @Override
+    public boolean canConstantFoldDynamicAllocation(ResolvedJavaType type) {
+        assert type instanceof AnalysisType : "AnalysisType is required; AnalysisType lazily creates array types of any depth, so type cannot be null";
+        return ((AnalysisType) type).isInstantiated();
+    }
+
+    @Override
+    public boolean isGuaranteedSafepoint(ResolvedJavaMethod method, boolean isDirect) {
+        throw VMError.shouldNotReachHere();
     }
 }

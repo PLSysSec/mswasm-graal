@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -76,7 +76,6 @@ import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.Split
 import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.SplittingDumpDecisions;
 import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.SplittingGrowthLimit;
 import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.SplittingMaxCalleeSize;
-import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.SplittingMaxNumberOfSplitNodes;
 import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.SplittingMaxPropagationDepth;
 import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.SplittingTraceEvents;
 import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.TraceAssumptions;
@@ -138,7 +137,7 @@ public final class TruffleRuntimeOptions {
             if (hasBeenSet(values, key)) {
                 Object value = getPolyglotOptionValue(values, key);
                 if (!isPrimitiveType(value)) {
-                    value = CompilerRuntimeAccessor.engineAccessor().getUnparsedOptionValue(values, key);
+                    value = GraalRuntimeAccessor.ENGINE.getUnparsedOptionValue(values, key);
                 }
                 if (value != null) {
                     map.put(desc.getName(), value);
@@ -233,7 +232,6 @@ public final class TruffleRuntimeOptions {
         result.put(Splitting, identity(SharedTruffleRuntimeOptions.TruffleSplitting));
         result.put(SplittingMaxCalleeSize, identity(SharedTruffleRuntimeOptions.TruffleSplittingMaxCalleeSize));
         result.put(SplittingGrowthLimit, identity(SharedTruffleRuntimeOptions.TruffleSplittingGrowthLimit));
-        result.put(SplittingMaxNumberOfSplitNodes, identity(SharedTruffleRuntimeOptions.TruffleSplittingMaxNumberOfSplitNodes));
         result.put(SplittingMaxPropagationDepth, identity(SharedTruffleRuntimeOptions.TruffleSplittingMaxPropagationDepth));
         result.put(TraceSplittingSummary, identity(SharedTruffleRuntimeOptions.TruffleTraceSplittingSummary));
         result.put(SplittingTraceEvents, identity(SharedTruffleRuntimeOptions.TruffleSplittingTraceEvents));

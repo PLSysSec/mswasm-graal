@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,7 +29,6 @@ import java.util.Map;
 
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.UnmodifiableMapCursor;
-import org.graalvm.compiler.debug.TTY;
 import org.graalvm.compiler.hotspot.CompilerConfigurationFactory;
 import org.graalvm.compiler.hotspot.HotSpotGraalOptionValues;
 import org.graalvm.compiler.options.OptionDescriptors;
@@ -92,10 +91,5 @@ final class HotSpotTruffleRuntime extends AbstractHotSpotTruffleRuntime {
     @Override
     public TruffleCompiler newTruffleCompiler() {
         return HotSpotTruffleCompilerImpl.create(this);
-    }
-
-    @Override
-    public void log(String message) {
-        TTY.println(message);
     }
 }

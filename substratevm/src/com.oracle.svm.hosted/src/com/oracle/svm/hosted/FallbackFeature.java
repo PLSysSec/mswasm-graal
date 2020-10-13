@@ -118,7 +118,7 @@ public class FallbackFeature implements Feature {
 
         void apply(BytecodePosition invokeLocation) {
             ClassLoader classLoader = ((AnalysisMethod) invokeLocation.getMethod()).getDeclaringClass().getJavaClass().getClassLoader();
-            if (classLoader instanceof NativeImageClassLoader) {
+            if (NativeImageSystemClassLoader.singleton().isNativeImageClassLoader(classLoader)) {
                 checker.check(this, invokeLocation);
             }
         }
@@ -214,7 +214,7 @@ public class FallbackFeature implements Feature {
 
     static UserError.UserException reportAsFallback(RuntimeException original) {
         if (SubstrateOptions.FallbackThreshold.getValue() == SubstrateOptions.NoFallback) {
-            throw UserError.abort(original, original.getMessage());
+            throw UserError.abort(original, "%s", original.getMessage());
         }
         throw reportFallback(ABORT_MSG_PREFIX + ". " + original.getMessage(), original);
     }

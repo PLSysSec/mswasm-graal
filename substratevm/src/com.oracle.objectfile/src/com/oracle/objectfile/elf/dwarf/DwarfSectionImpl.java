@@ -32,6 +32,7 @@ import com.oracle.objectfile.LayoutDecision;
 import com.oracle.objectfile.LayoutDecisionMap;
 import com.oracle.objectfile.ObjectFile;
 import com.oracle.objectfile.debugentry.ClassEntry;
+import com.oracle.objectfile.elf.ELFMachine;
 import com.oracle.objectfile.elf.ELFObjectFile;
 import org.graalvm.compiler.debug.DebugContext;
 
@@ -53,6 +54,10 @@ public abstract class DwarfSectionImpl extends BasicProgbitsSectionImpl {
 
     public DwarfSectionImpl(DwarfDebugInfo dwarfSections) {
         this.dwarfSections = dwarfSections;
+    }
+
+    public boolean isAArch64() {
+        return dwarfSections.elfMachine == ELFMachine.AArch64;
     }
 
     /**
@@ -187,7 +192,7 @@ public abstract class DwarfSectionImpl extends BasicProgbitsSectionImpl {
         /*
          * Mark address so it is relocated relative to the start of the text segment.
          */
-        markRelocationSite(pos, 8, ObjectFile.RelocationKind.DIRECT, TEXT_SECTION_NAME, false, Long.valueOf(l));
+        markRelocationSite(pos, ObjectFile.RelocationKind.DIRECT_8, TEXT_SECTION_NAME, false, Long.valueOf(l));
         pos = putLong(0, buffer, pos);
         return pos;
     }

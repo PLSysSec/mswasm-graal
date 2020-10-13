@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,10 +32,15 @@ import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
@@ -43,7 +48,6 @@ import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.oracle.svm.util.ModuleSupport;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.options.OptionType;
@@ -62,6 +66,7 @@ import com.oracle.svm.core.util.UserError;
 import com.oracle.svm.hosted.FeatureImpl.BeforeAnalysisAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.DuringAnalysisAccessImpl;
 import com.oracle.svm.hosted.config.ConfigurationParserUtils;
+import com.oracle.svm.util.ModuleSupport;
 
 @AutomaticFeature
 public final class ResourcesFeature implements Feature {
@@ -123,47 +128,43 @@ public final class ResourcesFeature implements Feature {
                 ModuleSupport.findResourcesInModules(name -> matches(patterns, name),
                                 (resName, content) -> registerResource(debugContext, resName, content));
             } catch (IOException ex) {
-                throw UserError.abort("Can not read resources from modules. This is possible due to incorrect module " +
-                                "path or missing module visibility directives", ex);
+                throw UserError.abort(ex, "Can not read resources from modules. This is possible due to incorrect module path or missing module visibility directives");
             }
         }
 
-        for (Pattern pattern : patterns) {
+        /*
+         * Since IncludeResources takes regular expressions it's safer to disallow passing
+         * more than one regex with a single IncludeResources option. Note that it's still
+         * possible pass multiple IncludeResources regular expressions by passing each as
+         * its own IncludeResources option. E.g.
+         * @formatter:off
+         * -H:IncludeResources=nobel/prizes.json -H:IncludeResources=fields/prizes.json
+         * @formatter:on
+         */
 
-            /*
-             * Since IncludeResources takes regular expressions it's safer to disallow passing
-             * more than one regex with a single IncludeResources option. Note that it's still
-             * possible pass multiple IncludeResources regular expressions by passing each as
-             * its own IncludeResources option. E.g.
-             * @formatter:off
-             * -H:IncludeResources=nobel/prizes.json -H:IncludeResources=fields/prizes.json
-             * @formatter:on
-             */
-
-            final Set<File> todo = new HashSet<>();
-            // Checkstyle: stop
-            final ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-            if (contextClassLoader instanceof URLClassLoader) {
-                for (URL url : ((URLClassLoader) contextClassLoader).getURLs()) {
-                    try {
-                        final File file = new File(url.toURI());
-                        todo.add(file);
-                    } catch (URISyntaxException | IllegalArgumentException e) {
-                        throw UserError.abort("Unable to handle imagecp element '" + url.toExternalForm() + "'. Make sure that all imagecp entries are either directories or valid jar files.");
-                    }
+        final Set<File> todo = new HashSet<>();
+        // Checkstyle: stop
+        final ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        if (contextClassLoader instanceof URLClassLoader) {
+            for (URL url : ((URLClassLoader) contextClassLoader).getURLs()) {
+                try {
+                    final File file = new File(url.toURI());
+                    todo.add(file);
+                } catch (URISyntaxException | IllegalArgumentException e) {
+                    throw UserError.abort("Unable to handle imagecp element '%s'. Make sure that all imagecp entries are either directories or valid jar files.", url.toExternalForm());
                 }
             }
-            // Checkstyle: resume
-            for (File element : todo) {
-                try {
-                    if (element.isDirectory()) {
-                        scanDirectory(debugContext, element, "", pattern);
-                    } else {
-                        scanJar(debugContext, element, pattern);
-                    }
-                } catch (IOException ex) {
-                    throw UserError.abort("Unable to handle classpath element '" + element + "'. Make sure that all classpath entries are either directories or valid jar files.");
+        }
+        // Checkstyle: resume
+        for (File element : todo) {
+            try {
+                if (element.isDirectory()) {
+                    scanDirectory(debugContext, element, "", patterns);
+                } else {
+                    scanJar(debugContext, element, patterns);
                 }
+            } catch (IOException ex) {
+                throw UserError.abort("Unable to handle classpath element '%s'. Make sure that all classpath entries are either directories or valid jar files.", element);
             }
         }
         newResources.clear();
@@ -189,7 +190,7 @@ public final class ResourcesFeature implements Feature {
         if (f.isDirectory()) {
             File[] files = f.listFiles();
             if (files == null) {
-                throw UserError.abort("Cannot scan directory " + f);
+                throw UserError.abort("Cannot scan directory %s", f);
             } else {
                 for (File ch : files) {
                     scanDirectory(debugContext, ch, relativePath.isEmpty() ? ch.getName() : relativePath + "/" + ch.getName(), patterns);
@@ -207,17 +208,40 @@ public final class ResourcesFeature implements Feature {
     private static void scanJar(DebugContext debugContext, File element, Pattern... patterns) throws IOException {
         JarFile jf = new JarFile(element);
         Enumeration<JarEntry> en = jf.entries();
+
+        Map<String, List<String>> matchedDirectoryResources = new HashMap<>();
+        Set<String> allEntries = new HashSet<>();
         while (en.hasMoreElements()) {
             JarEntry e = en.nextElement();
-            if (e.getName().endsWith("/")) {
+            if (e.isDirectory()) {
+                String dirName = e.getName().substring(0, e.getName().length() - 1);
+                allEntries.add(dirName);
+                if (matches(patterns, dirName)) {
+                    matchedDirectoryResources.put(dirName, new ArrayList<>());
+                }
                 continue;
             }
+            allEntries.add(e.getName());
             if (matches(patterns, e.getName())) {
                 try (InputStream is = jf.getInputStream(e)) {
                     registerResource(debugContext, e.getName(), is);
                 }
             }
         }
+
+        for (String entry : allEntries) {
+            int last = entry.lastIndexOf('/');
+            String key = last == -1 ? "" : entry.substring(0, last);
+            List<String> dirContent = matchedDirectoryResources.get(key);
+            if (dirContent != null && !dirContent.contains(entry)) {
+                dirContent.add(entry.substring(last + 1, entry.length()));
+            }
+        }
+
+        matchedDirectoryResources.forEach((dir, content) -> {
+            content.sort(Comparator.naturalOrder());
+            registerDirectoryResource(debugContext, dir, String.join(System.lineSeparator(), content));
+        });
     }
 
     private static boolean matches(Pattern[] patterns, String relativePath) {
@@ -234,6 +258,14 @@ public final class ResourcesFeature implements Feature {
         try (DebugContext.Scope s = debugContext.scope("registerResource")) {
             debugContext.log(DebugContext.VERBOSE_LEVEL, "ResourcesFeature: registerResource: " + resourceName);
             Resources.registerResource(resourceName, resourceStream);
+        }
+    }
+
+    @SuppressWarnings("try")
+    private static void registerDirectoryResource(DebugContext debugContext, String dir, String content) {
+        try (DebugContext.Scope s = debugContext.scope("registerResource")) {
+            debugContext.log(DebugContext.VERBOSE_LEVEL, "ResourcesFeature: registerResource: " + dir);
+            Resources.registerDirectoryResource(dir, content);
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -69,7 +69,6 @@ import jdk.vm.ci.code.StackSlot;
 import jdk.vm.ci.code.TargetDescription;
 import jdk.vm.ci.meta.AllocatableValue;
 import jdk.vm.ci.meta.Constant;
-import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.Value;
 import jdk.vm.ci.meta.ValueKind;
 
@@ -204,7 +203,7 @@ public class LinearScanLifetimeAnalysisPhase extends LinearScanAllocationPhase {
                         }
                     };
                     ValueConsumer stateConsumer = (operand, mode, flags) -> {
-                        if (LinearScan.isVariableOrRegister(operand)) {
+                        if (LinearScan.isVariableOrRegister(operand) && allocator.isProcessed(operand)) {
                             int operandNum = getOperandNumber(operand);
                             if (!liveKillScratch.get(operandNum)) {
                                 liveGenScratch.set(operandNum);
@@ -399,8 +398,22 @@ public class LinearScanLifetimeAnalysisPhase extends LinearScanAllocationPhase {
                 if (Assertions.detailedAssertionsEnabled(allocator.getOptions())) {
                     reportFailure(numBlocks);
                 }
+                BitSet bs = allocator.getBlockData(startBlock).liveIn;
+                StringBuilder sb = new StringBuilder();
+                for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i + 1)) {
+                    int variableNumber = allocator.getVariableNumber(i);
+                    if (variableNumber >= 0) {
+                        sb.append("v").append(variableNumber);
+                    } else {
+                        sb.append(allocator.getRegisters().get(i));
+                    }
+                    sb.append(System.lineSeparator());
+                    if (i == Integer.MAX_VALUE) {
+                        break;
+                    }
+                }
                 // bailout if this occurs in product mode.
-                throw new GraalError("liveIn set of first block must be empty: " + allocator.getBlockData(startBlock).liveIn);
+                throw new GraalError("liveIn set of first block must be empty: " + allocator.getBlockData(startBlock).liveIn + " Live operands:" + sb.toString());
             }
         }
     }
@@ -892,7 +905,8 @@ public class LinearScanLifetimeAnalysisPhase extends LinearScanAllocationPhase {
      * @param interval The interval for this defined value.
      * @return Returns the value which is moved to the instruction and which can be reused at all
      *         reload-locations in case the interval of this instruction is spilled. Currently this
-     *         can only be a {@link JavaConstant}.
+     *         can only be a {@link LoadConstantOp#canRematerialize() rematerializable constant
+     *         load}.
      */
     protected Constant getMaterializedValue(LIRInstruction op, Value operand, Interval interval) {
         if (LoadConstantOp.isLoadConstantOp(op)) {
@@ -915,8 +929,7 @@ public class LinearScanLifetimeAnalysisPhase extends LinearScanAllocationPhase {
                 }
             }
             Constant constant = move.getConstant();
-            if (!(constant instanceof JavaConstant)) {
-                // Other kinds of constants might not be supported by the generic move operation.
+            if (!move.canRematerialize()) {
                 return null;
             }
             return constant;

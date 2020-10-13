@@ -29,12 +29,13 @@
  */
 package com.oracle.truffle.llvm.runtime.debug.debugexpr.nodes;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.graalvm.collections.Pair;
 
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.Scope;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnknownIdentifierException;
@@ -44,20 +45,23 @@ import com.oracle.truffle.llvm.runtime.debug.debugexpr.parser.DebugExprException
 import com.oracle.truffle.llvm.runtime.debug.debugexpr.parser.DebugExprType;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMExpressionNode;
 
+@SuppressWarnings("deprecation")
 public abstract class DebugExprVarNode extends LLVMExpressionNode implements MemberAccessible {
 
-    private final String name;
-    private Iterable<Scope> scopes;
+    static final com.oracle.truffle.api.Scope[] NO_SCOPES = {};
 
-    DebugExprVarNode(String name, Iterable<Scope> scopes) {
+    private final String name;
+    @CompilationFinal(dimensions = 1) private final com.oracle.truffle.api.Scope[] scopes;
+
+    DebugExprVarNode(String name, Collection</* Scope */ ?> scopes) {
         this.name = name;
-        this.scopes = scopes;
+        this.scopes = scopes.toArray(NO_SCOPES);
     }
 
     @TruffleBoundary
     private Pair<Object, DebugExprType> findMemberAndType() {
         InteropLibrary library = InteropLibrary.getFactory().getUncached();
-        for (Scope scope : scopes) {
+        for (com.oracle.truffle.api.Scope scope : scopes) {
             Object vars = scope.getVariables();
             try {
                 if (library.isMemberReadable(vars, name)) {
@@ -114,7 +118,7 @@ public abstract class DebugExprVarNode extends LLVMExpressionNode implements Mem
         throw DebugExprException.symbolNotFound(this, name, null);
     }
 
-    public DebugExprFunctionCallNode createFunctionCall(List<DebugExpressionPair> arguments, Iterable<Scope> globalScopes) {
-        return DebugExprFunctionCallNodeGen.create(name, arguments, globalScopes);
+    public DebugExprFunctionCallNode createFunctionCall(List<DebugExpressionPair> arguments, Object globalScope) {
+        return DebugExprFunctionCallNodeGen.create(name, arguments, globalScope);
     }
 }

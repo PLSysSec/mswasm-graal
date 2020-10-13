@@ -24,7 +24,16 @@
  */
 package com.oracle.svm.core.image;
 
+import java.util.Comparator;
+
 public interface ImageHeapObject {
+    class SizeComparator implements Comparator<ImageHeapObject> {
+        @Override
+        public int compare(ImageHeapObject o1, ImageHeapObject o2) {
+            return Long.signum(o1.getSize() - o2.getSize());
+        }
+    }
+
     long getSize();
 
     Object getObject();

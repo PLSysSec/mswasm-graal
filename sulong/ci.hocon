@@ -11,17 +11,13 @@ sulong-gateCommon: ${sulong-common} {
     targets: [gate]
 }
 
-sulong-gateStyle: ${sulong-gateCommon} ${linux-amd64} ${eclipse} {
+sulong-gateStyle: ${sulong-gateCommon} ${linux-amd64} ${eclipse} ${sulong.deps.linux} {
     packages: {
         ruby: "==2.1.0" # for mdl
-        "cmake": "==3.6.1",
     }
 }
 
-sulong-gateTest-linux: ${sulong-gateCommon} ${linux-amd64} {
-    packages: {
-        "cmake": "==3.6.1",
-    }
+sulong-gateTest-linux: ${sulong-gateCommon} ${linux-amd64} ${sulong.deps.linux} {
     downloads: {
         LIBGMP: {name: libgmp, version: "6.1.0", platformspecific: true}
     }
@@ -33,9 +29,12 @@ sulong-gateTest-linux: ${sulong-gateCommon} ${linux-amd64} {
     }
 }
 
+sulong-gateTest-darwin: ${sulong-gateCommon} ${darwin-amd64} ${sulong.deps.darwin}
+
 sulong-gateTest-default-tools {
     environment: {
         CLANG_LLVM_AS: "llvm-as"
+        CLANG_LLVM_LINK: "llvm-link"
         CLANG_LLVM_DIS: "llvm-dis"
         CLANG_LLVM_OPT: "opt"
     }
@@ -90,7 +89,7 @@ sulong-gateTestLLVMorg-linux: ${sulong-gateTest-linux} {
     # nothing to do
 }
 
-sulong-gateTest40-darwin: ${sulong-gateCommon} ${darwin-amd64} ${sulong-gateTest-default-tools} {
+sulong-gateTest40-darwin: ${sulong-gateTest-darwin} ${sulong-gateTest-default-tools} {
     packages: {
         llvm: "==4.0.1"
     }
@@ -100,13 +99,15 @@ sulong-gateTest40-darwin: ${sulong-gateCommon} ${darwin-amd64} ${sulong-gateTest
         CLANG_CXX: "clang-4.0 --driver-mode=g++"
         CLANG_NO_OPTNONE: "1"
     }
+    timelimit: "0:45:00"
 }
 
-sulong-gateTestLLVMorg-darwin: ${sulong-gateCommon} ${darwin-amd64} {
+sulong-gateTestLLVMorg-darwin: ${sulong-gateTest-darwin} {
     # nothing to do
     environment: {
         LD_LIBRARY_PATH: "$BUILD_DIR/main/sulong/mxbuild/darwin-amd64/SULONG_LLVM_ORG/lib:$LD_LIBRARY_PATH"
     }
+    timelimit: "0:45:00"
 }
 
 requireGCC: {
@@ -130,10 +131,11 @@ sulong-ruby-downstream-test: {
     timelimit: "45:00"
 }
 
-sulong-gate-asm-parser: ${sulong-gateCommon} ${linux-amd64} {
+sulong-gate-generated-sources: ${sulong-gateCommon} ${linux-amd64} {
   run: [
-    ["mx", "create-parsers"]
-    ["git", "diff", "--exit-code", "projects/"]
+    ["mx", "build", "--dependencies", "LLVM_TOOLCHAIN"]
+    ["mx", "create-generated-sources"]
+    ["git", "diff", "--exit-code", "."]
   ]
 }
 
@@ -144,7 +146,7 @@ sulong-coverage-linux: ${sulong-gateTestLLVMorg-linux} ${requireGCC} ${sulong-we
         [mx, --jacoco-whitelist-package, com.oracle.truffle.llvm, --jacoco-exclude-annotation, "@GeneratedBy", coverage-upload]
     ]
     targets: [weekly]
-    timelimit: "1:00:00"
+    timelimit: "1:45:00"
 }
 
 sulong-labsjdk-ce-11-only: ${labsjdk-ce-11} {
@@ -164,13 +166,13 @@ sulong-test-toolchain: [
 builds += [
   ${sulong-gateStyle} { name: gate-sulong-style, run: [[mx, gate, --tags, "style"]] }
   ${sulong-gateStyle} ${jdt} { name: gate-sulong-fullbuild, run: [[mx, gate, --tags, "fullbuild"]] }
-  ${sulong-gate-asm-parser} { name: gate-sulong-asm-parser }
+  ${sulong-gate-generated-sources} { name: gate-sulong-generated-sources }
   ${sulong-gateTestLLVMorg-linux} ${requireGCC} { name: gate-sulong-misc, run: [
     [mx, gate, --tags, "build,sulongMisc"]
   ] ${sulong-test-toolchain} }
   ${sulong-gateTestLLVMorg-linux} ${requireGCC} { name: gate-sulong-parser, run: [[mx, gate, --tags, "build,parser"]] }
   ${sulong-gateTestLLVMorg-linux} { name: gate-sulong-gcc_c, run: [[mx, gate, --tags, "build,gcc_c"]], timelimit: "45:00" }
-  ${sulong-gateTestLLVMorg-linux} { name: gate-sulong-gcc_cpp, run: [[mx, gate, --tags, "build,gcc_cpp"]] }
+  ${sulong-gateTestLLVMorg-linux} { name: gate-sulong-gcc_cpp, run: [[mx, gate, --tags, "build,gcc_cpp"]], timelimit: "45:00" }
   ${sulong-gateTestLLVMorg-linux} ${requireGCC} { name: gate-sulong-gcc_fortran, run: [[mx, gate, --tags, "build,gcc_fortran"]] }
   # No more testing on llvm 3.8 [GR-21735]
   # ${sulong-gateTest38-linux} ${requireGCC} { name: gate-sulong-basic_v38, run: [[mx, gate, --tags, "build,sulongBasic,nwcc,llvm"]] }
@@ -189,7 +191,7 @@ builds += [
   ] ${sulong-test-toolchain} }
 
   ${sulong-gateTestLLVMorg-linux} { name: gate-sulong-strict-native-image, run: [
-    [mx, --dynamicimports, "/substratevm,/tools", "--native-images=lli", "--extra-image-builder-argument=-H:+TruffleCheckBlackListedMethods", gate, --tags, "build"]
+    [mx, --dynamicimports, "/substratevm,/tools", "--native-images=lli", "--extra-image-builder-argument=-H:+TruffleCheckBlackListedMethods", "--extra-image-builder-argument=-H:+RemoveSaturatedTypeFlows", gate, --tags, "build"]
   ] }
 
   ${sulong-coverage-linux} { name: weekly-sulong-coverage }

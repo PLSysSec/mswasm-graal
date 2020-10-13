@@ -1,10 +1,11 @@
 # DaCapo-related targets
 
-bench-arguments : ["--machine-name", "${MACHINE_NAME}", "--", "-Xmx${XMX}", "-Xms${XMS}", "-XX:+PrintConcurrentLocks", "--jvm-config=${JVM_CONFIG}", "--jvm=${JVM}"]
+bench-arguments : ["--machine-name", "${MACHINE_NAME}", "--", "-Xmx${XMX}", "-Xms${XMS}", "-XX:+PrintConcurrentLocks", "-Dgraal.CompilationFailureAction=Diagnose", "--jvm-config=${JVM_CONFIG}", "--jvm=${JVM}"]
 
 bench-jvmci : {
   mx-benchmark : ["mx", "--kill-with-sigquit", "benchmark", "--fork-count-file=${FORK_COUNT_FILE}", "--extras=${BENCH_SERVER_EXTRAS}", "--results-file", "${BENCH_RESULTS_FILE_PATH}"]
   mx-dacapo : ${bench-jvmci.mx-benchmark} ["dacapo:*"]
+  mx-awfy : ${bench-jvmci.mx-benchmark} ["awfy:*"]
   mx-scala-dacapo : ${bench-jvmci.mx-benchmark} ["scala-dacapo:*"]
   mx-dacapo-timing : ${bench-jvmci.mx-benchmark} ["dacapo-timing:*"]
   mx-scala-dacapo-timing : ${bench-jvmci.mx-benchmark} ["scala-dacapo-timing:*"]
@@ -17,7 +18,7 @@ bench-jvmci : {
   mx-renaissance-legacy: ${bench-jvmci.mx-benchmark} ["renaissance-legacy:*"]
   mx-spark-sql-perf: ${bench-jvmci.mx-benchmark} ["spark-sql-perf"]
   mx-micros-graal-whitebox: ${bench-jvmci.mx-benchmark} ["jmh-whitebox:*"]
-  mx-micros-graal-dist: ${bench-jvmci.mx-benchmark} ["jmh-dist:*"]
+  mx-micros-graal-dist: ${bench-jvmci.mx-benchmark} ["jmh-dist:GRAAL_COMPILER_MICRO_BENCHMARKS"]
   mx-teardown : ["bench-uploader.py", "${BENCH_RESULTS_FILE_PATH}"]
 }
 
@@ -55,6 +56,14 @@ default-heap: {
   }
 }
 
+bench-awfy: ${bench-common} ${default-heap} ${awfy-bench-notifications} {
+  targets : [bench, daily]
+  run: [
+    ${bench-jvmci.mx-dacapo} ${bench-arguments}
+  ]
+  timelimit: "30:00"
+}
+
 bench-dacapo: ${bench-common} ${default-heap} ${dacapo-bench-notifications} {
   targets : [bench, post-merge]
   run: [
@@ -75,14 +84,16 @@ bench-scala-dacapo: ${bench-common} ${default-heap} ${scala-dacapo-bench-notific
   targets: [bench, post-merge]
   run: [
     ${bench-jvmci.mx-scala-dacapo} ${bench-arguments}
-  ]
+  ],
+  timelimit: "45:00"
 }
 
 bench-scala-dacapo-timing: ${bench-common} ${default-heap} ${scala-dacapo-bench-notifications} {
   targets: [bench, daily]
   run: [
     ${bench-jvmci.mx-scala-dacapo-timing} ${bench-arguments}
-  ]
+  ],
+  timelimit: "45:00"
 }
 
 # SPECjbb2005-related targets
@@ -135,7 +146,7 @@ bench-specjbb2015: ${bench-common} ${specjbb-large-heap} ${specjbb-bench-notific
     ${bench-jvmci.mx-specjbb2015} ${bench-arguments}
   ]
   downloads: {
-    SPECJBB2015: { name: specjbb2015, version: "1.02" }
+    SPECJBB2015: { name: specjbb2015, version: "1.03" }
   }
   timelimit: "3:00:00"
 }
@@ -164,6 +175,14 @@ bench-renaissance: ${bench-common} ${default-heap} ${renaissance-bench-notificat
   targets: [bench, post-merge]
   run: [
     ${bench-jvmci.mx-renaissance} ${bench-arguments}
+  ]
+  timelimit: "3:00:00"
+}
+
+bench-renaissance-0-10-0: ${bench-common} ${default-heap} ${renaissance-bench-notifications} {
+  targets: [bench, weekly]
+  run: [
+    ${bench-jvmci.mx-renaissance} ["--bench-suite-version=0.10.0"] ${bench-arguments}
   ]
   timelimit: "3:00:00"
 }

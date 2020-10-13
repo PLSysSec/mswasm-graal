@@ -32,6 +32,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -62,17 +63,27 @@ public class SubstrateOptionsParser {
 
     public static final String HOSTED_OPTION_PREFIX = "-H:";
     public static final String RUNTIME_OPTION_PREFIX = "-R:";
+    public static final int PRINT_OPTION_INDENTATION = 2;
+    public static final int PRINT_OPTION_WIDTH = 45;
+    public static final int PRINT_OPTION_WRAP_WIDTH = 120;
 
     /**
      * The result of {@link SubstrateOptionsParser#parseOption}.
      */
     static final class OptionParseResult {
         private final EnumSet<OptionType> printFlags;
+        private final Set<String> optionNameFilter;
         private final String error;
+        private static final String EXTRA_HELP_OPTIONS_WILDCARD = "*";
 
-        private OptionParseResult(EnumSet<OptionType> printFlags, String error) {
+        private OptionParseResult(EnumSet<OptionType> printFlags, String error, Set<String> optionNameFilter) {
             this.printFlags = printFlags;
             this.error = error;
+            this.optionNameFilter = optionNameFilter;
+        }
+
+        private OptionParseResult(EnumSet<OptionType> printFlags, String error) {
+            this(printFlags, error, new HashSet<>());
         }
 
         static OptionParseResult error(String message) {
@@ -87,12 +98,25 @@ public class SubstrateOptionsParser {
             return new OptionParseResult(selectedOptionTypes, null);
         }
 
+        static OptionParseResult printFlagsWithExtraHelp(Set<String> optionNameFilter) {
+            Set<String> optionNames = optionNameFilter;
+            if (optionNames.contains(EXTRA_HELP_OPTIONS_WILDCARD)) {
+                optionNames = new HashSet<>();
+                optionNames.add(EXTRA_HELP_OPTIONS_WILDCARD);
+            }
+            return new OptionParseResult(EnumSet.noneOf(OptionType.class), null, optionNames);
+        }
+
         boolean printFlags() {
             return !printFlags.isEmpty();
         }
 
+        boolean printFlagsWithExtraHelp() {
+            return !optionNameFilter.isEmpty();
+        }
+
         public boolean isValid() {
-            return printFlags.isEmpty() && error == null;
+            return printFlags.isEmpty() && optionNameFilter.isEmpty() && error == null;
         }
 
         public String getError() {
@@ -100,8 +124,17 @@ public class SubstrateOptionsParser {
         }
 
         private boolean matchesFlags(OptionDescriptor d, boolean svmOption) {
-            boolean showAll = printFlags.equals(EnumSet.allOf(OptionType.class));
-            return showAll || svmOption && printFlags.contains(d.getOptionType());
+            if (!printFlags.isEmpty()) {
+                boolean showAll = printFlags.equals(EnumSet.allOf(OptionType.class));
+                return showAll || svmOption && printFlags.contains(d.getOptionType());
+            }
+            if (!optionNameFilter.isEmpty()) {
+                if (optionNameFilter.contains(EXTRA_HELP_OPTIONS_WILDCARD) && !d.getExtraHelp().isEmpty()) {
+                    return true;
+                }
+                return optionNameFilter.contains(d.getName());
+            }
+            return false;
         }
 
         boolean matchesFlagsRuntime(OptionDescriptor d) {
@@ -149,7 +182,7 @@ public class SubstrateOptionsParser {
             if (eqIndex != -1) {
                 return OptionParseResult.error("Cannot mix +/- with <name>=<value> format: '" + optionPrefix + option + "'");
             }
-            optionName = option.substring(1, option.length());
+            optionName = option.substring(1);
             if (booleanOptionFormat == BooleanOptionFormat.NAME_VALUE) {
                 return OptionParseResult.error("Option '" + optionName + "' must use <name>=<value> format, not +/- prefix");
             }
@@ -182,7 +215,7 @@ public class SubstrateOptionsParser {
                     msg.append(' ').append(match.getName());
                 }
             }
-            msg.append(". Use " + optionPrefix + SubstrateOptions.PrintFlags.getName() + "= to list all available options.");
+            msg.append(". Use ").append(optionPrefix).append(SubstrateOptions.PrintFlags.getName()).append("= to list all available options.");
             return OptionParseResult.error(msg.toString());
         }
 
@@ -199,6 +232,10 @@ public class SubstrateOptionsParser {
                 if (optionType.isArray()) {
                     OptionKey<?> optionKey = desc.getOptionKey();
                     Object addValue = parseValue(optionType.getComponentType(), optionName, valueString);
+                    if (addValue instanceof OptionParseResult) {
+                        return (OptionParseResult) addValue;
+                    }
+
                     Object previous = valuesMap.get(optionKey);
                     if (previous == null) {
                         value = Array.newInstance(optionType.getComponentType(), 1);
@@ -210,6 +247,9 @@ public class SubstrateOptionsParser {
                     }
                 } else {
                     value = parseValue(optionType, optionName, valueString);
+                    if (value instanceof OptionParseResult) {
+                        return (OptionParseResult) value;
+                    }
                 }
             } catch (NumberFormatException ex) {
                 return OptionParseResult.error("Invalid value for option '" + optionName + "': '" + valueString + "' is not a valid number");
@@ -233,8 +273,9 @@ public class SubstrateOptionsParser {
                 String enumString = null;
                 try {
                     String[] enumStrings = SubstrateUtil.split(optionValue, ",");
-                    for (int i = 0; i < enumStrings.length; i++) {
-                        enumString = enumStrings[i];
+
+                    for (String string : enumStrings) {
+                        enumString = string;
                         selectedOptionTypes.add(OptionType.valueOf(enumString));
                     }
                 } catch (IllegalArgumentException e) {
@@ -253,6 +294,12 @@ public class SubstrateOptionsParser {
                 }
             }
             return OptionParseResult.printFlags(selectedOptionTypes);
+        }
+        if (SubstrateOptions.PrintFlagsWithExtraHelp.getName().equals(optionName)) {
+            String optionValue = (String) value;
+            String[] optionNames = SubstrateUtil.split(optionValue, ",");
+            HashSet<String> selectedOptionNames = new HashSet<>(Arrays.asList(optionNames));
+            return OptionParseResult.printFlagsWithExtraHelp(selectedOptionNames);
         }
 
         return OptionParseResult.correct();
@@ -309,8 +356,8 @@ public class SubstrateOptionsParser {
         }
 
         OptionParseResult optionParseResult = SubstrateOptionsParser.parseOption(options, arg.substring(optionPrefix.length()), valuesMap, optionPrefix, booleanOptionFormat);
-        if (optionParseResult.printFlags()) {
-            SubstrateOptionsParser.printFlags(optionParseResult::matchesFlagsHosted, options, optionPrefix, out);
+        if (optionParseResult.printFlags() || optionParseResult.printFlagsWithExtraHelp()) {
+            SubstrateOptionsParser.printFlags(optionParseResult::matchesFlagsHosted, options, optionPrefix, out, optionParseResult.printFlagsWithExtraHelp());
             throw new InterruptImageBuilding();
         }
         if (!optionParseResult.isValid()) {
@@ -341,13 +388,14 @@ public class SubstrateOptionsParser {
         return sb.toString();
     }
 
-    private static void printOption(PrintStream out, String option, String description) {
-        printOption(out::println, option, description, 2, 45, 120);
+    private static void printOption(PrintStream out, String option, String description, int wrap) {
+        printOption(out::println, option, description, PRINT_OPTION_INDENTATION, PRINT_OPTION_WIDTH, wrap);
     }
 
     public static void printOption(Consumer<String> println, String option, String description, int indentation, int optionWidth, int wrapWidth) {
         String indent = spaces(indentation);
-        String desc = wrap(description != null ? description : "", wrapWidth);
+        String desc = description != null ? description : "";
+        desc = wrapWidth > 0 ? wrap(desc, wrapWidth) : desc;
         String nl = System.lineSeparator();
         String[] descLines = SubstrateUtil.split(desc, nl);
         if (option.length() >= optionWidth && description != null) {
@@ -360,13 +408,13 @@ public class SubstrateOptionsParser {
         }
     }
 
-    static void printFlags(Predicate<OptionDescriptor> filter, SortedMap<String, OptionDescriptor> sortedOptions, String prefix, PrintStream out) {
+    static void printFlags(Predicate<OptionDescriptor> filter, SortedMap<String, OptionDescriptor> sortedOptions, String prefix, PrintStream out, boolean verbose) {
         for (Entry<String, OptionDescriptor> entry : sortedOptions.entrySet()) {
             OptionDescriptor descriptor = entry.getValue();
             if (!filter.test(descriptor)) {
                 continue;
             }
-            String helpMsg = descriptor.getHelp();
+            String helpMsg = verbose && !descriptor.getExtraHelp().isEmpty() ? "" : descriptor.getHelp();
             int helpLen = helpMsg.length();
             if (helpLen > 0 && helpMsg.charAt(helpLen - 1) != '.') {
                 helpMsg += '.';
@@ -401,6 +449,13 @@ public class SubstrateOptionsParser {
                     stringifiedArrayValue = true;
                 }
             }
+            String verboseHelp = "";
+            if (verbose) {
+                verboseHelp = System.lineSeparator() + descriptor.getHelp() + System.lineSeparator() + String.join(System.lineSeparator(), descriptor.getExtraHelp());
+            } else if (!descriptor.getExtraHelp().isEmpty()) {
+                verboseHelp = " [Extra help available]";
+            }
+            int wrapWidth = verbose ? 0 : PRINT_OPTION_WRAP_WIDTH;
             if (descriptor.getOptionValueType() == Boolean.class) {
                 Boolean val = (Boolean) defaultValue;
                 if (helpLen != 0) {
@@ -413,7 +468,7 @@ public class SubstrateOptionsParser {
                         helpMsg += "Default: - (disabled).";
                     }
                 }
-                printOption(out, prefix + "\u00b1" + entry.getKey(), helpMsg);
+                printOption(out, prefix + "\u00b1" + entry.getKey(), helpMsg + verboseHelp, wrapWidth);
             } else {
                 if (defaultValue == null) {
                     if (helpLen != 0) {
@@ -421,13 +476,14 @@ public class SubstrateOptionsParser {
                     }
                     helpMsg += "Default: None";
                 }
+                helpMsg += verboseHelp;
                 if (stringifiedArrayValue || defaultValue == null) {
-                    printOption(out, prefix + entry.getKey() + "=...", helpMsg);
+                    printOption(out, prefix + entry.getKey() + "=...", helpMsg, wrapWidth);
                 } else {
                     if (defaultValue instanceof String) {
                         defaultValue = '"' + String.valueOf(defaultValue) + '"';
                     }
-                    printOption(out, prefix + entry.getKey() + "=" + defaultValue, helpMsg);
+                    printOption(out, prefix + entry.getKey() + "=" + defaultValue, helpMsg, wrapWidth);
                 }
             }
         }
@@ -532,31 +588,57 @@ public class SubstrateOptionsParser {
         APIOption[] apiOptions = field.getAnnotationsByType(APIOption.class);
 
         for (APIOption apiOption : apiOptions) {
-            assert !apiOption.name().equals(apiOptionName) || apiOption.deprecated().equals("") : "Using the deprecated option in a description: " + apiOption;
+            String selected = selectVariant(apiOption, apiOptionName);
+            assert selected == null || apiOption.deprecated().equals("") : "Using the deprecated option in a description: " + apiOption;
         }
 
         if (option.getDescriptor().getOptionValueType() == Boolean.class) {
             VMError.guarantee(value.equals("+") || value.equals("-"), "Boolean option value can be only + or -");
             for (APIOption apiOption : apiOptions) {
-                String apiValue = apiOption.kind() == APIOption.APIOptionKind.Negated ? "-" : "+";
-                if (apiValue.equals(value)) {
-                    return APIOption.Utils.name(apiOption);
+                String selected = selectVariant(apiOption, apiOptionName);
+                if (selected != null) {
+                    String apiValue = apiOption.kind() == APIOption.APIOptionKind.Negated ? "-" : "+";
+                    if (apiValue.equals(value)) {
+                        return APIOption.Utils.optionName(selected);
+                    }
                 }
             }
             return HOSTED_OPTION_PREFIX + value + option;
         } else {
+            String apiOptionWithValue = null;
             for (APIOption apiOption : apiOptions) {
-                String fixedValue = apiOption.fixedValue().length == 0 ? null : apiOption.fixedValue()[0];
-                if (apiOption.name().equals(apiOptionName)) {
-                    if (fixedValue == null) {
-                        return APIOption.Utils.name(apiOption) + "=" + value;
-                    } else if (value.equals(fixedValue)) {
-                        return APIOption.Utils.name(apiOption);
+                String selected = selectVariant(apiOption, apiOptionName);
+                if (selected != null) {
+                    String optionName = APIOption.Utils.optionName(selected);
+                    if (apiOption.fixedValue().length == 0) {
+                        if (apiOptionWithValue == null) {
+                            /* First APIOption that accepts value is selected as fallback */
+                            apiOptionWithValue = optionName + apiOption.valueSeparator() + value;
+                        }
+                    } else if (apiOption.fixedValue()[0].equals(value)) {
+                        /* Return requested option expressed as fixed-value APIOption */
+                        return optionName;
                     }
                 }
             }
+            if (apiOptionWithValue != null) {
+                /* Returning APIOption that accepts value is better than raw option */
+                return apiOptionWithValue;
+            }
             assert apiOptionName == null : "invalid API option name " + apiOptionName;
+            /* Return raw option if nothing else matches */
             return HOSTED_OPTION_PREFIX + option.getName() + "=" + value;
         }
+    }
+
+    private static String selectVariant(APIOption apiOption, String apiOptionName) {
+        VMError.guarantee(apiOption.name().length > 0, "APIOption requires at least one name");
+        if (apiOptionName == null) {
+            return apiOption.name()[0];
+        }
+        if (Arrays.asList(apiOption.name()).contains(apiOptionName)) {
+            return apiOptionName;
+        }
+        return null;
     }
 }

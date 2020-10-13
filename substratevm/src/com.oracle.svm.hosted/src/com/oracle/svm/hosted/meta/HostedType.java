@@ -286,9 +286,7 @@ public abstract class HostedType implements SharedType, WrappedJavaType, Compara
 
     @Override
     public final boolean isAssignableFrom(ResolvedJavaType other) {
-        boolean result = getHub().isAssignableFromHub(((HostedType) other).getHub());
-        assert result == wrapped.isAssignableFrom(((HostedType) other).wrapped);
-        return result;
+        return wrapped.isAssignableFrom(((HostedType) other).wrapped);
     }
 
     @Override
@@ -420,6 +418,21 @@ public abstract class HostedType implements SharedType, WrappedJavaType, Compara
          * will not be linked.
          */
         return wrapped.isLinked();
+    }
+
+    @Override
+    public void link() {
+        wrapped.link();
+    }
+
+    @Override
+    public boolean hasDefaultMethods() {
+        return wrapped.hasDefaultMethods();
+    }
+
+    @Override
+    public boolean declaresDefaultMethods() {
+        return wrapped.declaresDefaultMethods();
     }
 
     @Override

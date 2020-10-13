@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -73,6 +73,7 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.EnvironmentAccess;
 import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.HostAccess.TargetMappingPrecedence;
 import org.graalvm.polyglot.Instrument;
 import org.graalvm.polyglot.Language;
 import org.graalvm.polyglot.PolyglotAccess;
@@ -112,7 +113,7 @@ public abstract class AbstractPolyglotImpl {
 
     public abstract static class IOAccess {
         protected IOAccess() {
-            if (!getClass().getCanonicalName().equals("org.graalvm.polyglot.io.ProcessHandler.ProcessCommand.IOAccessImpl")) {
+            if (!getClass().getCanonicalName().equals("org.graalvm.polyglot.io.IOHelper.IOAccessImpl")) {
                 throw new AssertionError("Only one implementation of IOAccess allowed. " + getClass().getCanonicalName());
             }
         }
@@ -224,7 +225,7 @@ public abstract class AbstractPolyglotImpl {
     public final IOAccess getIO() {
         if (io == null) {
             try {
-                Class.forName(ProcessHandler.ProcessCommand.class.getName(), true, getClass().getClassLoader());
+                Class.forName("org.graalvm.polyglot.io.IOHelper", true, getClass().getClassLoader());
             } catch (ClassNotFoundException e) {
                 throw new IllegalStateException(e);
             }
@@ -311,9 +312,9 @@ public abstract class AbstractPolyglotImpl {
 
         public abstract int getLength(Object impl);
 
-        public abstract CharSequence getCode(Object impl);
+        public abstract CharSequence getCharacters(Object impl);
 
-        public abstract CharSequence getCode(Object impl, int lineNumber);
+        public abstract CharSequence getCharacters(Object impl, int lineNumber);
 
         public abstract int getLineCount(Object impl);
 
@@ -403,6 +404,8 @@ public abstract class AbstractPolyglotImpl {
 
         public abstract Value eval(String language, Object sourceImpl);
 
+        public abstract Value parse(String language, Object sourceImpl);
+
         public abstract Engine getEngineImpl(Context sourceContext);
 
         public abstract void close(Context sourceContext, boolean interuptExecution);
@@ -418,6 +421,7 @@ public abstract class AbstractPolyglotImpl {
         public abstract Value getPolyglotBindings();
 
         public abstract void resetLimits();
+
     }
 
     public abstract static class AbstractEngineImpl {
@@ -446,7 +450,7 @@ public abstract class AbstractPolyglotImpl {
                         boolean allowNativeAccess, boolean allowCreateThread, boolean allowHostIO, boolean allowHostClassLoading, boolean allowExperimentalOptions, Predicate<String> classFilter,
                         Map<String, String> options,
                         Map<String, String[]> arguments, String[] onlyLanguages, FileSystem fileSystem, Object logHandlerOrStream, boolean allowCreateProcess, ProcessHandler processHandler,
-                        EnvironmentAccess environmentAccess, Map<String, String> environment, ZoneId zone, Object limitsImpl, String currentWorkingDirectory);
+                        EnvironmentAccess environmentAccess, Map<String, String> environment, ZoneId zone, Object limitsImpl, String currentWorkingDirectory, ClassLoader hostClassLoader);
 
         public abstract String getImplementationName();
 
@@ -489,6 +493,10 @@ public abstract class AbstractPolyglotImpl {
         public abstract Throwable asHostException();
 
         public abstract SourceSection getSourceLocation();
+
+        public abstract boolean isResourceExhausted();
+
+        public abstract boolean isInterrupted();
 
     }
 
@@ -758,10 +766,12 @@ public abstract class AbstractPolyglotImpl {
 
     public abstract Value asValue(Object o);
 
-    public abstract <S, T> Object newTargetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> acceptsValue, Function<S, T> convertValue);
+    public abstract <S, T> Object newTargetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> acceptsValue, Function<S, T> convertValue, TargetMappingPrecedence precedence);
 
-    public abstract Object buildLimits(long statementLimit, Predicate<Source> statementLimitSourceFilter, Duration timeLimit, Duration timeLimitAccuracy, Consumer<ResourceLimitEvent> onLimit);
+    public abstract Object buildLimits(long statementLimit, Predicate<Source> statementLimitSourceFilter, Consumer<ResourceLimitEvent> onLimit);
 
     public abstract Context getLimitEventContext(Object impl);
+
+    public abstract FileSystem newDefaultFileSystem();
 
 }

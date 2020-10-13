@@ -82,7 +82,7 @@ public class Driver {
         }
     }
 
-    private static boolean hasJreDir = System.getProperty("java.specification.version").startsWith("1.");
+    private static final boolean hasJreDir = System.getProperty("java.specification.version").startsWith("1.");
 
     private static Path getRuntimeDir() {
         Path runtimeDir = HomeFinder.getInstance().getHomeFolder();
@@ -186,7 +186,11 @@ public class Driver {
         }
     }
 
-    @SuppressWarnings("unused")
+    /**
+     * @param inputStream
+     * @param outputStream
+     * @param errorStream
+     */
     protected void processIO(InputStream inputStream, OutputStream outputStream, InputStream errorStream) {
     }
 

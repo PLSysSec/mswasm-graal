@@ -32,20 +32,18 @@ import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.annotate.Alias;
 import com.oracle.svm.core.annotate.Delete;
 import com.oracle.svm.core.annotate.Inject;
-import com.oracle.svm.core.annotate.NeverInline;
 import com.oracle.svm.core.annotate.RecomputeFieldValue;
 import com.oracle.svm.core.annotate.Substitute;
 import com.oracle.svm.core.annotate.TargetClass;
 import com.oracle.svm.core.annotate.TargetElement;
+import com.oracle.svm.core.annotate.Uninterruptible;
 import com.oracle.svm.core.jdk.JDK11OrEarlier;
 import com.oracle.svm.core.jdk.JDK11OrLater;
 import com.oracle.svm.core.jdk.JDK14OrLater;
 import com.oracle.svm.core.jdk.JDK8OrEarlier;
-import com.oracle.svm.core.jdk.StackTraceUtils;
 import com.oracle.svm.core.jdk.UninterruptibleUtils.AtomicReference;
 import com.oracle.svm.core.monitor.MonitorSupport;
 import com.oracle.svm.core.option.XOptions;
-import com.oracle.svm.core.snippets.KnownIntrinsics;
 import com.oracle.svm.core.stack.StackOverflowCheck;
 import com.oracle.svm.core.util.TimeUtils;
 import com.oracle.svm.core.util.VMError;
@@ -171,11 +169,10 @@ final class Target_java_lang_Thread {
         daemon = asDaemon;
     }
 
+    @Uninterruptible(reason = "called from uninterruptible code", mayBeInlined = true)
     @Substitute
     static Thread currentThread() {
-        Thread result = JavaThreads.currentThread.get();
-        assert result != null : "java.lang.Thread not assigned when thread was attached to the VM";
-        return result;
+        return JavaThreads.currentThread.get();
     }
 
     @Substitute
@@ -289,10 +286,10 @@ final class Target_java_lang_Thread {
             return;
         }
 
-        JavaThreads.interrupt(JavaThreads.fromTarget(this));
-        JavaThreads.unpark(JavaThreads.fromTarget(this));
-
-        JavaThreads.wakeUpVMConditionWaiters();
+        Thread thread = JavaThreads.fromTarget(this);
+        JavaThreads.interrupt(thread);
+        JavaThreads.unpark(thread);
+        JavaThreads.wakeUpVMConditionWaiters(thread);
     }
 
     @Substitute
@@ -363,18 +360,12 @@ final class Target_java_lang_Thread {
     @Substitute
     private static boolean holdsLock(Object obj) {
         Objects.requireNonNull(obj);
-        return MonitorSupport.singleton().holdsLock(obj);
+        return MonitorSupport.singleton().isLockedByCurrentThread(obj);
     }
 
     @Substitute
-    @NeverInline("Starting a stack walk in the caller frame")
     private StackTraceElement[] getStackTrace() {
-        if (JavaThreads.fromTarget(this) == Thread.currentThread()) {
-            /* We can walk our own stack without a VMOperation. */
-            return StackTraceUtils.getStackTrace(false, KnownIntrinsics.readCallerStackPointer());
-        } else {
-            return JavaThreads.getStackTrace(JavaThreads.fromTarget(this));
-        }
+        return JavaThreads.getStackTrace(JavaThreads.fromTarget(this));
     }
 
     @Substitute

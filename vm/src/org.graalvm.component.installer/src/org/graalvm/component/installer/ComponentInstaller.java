@@ -48,7 +48,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -151,12 +150,16 @@ public class ComponentInstaller extends Launcher {
         globalOptions.put(Commands.LONG_OPTION_AUTO_YES, Commands.OPTION_AUTO_YES);
 
         globalOptions.put(Commands.OPTION_NON_INTERACTIVE, "");
+        globalOptions.put(Commands.LONG_OPTION_NON_INTERACTIVE, Commands.OPTION_NON_INTERACTIVE);
 
         globalOptions.put(Commands.OPTION_PRINT_VERSION, "");
         globalOptions.put(Commands.OPTION_SHOW_VERSION, "");
 
         globalOptions.put(Commands.LONG_OPTION_PRINT_VERSION, Commands.OPTION_PRINT_VERSION);
         globalOptions.put(Commands.LONG_OPTION_SHOW_VERSION, Commands.OPTION_SHOW_VERSION);
+
+        globalOptions.put(Commands.OPTION_IGNORE_CATALOG_ERRORS, "");
+        globalOptions.put(Commands.LONG_OPTION_IGNORE_CATALOG_ERRORS, Commands.OPTION_IGNORE_CATALOG_ERRORS);
 
         // for simplicity, these options are global, but still commands that use them should
         // declare them explicitly.
@@ -308,9 +311,6 @@ public class ComponentInstaller extends Launcher {
         if (runLauncher()) {
             return null;
         }
-        if (cmdHandler == null) {
-            error("ERROR_MissingCommand"); // NOI18N
-        }
         return go;
     }
 
@@ -344,6 +344,12 @@ public class ComponentInstaller extends Launcher {
         } else if (env.hasOption(Commands.OPTION_SHOW_VERSION)) {
             printVersion();
         }
+
+        // check only after the version option:
+        if (cmdHandler == null) {
+            error("ERROR_MissingCommand"); // NOI18N
+        }
+
         int srcCount = 0;
         if (input.hasOption(Commands.OPTION_FILES)) {
             srcCount++;
@@ -818,10 +824,10 @@ public class ComponentInstaller extends Launcher {
     }
 
     public void launch(List<String> args) {
-        maybeNativeExec(args, false, new LinkedHashMap<>());
+        maybeNativeExec(args, args, false);
         // // Uncomment for debugging jvmmode launcher
         // if (System.getProperty("test.wrap") != null) {
-        // maybeExec(args, false, Collections.emptyMap(), VMType.Native);
+        // maybeExec(args, args, false, VMType.Native);
         // System.exit(
         // executeJVMMode(System.getProperty("java.class.path"), args, args) // NOI18N
         // );
@@ -845,7 +851,7 @@ public class ComponentInstaller extends Launcher {
 
     @Override
     protected void printVersion() {
-        env.output("MSG_InstallerVersion",
+        feedback.output("MSG_InstallerVersion",
                         env.getLocalRegistry().getGraalVersion().displayString());
     }
 
@@ -871,15 +877,14 @@ public class ComponentInstaller extends Launcher {
      * 
      * @param jvmArgs JVM arguments for the process
      * @param remainingArgs program arguments
-     * @param polyglotOptions useless
      */
     @Override
-    protected void executeJVM(String classpath, List<String> jvmArgs, List<String> remainingArgs, Map<String, String> polyglotOptions) {
+    protected void executeJVM(String classpath, List<String> jvmArgs, List<String> remainingArgs) {
         if (SystemUtils.isWindows()) {
             int retcode = executeJVMMode(classpath, jvmArgs, remainingArgs);
             System.exit(retcode);
         } else {
-            super.executeJVM(classpath, jvmArgs, remainingArgs, polyglotOptions);
+            super.executeJVM(classpath, jvmArgs, remainingArgs);
         }
     }
 

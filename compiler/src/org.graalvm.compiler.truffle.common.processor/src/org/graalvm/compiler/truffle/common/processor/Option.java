@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -160,13 +160,6 @@ public class Option {
             .def("PolyglotCompilerOptions.SplittingGrowthLimit.getDefaultValue()")
             .help("Disable call target splitting if the number of nodes created by splitting exceeds this factor times node count")
             .deprecatedBy("SplittingGrowthLimit"),
-
-        option("TruffleSplittingMaxNumberOfSplitNodes")
-            .type("Integer")
-            .category("INTERNAL")
-            .def("PolyglotCompilerOptions.SplittingMaxNumberOfSplitNodes.getDefaultValue()")
-            .help("Disable call target splitting if number of nodes created by splitting exceeds this limit")
-            .deprecatedBy("SplittingMaxNumberOfSplitNodes"),
 
         option("TruffleSplittingMaxPropagationDepth")
             .type("Integer")

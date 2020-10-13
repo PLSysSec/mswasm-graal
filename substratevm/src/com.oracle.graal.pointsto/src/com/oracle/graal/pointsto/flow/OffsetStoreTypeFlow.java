@@ -29,7 +29,6 @@ import java.util.List;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.extended.JavaWriteNode;
 import org.graalvm.compiler.nodes.extended.RawStoreNode;
-import org.graalvm.compiler.nodes.java.AtomicReadAndWriteNode;
 import org.graalvm.compiler.nodes.java.UnsafeCompareAndSwapNode;
 
 import com.oracle.graal.pointsto.BigBang;
@@ -199,6 +198,18 @@ public abstract class OffsetStoreTypeFlow extends TypeFlow<BytecodePosition> {
         protected abstract AbstractUnsafeStoreTypeFlow makeCopy(BigBang bb, MethodFlowsGraph methodFlows);
 
         @Override
+        public void initClone(BigBang bb) {
+            /*
+             * Unsafe store type flow models unsafe writes to both instance and static fields. From
+             * an analysis stand point for static fields the base doesn't matter. An unsafe store
+             * can write to any of the static fields marked for unsafe access.
+             */
+            for (AnalysisField field : bb.getUniverse().getUnsafeAccessedStaticFields()) {
+                this.addUse(bb, field.getStaticFieldFlow().filterFlow(bb));
+            }
+        }
+
+        @Override
         public boolean addState(BigBang bb, TypeState add) {
             /* Only a clone should be updated */
             assert this.isClone();
@@ -311,7 +322,7 @@ public abstract class OffsetStoreTypeFlow extends TypeFlow<BytecodePosition> {
      */
     public static class AtomicWriteTypeFlow extends AbstractUnsafeStoreTypeFlow {
 
-        public AtomicWriteTypeFlow(AtomicReadAndWriteNode node, AnalysisType objectType, AnalysisType componentType, TypeFlow<?> objectFlow, TypeFlow<?> valueFlow) {
+        public AtomicWriteTypeFlow(ValueNode node, AnalysisType objectType, AnalysisType componentType, TypeFlow<?> objectFlow, TypeFlow<?> valueFlow) {
             super(node, objectType, componentType, objectFlow, valueFlow);
         }
 

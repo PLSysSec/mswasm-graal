@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,8 @@
  */
 package com.oracle.truffle.api;
 
+import java.util.Objects;
+
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameInstance;
 import com.oracle.truffle.api.nodes.Node;
@@ -57,9 +59,23 @@ public final class TruffleStackTraceElement {
     private final Frame frame;
 
     TruffleStackTraceElement(Node location, RootCallTarget target, Frame frame) {
+        assert target != null;
         this.location = location;
         this.target = target;
         this.frame = frame;
+    }
+
+    /**
+     * Create a new stack trace element.
+     *
+     * @param location See {@link #getLocation()}
+     * @param target See {@link #getTarget()}
+     * @param frame See {@link #getFrame()}
+     * @since 20.1.0
+     */
+    public static TruffleStackTraceElement create(Node location, RootCallTarget target, Frame frame) {
+        Objects.requireNonNull(target, "RootCallTarget must not be null");
+        return new TruffleStackTraceElement(location, target, frame);
     }
 
     /**
@@ -67,8 +83,8 @@ public final class TruffleStackTraceElement {
      * <p>
      * Returns <code>null</code> if no detailed callsite information is available. This is the case
      * when {@link CallTarget#call(Object...)} is used or for the top-of-the-stack element if
-     * {@link TruffleException#getLocation()} returned <code>null</code> or the exception wasn't a
-     * {@link TruffleException}.
+     * {@link com.oracle.truffle.api.exception.AbstractTruffleException#getLocation()} returned
+     * <code>null</code> or the exception wasn't a {@link TruffleException}.
      * <p>
      * See {@link FrameInstance#getCallNode()} for the relation between callsite and CallTarget.
      *
@@ -98,6 +114,25 @@ public final class TruffleStackTraceElement {
      */
     public Frame getFrame() {
         return frame;
+    }
+
+    /**
+     * Returns an interop object representing this {@linkplain TruffleStackTraceElement} supporting
+     * the {@code hasExecutableName} and potentially {@code hasDeclaringMetaObject} and
+     * {@code hasSourceLocation} messages.
+     * <p>
+     * This method must only be called on an interpreter thread with a valid
+     * {@link TruffleContext#isEntered() entered}. The current entered context can be accessed
+     * through the language or instrument environment.
+     * <p>
+     *
+     * @since 20.3
+     */
+    public Object getGuestObject() {
+        assert LanguageAccessor.engineAccess().getCurrentCreatorTruffleContext() != null : "The TruffleContext must be entered.";
+        Object guestObject = LanguageAccessor.nodesAccess().translateStackTraceElement(this);
+        assert LanguageAccessor.exceptionAccess().assertGuestObject(guestObject);
+        return guestObject;
     }
 
 }

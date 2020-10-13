@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -56,6 +56,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.graalvm.polyglot.HostAccess.TargetMappingPrecedence;
 import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractValueImpl;
 import org.graalvm.polyglot.proxy.Proxy;
 
@@ -871,9 +872,10 @@ public final class Value {
      * <ul>
      * <li>Custom
      * {@link HostAccess.Builder#targetTypeMapping(Class, Class, java.util.function.Predicate, Function)
-     * target type mappings} specified in the {@link HostAccess} configuration when the context is
-     * constructed. Custom target type mappings may override all the type mappings below. This
-     * allows for customization if one of the below type mappings is not suitable.
+     * target type mappings} specified in the {@link HostAccess} configuration with precedence
+     * {@link TargetMappingPrecedence#HIGHEST} or {@link TargetMappingPrecedence#HIGH}. These custom
+     * target type mappings may override all the type mappings below. This allows for customization
+     * if one of the below type mappings is not suitable.
      * <li><code>{@link Value}.class</code> is always supported and returns this instance.
      * <li>If the value represents a {@link #isHostObject() host object} then all classes
      * implemented or extended by the host object can be used as target type.
@@ -907,6 +909,10 @@ public final class Value {
      * <li><code>{@link PolyglotException}.class</code> is supported if the value is an
      * {@link #isException() exception object}.</li>
      * <li>Any Java type in the type hierarchy of a {@link #isHostObject() host object}.
+     * <li>Custom
+     * {@link HostAccess.Builder#targetTypeMapping(Class, Class, java.util.function.Predicate, Function)
+     * target type mappings} specified in the {@link HostAccess} configuration with precedence
+     * {@link TargetMappingPrecedence#LOW}.
      * <li><code>{@link Object}.class</code> is always supported. See section Object mapping rules.
      * <li><code>{@link Map}.class</code> is supported if the value has {@link #hasMembers()
      * members} or {@link #hasArrayElements() array elements}. The returned map can be safely cast
@@ -946,6 +952,10 @@ public final class Value {
      * {@link UnsupportedOperationException} is thrown when the method is executed. A member If one
      * of the parameters cannot be mapped to the target type a {@link ClassCastException} or a
      * {@link NullPointerException} is thrown.
+     * <li>Custom
+     * {@link HostAccess.Builder#targetTypeMapping(Class, Class, java.util.function.Predicate, Function)
+     * target type mappings} specified in the {@link HostAccess} configuration with precedence
+     * {@link TargetMappingPrecedence#LOWEST}.
      * </ul>
      * A {@link ClassCastException} is thrown for other unsupported target types.
      * <p>
@@ -1327,6 +1337,9 @@ public final class Value {
     }
 
     /**
+     * Compares the identity of the underlying polyglot objects. This method does not do any
+     * structural comparisons.
+     *
      * {@inheritDoc}
      *
      * @since 20.1
@@ -1340,6 +1353,9 @@ public final class Value {
     }
 
     /**
+     * Returns the identity hash code of the underlying object. This method does not compute the
+     * hash code depending on the contents of the value.
+     *
      * {@inheritDoc}
      *
      * @since 20.1

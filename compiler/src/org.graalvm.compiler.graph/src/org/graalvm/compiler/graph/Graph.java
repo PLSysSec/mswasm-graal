@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -729,7 +729,9 @@ public class Graph {
         }
 
         Node result = cachedLeafNodes[leafId].get(node);
-        assert result == null || result.isAlive() : result;
+        if (result != null && !result.isAlive()) {
+            return null;
+        }
         return result;
     }
 

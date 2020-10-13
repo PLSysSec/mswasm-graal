@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@ import java.util.Queue;
 
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.Equivalence;
+import org.graalvm.compiler.core.common.spi.MetaAccessExtensionProvider;
 import org.graalvm.compiler.debug.CounterKey;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.GraalError;
@@ -51,6 +52,7 @@ import org.graalvm.compiler.virtual.nodes.MaterializedObjectState;
 import org.graalvm.compiler.virtual.nodes.VirtualObjectState;
 
 import jdk.vm.ci.code.BytecodeFrame;
+import jdk.vm.ci.code.RegisterValue;
 import jdk.vm.ci.code.VirtualObject;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
@@ -66,10 +68,12 @@ import jdk.vm.ci.meta.Value;
 public class DebugInfoBuilder {
 
     protected final NodeValueMap nodeValueMap;
+    protected final MetaAccessExtensionProvider metaAccessExtensionProvider;
     protected final DebugContext debug;
 
-    public DebugInfoBuilder(NodeValueMap nodeValueMap, DebugContext debug) {
+    public DebugInfoBuilder(NodeValueMap nodeValueMap, MetaAccessExtensionProvider metaAccessExtensionProvider, DebugContext debug) {
         this.nodeValueMap = nodeValueMap;
+        this.metaAccessExtensionProvider = metaAccessExtensionProvider;
         this.debug = debug;
     }
 
@@ -129,7 +133,7 @@ public class DebugInfoBuilder {
                     for (int i = 0; i < entryCount; i++) {
                         ValueNode value = currentField.values().get(i);
                         if (value == null) {
-                            JavaKind entryKind = vobjNode.entryKind(i);
+                            JavaKind entryKind = vobjNode.entryKind(metaAccessExtensionProvider, i);
                             values[pos] = JavaConstant.defaultForKind(entryKind.getStackKind());
                             slotKinds[pos] = entryKind.getStackKind();
                             pos++;
@@ -140,9 +144,9 @@ public class DebugInfoBuilder {
                         } else {
                             assert value.getStackKind() == JavaKind.Illegal;
                             ValueNode previousValue = currentField.values().get(i - 1);
-                            assert (previousValue != null && (previousValue.getStackKind().needsTwoSlots()) || vobjNode.isVirtualByteArray()) : vobjNode + " " + i +
+                            assert (previousValue != null && (previousValue.getStackKind().needsTwoSlots()) || vobjNode.isVirtualByteArray(metaAccessExtensionProvider)) : vobjNode + " " + i +
                                             " " + previousValue + " " + currentField.values().snapshot();
-                            if (vobjNode.isVirtualByteArray()) {
+                            if (vobjNode.isVirtualByteArray(metaAccessExtensionProvider)) {
                                 /*
                                  * Let Illegals pass through to help knowing the number of bytes to
                                  * write. For example, writing a short to index 2 of a byte array of
@@ -158,7 +162,7 @@ public class DebugInfoBuilder {
                                 pos++;
                             } else if (previousValue == null || !previousValue.getStackKind().needsTwoSlots()) {
                                 // Don't allow the IllegalConstant to leak into the debug info
-                                JavaKind entryKind = vobjNode.entryKind(i);
+                                JavaKind entryKind = vobjNode.entryKind(metaAccessExtensionProvider, i);
                                 values[pos] = JavaConstant.defaultForKind(entryKind.getStackKind());
                                 slotKinds[pos] = entryKind.getStackKind();
                                 pos++;
@@ -369,7 +373,7 @@ public class DebugInfoBuilder {
                     if (operand instanceof ConstantValue && ((ConstantValue) operand).isJavaConstant()) {
                         return ((ConstantValue) operand).getJavaConstant();
                     } else {
-                        assert operand instanceof Variable : operand + " for " + value;
+                        assert operand instanceof Variable || operand instanceof RegisterValue : operand + " for " + value;
                         return (JavaValue) operand;
                     }
 

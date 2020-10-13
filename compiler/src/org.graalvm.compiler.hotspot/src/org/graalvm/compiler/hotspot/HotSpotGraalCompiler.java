@@ -176,7 +176,8 @@ public class HotSpotGraalCompiler implements GraalJVMCICompiler, Cancellable {
         HotSpotBackend backend = graalRuntime.getHostBackend();
         HotSpotProviders providers = backend.getProviders();
         final boolean isOSR = entryBCI != JVMCICompiler.INVOCATION_ENTRY_BCI;
-        StructuredGraph graph = method.isNative() || isOSR ? null : providers.getReplacements().getIntrinsicGraph(method, compilationId, debug, this);
+        AllowAssumptions allowAssumptions = AllowAssumptions.ifTrue(OptAssumptions.getValue(options));
+        StructuredGraph graph = method.isNative() || isOSR ? null : providers.getReplacements().getIntrinsicGraph(method, compilationId, debug, allowAssumptions, this);
 
         if (graph == null) {
             SpeculationLog speculationLog = method.getSpeculationLog();
@@ -184,7 +185,7 @@ public class HotSpotGraalCompiler implements GraalJVMCICompiler, Cancellable {
                 speculationLog.collectFailedSpeculations();
             }
             // @formatter:off
-            graph = new StructuredGraph.Builder(options, debug, AllowAssumptions.ifTrue(OptAssumptions.getValue(options))).
+            graph = new StructuredGraph.Builder(options, debug, allowAssumptions).
                             method(method).
                             cancellable(this).
                             entryBCI(entryBCI).
@@ -234,13 +235,13 @@ public class HotSpotGraalCompiler implements GraalJVMCICompiler, Cancellable {
         return result;
     }
 
-    public CompilationResult compile(ResolvedJavaMethod method,
+    public CompilationResult compile(StructuredGraph graph,
+                    ResolvedJavaMethod method,
                     int entryBCI,
                     boolean useProfilingInfo,
                     boolean shouldRetainLocalVariables,
                     CompilationIdentifier compilationId,
                     DebugContext debug) {
-        StructuredGraph graph = createGraph(method, entryBCI, useProfilingInfo, compilationId, debug.getOptions(), debug);
         CompilationResult result = new CompilationResult(compilationId);
         return compileHelper(CompilationResultBuilderFactory.Default, result, graph, method, entryBCI, useProfilingInfo, shouldRetainLocalVariables, debug.getOptions());
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -49,8 +49,11 @@ public class TruffleTypes {
     // Checkstyle: stop
 
     // Testing API
+    public static final String ALWAYS_SLOW_PATH_MODE_NAME = "com.oracle.truffle.api.dsl.test.AlwaysGenerateOnlySlowPath";
     public static final String EXPECT_ERROR_CLASS_NAME1 = "com.oracle.truffle.api.dsl.test.ExpectError";
     public static final String EXPECT_ERROR_CLASS_NAME2 = "com.oracle.truffle.api.test.ExpectError";
+
+    public final DeclaredType AlwaysSlowPath = c.getDeclaredTypeOptional(ALWAYS_SLOW_PATH_MODE_NAME);
 
     // Graal SDK
     public static final String OptionCategory_Name = "org.graalvm.options.OptionCategory";
@@ -75,6 +78,7 @@ public class TruffleTypes {
     public static final String CompilerDirectives_CompilationFinal_Name = "com.oracle.truffle.api.CompilerDirectives.CompilationFinal";
     public static final String CompilerDirectives_Name = "com.oracle.truffle.api.CompilerDirectives";
     public static final String CompilerDirectives_TruffleBoundary_Name = "com.oracle.truffle.api.CompilerDirectives.TruffleBoundary";
+    public static final String EncapsulatingNodeReference_Name = "com.oracle.truffle.api.nodes.EncapsulatingNodeReference";
     public static final String ExplodeLoop_Name = "com.oracle.truffle.api.nodes.ExplodeLoop";
     public static final String Frame_Name = "com.oracle.truffle.api.frame.Frame";
     public static final String FinalBitSet_Name = "com.oracle.truffle.api.utilities.FinalBitSet";
@@ -99,12 +103,14 @@ public class TruffleTypes {
     public static final String TruffleOptions_Name = "com.oracle.truffle.api.TruffleOptions";
     public static final String UnexpectedResultException_Name = "com.oracle.truffle.api.nodes.UnexpectedResultException";
     public static final String VirtualFrame_Name = "com.oracle.truffle.api.frame.VirtualFrame";
+    public static final String HostLanguage_Name = "com.oracle.truffle.polyglot.HostLanguage";
 
     public final DeclaredType Assumption = c.getDeclaredType(Assumption_Name);
     public final DeclaredType CompilerAsserts = c.getDeclaredType(CompilerAsserts_Name);
     public final DeclaredType CompilerDirectives = c.getDeclaredType(CompilerDirectives_Name);
     public final DeclaredType CompilerDirectives_CompilationFinal = c.getDeclaredType(CompilerDirectives_CompilationFinal_Name);
     public final DeclaredType CompilerDirectives_TruffleBoundary = c.getDeclaredType(CompilerDirectives_TruffleBoundary_Name);
+    public final DeclaredType EncapsulatingNodeReference = c.getDeclaredType(EncapsulatingNodeReference_Name);
     public final DeclaredType ExplodeLoop = c.getDeclaredType(ExplodeLoop_Name);
     public final DeclaredType Frame = c.getDeclaredType(Frame_Name);
     public final DeclaredType FinalBitSet = c.getDeclaredType(FinalBitSet_Name);
@@ -127,8 +133,10 @@ public class TruffleTypes {
     public final DeclaredType TruffleOptions = c.getDeclaredType(TruffleOptions_Name);
     public final DeclaredType UnexpectedResultException = c.getDeclaredType(UnexpectedResultException_Name);
     public final DeclaredType VirtualFrame = c.getDeclaredType(VirtualFrame_Name);
+    public final DeclaredType HostLanguage = c.getDeclaredTypeOptional(HostLanguage_Name);
 
     // DSL API
+    public static final String Bind_Name = "com.oracle.truffle.api.dsl.Bind";
     public static final String Cached_Exclusive_Name = "com.oracle.truffle.api.dsl.Cached.Exclusive";
     public static final String Cached_Name = "com.oracle.truffle.api.dsl.Cached";
     public static final String Cached_Shared_Name = "com.oracle.truffle.api.dsl.Cached.Shared";
@@ -151,14 +159,19 @@ public class TruffleTypes {
     public static final String NodeField_Name = "com.oracle.truffle.api.dsl.NodeField";
     public static final String NodeFields_Name = "com.oracle.truffle.api.dsl.NodeFields";
     public static final String ReportPolymorphism_Exclude_Name = "com.oracle.truffle.api.dsl.ReportPolymorphism.Exclude";
+    public static final String ReportPolymorphism_Megamorphic_Name = "com.oracle.truffle.api.dsl.ReportPolymorphism.Megamorphic";
     public static final String ReportPolymorphism_Name = "com.oracle.truffle.api.dsl.ReportPolymorphism";
     public static final String Specialization_Name = "com.oracle.truffle.api.dsl.Specialization";
+    public static final String SpecializationStatistics_Name = "com.oracle.truffle.api.dsl.SpecializationStatistics";
+    public static final String SpecializationStatistics_AlwaysEnabled_Name = "com.oracle.truffle.api.dsl.SpecializationStatistics.AlwaysEnabled";
+    public static final String SpecializationStatistics_NodeStatistics_Name = "com.oracle.truffle.api.dsl.SpecializationStatistics.NodeStatistics";
     public static final String TypeCast_Name = "com.oracle.truffle.api.dsl.TypeCast";
     public static final String TypeCheck_Name = "com.oracle.truffle.api.dsl.TypeCheck";
     public static final String TypeSystem_Name = "com.oracle.truffle.api.dsl.TypeSystem";
     public static final String TypeSystemReference_Name = "com.oracle.truffle.api.dsl.TypeSystemReference";
     public static final String UnsupportedSpecializationException_Name = "com.oracle.truffle.api.dsl.UnsupportedSpecializationException";
 
+    public final DeclaredType Bind = c.getDeclaredType(Bind_Name);
     public final DeclaredType Cached = c.getDeclaredType(Cached_Name);
     public final DeclaredType Cached_Exclusive = c.getDeclaredType(Cached_Exclusive_Name);
     public final DeclaredType Cached_Shared = c.getDeclaredType(Cached_Shared_Name);
@@ -182,7 +195,11 @@ public class TruffleTypes {
     public final DeclaredType NodeFields = c.getDeclaredType(NodeFields_Name);
     public final DeclaredType ReportPolymorphism = c.getDeclaredType(ReportPolymorphism_Name);
     public final DeclaredType ReportPolymorphism_Exclude = c.getDeclaredType(ReportPolymorphism_Exclude_Name);
+    public final DeclaredType ReportPolymorphism_Megamorphic = c.getDeclaredType(ReportPolymorphism_Megamorphic_Name);
     public final DeclaredType Specialization = c.getDeclaredType(Specialization_Name);
+    public final DeclaredType SpecializationStatistics = c.getDeclaredType(SpecializationStatistics_Name);
+    public final DeclaredType SpecializationStatistics_NodeStatistics = c.getDeclaredType(SpecializationStatistics_NodeStatistics_Name);
+    public final DeclaredType SpecializationStatistics_AlwaysEnabled = c.getDeclaredType(SpecializationStatistics_AlwaysEnabled_Name);
     public final DeclaredType TypeCast = c.getDeclaredType(TypeCast_Name);
     public final DeclaredType TypeCheck = c.getDeclaredType(TypeCheck_Name);
     public final DeclaredType TypeSystem = c.getDeclaredType(TypeSystem_Name);
@@ -268,6 +285,11 @@ public class TruffleTypes {
     public final DeclaredType DynamicObject = c.getDeclaredTypeOptional(DynamicObject_Name);
     public final DeclaredType ObjectType = c.getDeclaredTypeOptional(ObjectType_Name);
     public final DeclaredType Layout_ImplicitCast = c.getDeclaredTypeOptional(Layout_ImplicitCast_Name);
+
+    // Utilities API
+    public static final String TruffleWeakReference_Name = "com.oracle.truffle.api.utilities.TruffleWeakReference";
+
+    public final DeclaredType TruffleWeakReference = c.getDeclaredTypeOptional(TruffleWeakReference_Name);
 
     // Checkstyle: resume
 }

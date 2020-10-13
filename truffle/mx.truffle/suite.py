@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # The Universal Permissive License (UPL), Version 1.0
@@ -39,9 +39,9 @@
 # SOFTWARE.
 #
 suite = {
-  "mxversion" : "5.247.0",
+  "mxversion" : "5.265.8",
   "name" : "truffle",
-  "version" : "20.1.0",
+  "version" : "20.3.0",
   "release" : False,
   "groupId" : "org.graalvm.truffle",
   "sourceinprojectwhitelist" : [],
@@ -161,8 +161,8 @@ suite = {
       "sourceDirs" : ["src"],
       "dependencies" : [
         "sdk:GRAAL_SDK",
-        "com.oracle.truffle.api.profiles",
         "com.oracle.truffle.api.instrumentation",
+        "com.oracle.truffle.api.exception",
       ],
       "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR"],
       "checkstyle" : "com.oracle.truffle.api",
@@ -273,6 +273,7 @@ suite = {
       "checkstyle" : "com.oracle.truffle.sl",
       "javaCompliance" : "8+",
       "workingSets" : "SimpleLanguage,Test",
+      "jacoco" : "exclude",
     },
 
     "com.oracle.truffle.dsl.processor" : {
@@ -308,6 +309,19 @@ suite = {
       "sourceDirs" : ["src"],
       "dependencies" : [
         "com.oracle.truffle.api.library",
+        "com.oracle.truffle.api.profiles",
+      ],
+      "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR"],
+      "checkstyle" : "com.oracle.truffle.api",
+      "javaCompliance" : "8+",
+      "workingSets" : "API,Truffle",
+    },
+
+    "com.oracle.truffle.api.exception" : {
+      "subDir" : "src",
+      "sourceDirs" : ["src"],
+      "dependencies" : [
+        "com.oracle.truffle.api.interop",
       ],
       "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR"],
       "checkstyle" : "com.oracle.truffle.api",
@@ -337,6 +351,7 @@ suite = {
       "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR"],
       "javaCompliance" : "8+",
       "workingSets" : "API,Truffle",
+      "jacoco" : "exclude",
     },
 
     "com.oracle.truffle.api.debug" : {
@@ -365,6 +380,7 @@ suite = {
       "javaCompliance" : "8+",
       "workingSets" : "API,Truffle",
       "testProject" : True,
+      "jacoco" : "exclude",
     },
 
     "com.oracle.truffle.api.object" : {
@@ -431,6 +447,7 @@ suite = {
       "dependencies" : ["com.oracle.truffle.api.object"],
       "checkstyle" : "com.oracle.truffle.api",
       "javaCompliance" : "8+",
+      "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR"],
       "workingSets" : "Truffle",
     },
 
@@ -439,12 +456,15 @@ suite = {
       "sourceDirs" : ["src"],
       "dependencies" : [
         "com.oracle.truffle.object",
+        "com.oracle.truffle.api.test",
         "mx:JUNIT"
       ],
       "checkstyle" : "com.oracle.truffle.dsl.processor",
       "javaCompliance" : "8+",
+      "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR"],
       "workingSets" : "Truffle",
       "testProject" : True,
+      "jacoco" : "exclude",
     },
 
     "com.oracle.truffle.tck" : {
@@ -481,7 +501,8 @@ suite = {
       "checkstyle" : "com.oracle.truffle.api",
       "javaCompliance" : "8+",
       "workingSets" : "Truffle,Tools",
-      "testProject" : True,
+      "testProject" : False,
+      "jacoco" : "exclude",
     },
     "com.oracle.truffle.tck.instrumentation" : {
       "subDir" : "src",
@@ -582,6 +603,7 @@ suite = {
       "subDir" : "src",
       "sourceDirs" : ["src"],
       "dependencies" : [
+        "com.oracle.truffle.api.test",
         "mx:JUNIT",
         "TRUFFLE_NFI",
         "TRUFFLE_TCK",
@@ -595,6 +617,7 @@ suite = {
         "native.test.lib" : "<path:TRUFFLE_TEST_NATIVE>/<lib:nativetest>"
       },
       "testProject" : True,
+      "jacoco" : "exclude",
     },
 
     "com.oracle.truffle.nfi.test.native" : {
@@ -625,6 +648,7 @@ suite = {
         },
       },
       "testProject" : True,
+      "jacoco" : "exclude",
     },
 
     "com.oracle.truffle.sl" : {
@@ -664,6 +688,7 @@ suite = {
       "workingSets" : "Truffle,SimpleLanguage,Test",
       "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR", "mx:JMH_1_21"],
       "testProject" : True,
+      "jacoco" : "exclude",
     },
 
     "com.oracle.truffle.st" : {
@@ -690,6 +715,7 @@ suite = {
       "annotationProcessors" : ["TRUFFLE_DSL_PROCESSOR"],
       "workingSets" : "Truffle,SimpleLanguage",
       "testProject" : True,
+      "jacoco" : "exclude",
     },
 
     "com.oracle.graalvm.locator": {
@@ -701,6 +727,7 @@ suite = {
       "checkstyle" : "com.oracle.truffle.api",
       "javaCompliance" : "1.8+",
       "license": "GPLv2-CPE",
+      "jacoco" : "exclude",
     },
 
     "com.oracle.graalvm.locator.jdk8" : {
@@ -777,6 +804,7 @@ suite = {
           "com.oracle.truffle.api.debug",
           "com.oracle.truffle.api.nodes",
           "com.oracle.truffle.api.source",
+          "com.oracle.truffle.api.memory",
           "com.oracle.truffle.api.io",
           "com.oracle.truffle.api.frame",
           "com.oracle.truffle.api",
@@ -784,6 +812,7 @@ suite = {
           "com.oracle.truffle.api.dsl",
           "com.oracle.truffle.api.profiles",
           "com.oracle.truffle.api.interop",
+          "com.oracle.truffle.api.exception",
           "com.oracle.truffle.api.object",
           "com.oracle.truffle.api.utilities",
           "com.oracle.truffle.api.library",
@@ -797,6 +826,7 @@ suite = {
       "javaCompliance" : "8+",
       "dependencies" : [
         "com.oracle.truffle.api",
+        "com.oracle.truffle.api.exception",
         "com.oracle.truffle.api.dsl",
         "com.oracle.truffle.api.profiles",
         "com.oracle.truffle.api.debug",
@@ -900,7 +930,7 @@ suite = {
       "exclude" : ["mx:JUNIT"],
       "description" : "A collection of tests that can certify language implementation to be compliant\nwith most recent requirements of the Truffle infrastructure and tooling.",
       "allowsJavadocWarnings": True,
-      "testProject" : True,
+      "testDistribution" : False,
       "maven": True,
     },
 

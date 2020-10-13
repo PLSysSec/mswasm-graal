@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,9 @@
  */
 package com.oracle.truffle.api.nodes;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.oracle.truffle.api.CallTarget;
@@ -49,6 +52,7 @@ import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.CompilerOptions;
 import com.oracle.truffle.api.RootCallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
+import com.oracle.truffle.api.TruffleLanguage.ContextReference;
 import com.oracle.truffle.api.TruffleLanguage.Env;
 import com.oracle.truffle.api.TruffleLanguage.ParsingRequest;
 import com.oracle.truffle.api.TruffleRuntime;
@@ -122,9 +126,11 @@ import com.oracle.truffle.api.source.SourceSection;
  */
 public abstract class RootNode extends ExecutableNode {
 
-    private volatile RootCallTarget callTarget;
+    private static final AtomicReferenceFieldUpdater<RootNode, ReentrantLock> LOCK_UPDATER = AtomicReferenceFieldUpdater.newUpdater(RootNode.class, ReentrantLock.class, "lock");
+
+    @CompilationFinal private volatile RootCallTarget callTarget;
     @CompilationFinal private FrameDescriptor frameDescriptor;
-    final ReentrantLock lock = new ReentrantLock();
+    private volatile ReentrantLock lock;
 
     volatile byte instrumentationBits;
 
@@ -168,7 +174,7 @@ public abstract class RootNode extends ExecutableNode {
     @SuppressWarnings("deprecation")
     @Deprecated
     public final <C, T extends TruffleLanguage<C>> C getCurrentContext(Class<T> languageClass) {
-        if (language == null) {
+        if (getLanguage() == null) {
             return null;
         }
         return getLanguage(languageClass).getContextReference().get();
@@ -370,6 +376,67 @@ public abstract class RootNode extends ExecutableNode {
     }
 
     /**
+     * Is this root node to be considered trivial by the runtime.
+     *
+     * A trivial root node is defined as a root node that:
+     * <ol>
+     * <li>Never increases code size when inlined, i.e. is always less complex then the call.</li>
+     * <li>Never performs guest language calls.</li>
+     * <li>Never contains loops.</li>
+     * <li>Is small (for a language-specific definition of small).</li>
+     * </ol>
+     *
+     * An good example of trivial root nodes would be getters and setters in java.
+     *
+     * @since 20.3.0
+     * @return <code>true </code>if this root node should be considered trivial by the runtime.
+     *         <code>false</code> otherwise.
+     */
+    protected boolean isTrivial() {
+        return false;
+    }
+
+    /**
+     * Provide a list of stack frames that led to a schedule of asynchronous execution of this root
+     * node on the provided frame. The asynchronous frames are expected to be found here when
+     * {@link Env#getAsynchronousStackDepth()} is positive. The language is free to provide
+     * asynchronous frames or longer list of frames when it's of no performance penalty, or if
+     * requested by other options. This method is invoked on slow-paths only and with a context
+     * entered.
+     *
+     * @param frame A frame, never <code>null</code>
+     * @return a list of {@link TruffleStackTraceElement}, or <code>null</code> when no asynchronous
+     *         stack is available.
+     * @see Env#getAsynchronousStackDepth()
+     * @since 20.1.0
+     */
+    protected List<TruffleStackTraceElement> findAsynchronousFrames(Frame frame) {
+        return null;
+    }
+
+    /**
+     * Translates the {@link TruffleStackTraceElement} into an interop object supporting the
+     * {@code hasExecutableName} and potentially {@code hasDeclaringMetaObject} and
+     * {@code hasSourceLocation} messages. An executable name must be provided, whereas the
+     * declaring meta object and source location is optional. Guest languages may typically return
+     * their function objects that typically already implement the required contracts.
+     * <p>
+     * The intention of this method is to provide a guest language object for other languages that
+     * they can inspect using interop. An implementation of this method is expected to not fail with
+     * a guest error. Implementations are allowed to do {@link ContextReference#get() context
+     * reference lookups} in the implementation of the method. This may be useful to access the
+     * function objects needed to resolve the stack trace element.
+     *
+     * @see TruffleStackTraceElement#getGuestObject() to access the guest object of a stack trace
+     *      element.
+     * @since 20.3
+     */
+    protected Object translateStackTraceElement(TruffleStackTraceElement element) {
+        Node location = element.getLocation();
+        return NodeAccessor.EXCEPTION.createDefaultStackTraceElementObject(element.getTarget().getRootNode(), location != null ? location.getEncapsulatingSourceSection() : null);
+    }
+
+    /**
      * Helper method to create a root node that always returns the same value. Certain operations
      * (especially {@link com.oracle.truffle.api.interop inter-operability} API) require return of
      * stable {@link RootNode root nodes}. To simplify creation of such nodes, here is a factory
@@ -381,6 +448,23 @@ public abstract class RootNode extends ExecutableNode {
      */
     public static RootNode createConstantNode(Object constant) {
         return new Constant(constant);
+    }
+
+    final ReentrantLock getLazyLock() {
+        ReentrantLock l = this.lock;
+        if (l == null) {
+            l = initializeLock();
+        }
+        return l;
+    }
+
+    private ReentrantLock initializeLock() {
+        ReentrantLock l = new ReentrantLock();
+        if (!RootNode.LOCK_UPDATER.compareAndSet(this, null, l)) {
+            // if CAS failed, lock is already initialized; cannot be null after that.
+            l = Objects.requireNonNull(this.lock);
+        }
+        return l;
     }
 
     private static final class Constant extends RootNode {
@@ -397,4 +481,5 @@ public abstract class RootNode extends ExecutableNode {
             return value;
         }
     }
+
 }

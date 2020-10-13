@@ -24,7 +24,7 @@
  */
 package com.oracle.svm.core.monitor;
 
-import org.graalvm.nativeimage.IsolateThread;
+import com.oracle.svm.core.annotate.Uninterruptible;
 
 /**
  * Without support for threads, there is no need for any monitor operations.
@@ -42,19 +42,29 @@ public class SingleThreadedMonitorSupport extends MonitorSupport {
     }
 
     @Override
-    public void lockRematerializedObject(Object obj, IsolateThread lockingThread, int recursionDepth) {
-        /* Synchronization is a no-op in single threaded mode. */
+    public Object prepareRelockObject(Object obj) {
+        return null;
+    }
+
+    @Uninterruptible(reason = "called during deoptimization")
+    @Override
+    public void doRelockObject(Object obj, Object lockData) {
     }
 
     @Override
-    public boolean holdsLock(Object obj) {
+    public boolean isLockedByCurrentThread(Object obj) {
         /*
          * Since monitorenter and monitorexit are no-ops, we do not know the real answer. But since
          * the current thread has exclusive access to the object, true is a correct answer. Callers
-         * of holdsLock usually want to ensure that synchronization has occurred, i.e., assert that
-         * the returned value is true.
+         * of isLockedByCurrentThread usually want to ensure that synchronization has occurred,
+         * i.e., assert that the returned value is true.
          */
         return true;
+    }
+
+    @Override
+    public boolean isLockedByAnyThread(Object obj) {
+        return isLockedByCurrentThread(obj);
     }
 
     @Override

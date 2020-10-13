@@ -92,6 +92,12 @@ public class CastExactPartialEvaluationTest extends PartialEvaluationTest {
         testCommon(result, "byteBufferAccess");
     }
 
+    @Test
+    public void byteBufferAccessIndex() {
+        AbstractTestNode result = new BufferGetPutIndexTestNode(newBuffer().getClass());
+        testCommon(result, "byteBufferAccessIndex");
+    }
+
     private void testCommon(AbstractTestNode testNode, String testName) {
         FrameDescriptor fd = new FrameDescriptor();
         RootNode rootNode = new RootTestNode(fd, testName, testNode);
@@ -149,6 +155,23 @@ public class CastExactPartialEvaluationTest extends PartialEvaluationTest {
             int pos = dup.position();
             dup.putInt(value);
             return dup.getInt(pos);
+        }
+    }
+
+    static class BufferGetPutIndexTestNode extends AbstractTestNode {
+        private final Class<? extends ByteBuffer> bufferClass;
+
+        BufferGetPutIndexTestNode(Class<? extends ByteBuffer> exactClass) {
+            this.bufferClass = exactClass;
+        }
+
+        @Override
+        public int execute(VirtualFrame frame) {
+            Object arg = frame.getArguments()[0];
+            ByteBuffer buffer = CompilerDirectives.castExact(arg, bufferClass);
+            int value = buffer.getInt(0);
+            buffer.putInt(0, value);
+            return buffer.getInt(0);
         }
     }
 }

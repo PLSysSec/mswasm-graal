@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
+import com.oracle.svm.core.SubstrateOptions;
 import org.graalvm.compiler.code.CompilationResult;
 import org.graalvm.compiler.code.SourceMapping;
 import org.graalvm.compiler.debug.DebugContext;
@@ -43,11 +44,11 @@ import org.graalvm.nativeimage.ImageSingletons;
 import com.oracle.graal.pointsto.infrastructure.OriginalClassProvider;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.objectfile.debuginfo.DebugInfoProvider;
+import com.oracle.svm.core.graal.code.SubstrateBackend;
 import com.oracle.svm.hosted.image.sources.SourceManager;
 import com.oracle.svm.hosted.meta.HostedMethod;
 import com.oracle.svm.hosted.meta.HostedType;
 
-import jdk.vm.ci.code.site.Mark;
 import jdk.vm.ci.meta.LineNumberTable;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
@@ -92,14 +93,27 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
         private final ResolvedJavaType javaType;
         private final CompilationResult compilation;
         private Path fullFilePath;
+        private final Path cachePath;
 
+        @SuppressWarnings("try")
         NativeImageDebugCodeInfo(HostedMethod method, CompilationResult compilation) {
             this.method = method;
             HostedType declaringClass = method.getDeclaringClass();
             Class<?> clazz = declaringClass.getJavaClass();
-            this.javaType = declaringClass.getWrapped();
+            /*
+             * HostedType wraps an AnalysisType and both HostedType and AnalysisType punt calls to
+             * getSourceFilename to the wrapped class so for consistency we need to do the path
+             * lookup relative to the doubly unwrapped HostedType.
+             */
+            this.javaType = declaringClass.getWrapped().getWrapped();
             this.compilation = compilation;
-            fullFilePath = ImageSingletons.lookup(SourceManager.class).findAndCacheSource(javaType, clazz);
+            this.cachePath = SubstrateOptions.getDebugInfoSourceCacheRoot();
+            SourceManager sourceManager = ImageSingletons.lookup(SourceManager.class);
+            try (DebugContext.Scope s = debugContext.scope("DebugCodeInfo", declaringClass)) {
+                fullFilePath = sourceManager.findAndCacheSource(javaType, clazz, debugContext);
+            } catch (Throwable e) {
+                throw debugContext.handle(e);
+            }
         }
 
         @SuppressWarnings("try")
@@ -129,6 +143,11 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
                 return fullFilePath.getParent();
             }
             return null;
+        }
+
+        @Override
+        public Path cachePath() {
+            return cachePath;
         }
 
         @Override
@@ -186,22 +205,30 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
         @Override
         public List<DebugFrameSizeChange> getFrameSizeChanges() {
             List<DebugFrameSizeChange> frameSizeChanges = new LinkedList<>();
-            for (Mark mark : compilation.getMarks()) {
+            for (CompilationResult.CodeMark mark : compilation.getMarks()) {
                 // we only need to observe stack increment or decrement points
-                if (mark.id.equals("PROLOGUE_DECD_RSP")) {
+                if (mark.id.equals(SubstrateBackend.SubstrateMarkId.PROLOGUE_DECD_RSP)) {
                     NativeImageDebugFrameSizeChange sizeChange = new NativeImageDebugFrameSizeChange(mark.pcOffset, EXTEND);
                     frameSizeChanges.add(sizeChange);
                     // } else if (mark.id.equals("PROLOGUE_END")) {
                     // can ignore these
                     // } else if (mark.id.equals("EPILOGUE_START")) {
                     // can ignore these
-                } else if (mark.id.equals("EPILOGUE_INCD_RSP")) {
+                } else if (mark.id.equals(SubstrateBackend.SubstrateMarkId.EPILOGUE_INCD_RSP)) {
                     NativeImageDebugFrameSizeChange sizeChange = new NativeImageDebugFrameSizeChange(mark.pcOffset, CONTRACT);
                     frameSizeChanges.add(sizeChange);
-                    // } else if(mark.id.equals("EPILOGUE_END")) {
+                } else if (mark.id.equals(SubstrateBackend.SubstrateMarkId.EPILOGUE_END) && mark.pcOffset < compilation.getTargetCodeSize()) {
+                    // there is code after this return point so notify stack extend again
+                    NativeImageDebugFrameSizeChange sizeChange = new NativeImageDebugFrameSizeChange(mark.pcOffset, EXTEND);
+                    frameSizeChanges.add(sizeChange);
                 }
             }
             return frameSizeChanges;
+        }
+
+        @Override
+        public boolean isDeoptTarget() {
+            return methodName().endsWith(HostedMethod.METHOD_NAME_DEOPT_SUFFIX);
         }
     }
 
@@ -214,6 +241,7 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
         private final ResolvedJavaMethod method;
         private final int lo;
         private final int hi;
+        private Path cachePath;
         private Path fullFilePath;
 
         NativeImageDebugLineInfo(SourceMapping sourceMapping) {
@@ -223,6 +251,7 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
             this.method = position.getMethod();
             this.lo = sourceMapping.getStartOffset();
             this.hi = sourceMapping.getEndOffset();
+            this.cachePath = SubstrateOptions.getDebugInfoSourceCacheRoot();
             computeFullFilePath();
         }
 
@@ -243,6 +272,11 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
                 return fullFilePath.getParent();
             }
             return null;
+        }
+
+        @Override
+        public Path cachePath() {
+            return cachePath;
         }
 
         @Override
@@ -274,6 +308,7 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
             return -1;
         }
 
+        @SuppressWarnings("try")
         private void computeFullFilePath() {
             ResolvedJavaType declaringClass = method.getDeclaringClass();
             Class<?> clazz = null;
@@ -281,8 +316,9 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
                 clazz = ((OriginalClassProvider) declaringClass).getJavaClass();
             }
             /*
-             * HostedType and AnalysisType punt calls to getSourceFilename to the wrapped class so
-             * for consistency we need to do the path lookup relative to the wrapped class.
+             * HostedType wraps an AnalysisType and both HostedType and AnalysisType punt calls to
+             * getSourceFilename to the wrapped class so for consistency we need to do the path
+             * lookup relative to the doubly unwrapped HostedType or singly unwrapped AnalysisType.
              */
             if (declaringClass instanceof HostedType) {
                 declaringClass = ((HostedType) declaringClass).getWrapped();
@@ -290,7 +326,12 @@ class NativeImageDebugInfoProvider implements DebugInfoProvider {
             if (declaringClass instanceof AnalysisType) {
                 declaringClass = ((AnalysisType) declaringClass).getWrapped();
             }
-            fullFilePath = ImageSingletons.lookup(SourceManager.class).findAndCacheSource(declaringClass, clazz);
+            SourceManager sourceManager = ImageSingletons.lookup(SourceManager.class);
+            try (DebugContext.Scope s = debugContext.scope("DebugCodeInfo", declaringClass)) {
+                fullFilePath = sourceManager.findAndCacheSource(declaringClass, clazz, debugContext);
+            } catch (Throwable e) {
+                throw debugContext.handle(e);
+            }
         }
 
     }

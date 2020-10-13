@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -105,6 +105,11 @@ public class HotSpotOptimizedCallTarget extends OptimizedCallTarget implements O
     }
 
     @Override
+    public boolean isAlive() {
+        return installedCode.isAlive();
+    }
+
+    @Override
     public boolean isValidLastTier() {
         InstalledCode code = installedCode;
         return code.isValid() && code.getName().endsWith(TruffleCompiler.SECOND_TIER_COMPILATION_SUFFIX);
@@ -112,7 +117,7 @@ public class HotSpotOptimizedCallTarget extends OptimizedCallTarget implements O
 
     @Override
     public void invalidateCode() {
-        if (installedCode.isValid()) {
+        if (installedCode.isAlive()) {
             installedCode.invalidate();
         }
     }

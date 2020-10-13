@@ -27,7 +27,10 @@ package com.oracle.svm.core.monitor;
 //Checkstyle: stop
 
 import java.lang.ref.ReferenceQueue;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.AbstractOwnableSynchronizer;
 import java.util.concurrent.locks.AbstractQueuedSynchronizer;
@@ -40,6 +43,8 @@ import org.graalvm.compiler.core.common.SuppressFBWarnings;
 import org.graalvm.compiler.serviceprovider.GraalUnsafeAccess;
 import org.graalvm.compiler.word.BarrieredAccess;
 import org.graalvm.nativeimage.IsolateThread;
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
 
 import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.WeakIdentityHashMap;
@@ -56,7 +61,6 @@ import com.oracle.svm.core.snippets.SubstrateForeignCallTarget;
 import com.oracle.svm.core.stack.StackOverflowCheck;
 import com.oracle.svm.core.thread.JavaThreads;
 import com.oracle.svm.core.thread.ThreadStatus;
-import com.oracle.svm.core.thread.ThreadingSupportImpl;
 import com.oracle.svm.core.thread.VMOperationControl;
 import com.oracle.svm.core.util.VMError;
 
@@ -90,6 +94,63 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
     private static final Unsafe UNSAFE = GraalUnsafeAccess.getUnsafe();
 
     /**
+     * Types that are used to implement the secondary storage for monitor slots cannot themselves
+     * use the additionalMonitors map. That could result in recursive manipulation of the
+     * additionalMonitors map which could lead to table corruptions and double insertion of a
+     * monitor for the same object. Therefore these types will alawys get a monitor slot.
+     */
+    @Platforms(Platform.HOSTED_ONLY.class)//
+    public static final Set<Class<?>> FORCE_MONITOR_SLOT_TYPES;
+
+    static {
+        try {
+            /*
+             * The com.oracle.svm.core.WeakIdentityHashMap used to model the
+             * com.oracle.svm.core.monitor.MultiThreadedMonitorSupport#additionalMonitors map uses
+             * java.lang.ref.ReferenceQueue internally. The ReferenceQueue uses the inner static
+             * class Lock for all its locking needs.
+             */
+            HashSet<Class<?>> monitorTypes = new HashSet<>();
+            monitorTypes.add(Class.forName("java.lang.ref.ReferenceQueue$Lock"));
+            /* The WeakIdentityHashMap also synchronizes on its internal ReferenceQueue field. */
+            monitorTypes.add(java.lang.ref.ReferenceQueue.class);
+
+            /*
+             * Whenever the monitor allocation in
+             * MultiThreadedMonitorSupport.getOrCreateMonitorFromMap() is done via
+             * ThreadLocalAllocation.slowPathNewInstance() then
+             * LinuxPhysicalMemory$PhysicalMemorySupportImpl.sizeFromCGroup() is called which
+             * triggers file IO using the synchronized java.io.FileDescriptor.attach().
+             */
+            monitorTypes.add(java.io.FileDescriptor.class);
+
+            /*
+             * LinuxPhysicalMemory$PhysicalMemorySupportImpl.sizeFromCGroup() also calls
+             * java.io.FileInputStream.close() which synchronizes on a 'Object closeLock = new
+             * Object()' object. We cannot modify the type of the monitor since it is in JDK code.
+             * Adding a monitor slot to java.lang.Object doesn't impact any subtypes.
+             * 
+             * This should also take care of the synchronization in
+             * ReferenceInternals.processPendingReferences().
+             */
+            monitorTypes.add(java.lang.Object.class);
+
+            /*
+             * The map access in MultiThreadedMonitorSupport.getOrCreateMonitorFromMap() calls
+             * System.identityHashCode() which on the slow path calls
+             * IdentityHashCodeSupport.generateIdentityHashCode(). The hashcode generation calls
+             * SplittableRandomAccessors.initialize() which synchronizes on an instance of
+             * SplittableRandomAccessors.
+             */
+            monitorTypes.add(Class.forName("com.oracle.svm.core.jdk.SplittableRandomAccessors"));
+
+            FORCE_MONITOR_SLOT_TYPES = Collections.unmodifiableSet(monitorTypes);
+        } catch (ClassNotFoundException e) {
+            throw VMError.shouldNotReachHere("Error building the list of types that always need a monitor slot.", e);
+        }
+    }
+
+    /**
      * {@link Target_java_util_concurrent_locks_ReentrantLock_NonfairSync#objectMonitorCondition}
      * marker to indicate that the associated lock is an object monitor, but does not have a
      * Condition yet. This marker value is needed to identify monitor conditions for
@@ -99,6 +160,7 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
 
     /** Substituted in {@link Target_com_oracle_svm_core_monitor_MultiThreadedMonitorSupport} */
     private static long SYNC_MONITOR_CONDITION_FIELD_OFFSET = -1;
+    private static long SYNC_STATE_FIELD_OFFSET = -1;
 
     /**
      * Secondary storage for monitor slots. Synchronized to prevent concurrent access and
@@ -131,11 +193,17 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
          * zone prevents stack overflows.
          */
         StackOverflowCheck.singleton().makeYellowZoneAvailable();
-        ThreadingSupportImpl.pauseRecurringCallback("No exception must flow out of the monitor code.");
         VMOperationControl.guaranteeOkayToBlock("No Java synchronization must be performed within a VMOperation: if the object is already locked, the VM is deadlocked");
         try {
             singleton().monitorEnter(obj);
 
+        } catch (OutOfMemoryError ex) {
+            /*
+             * Exposing OutOfMemoryError to application. Note that since the foreign call from
+             * snippets to this method does not have an exception edge, it is possible this throw
+             * will miss the proper exception handler.
+             */
+            throw ex;
         } catch (Throwable ex) {
             /*
              * The foreign call from snippets to this method does not have an exception edge. So we
@@ -151,7 +219,6 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
             throw VMError.shouldNotReachHere("Unexpected exception in MonitorSupport.monitorEnter", ex);
 
         } finally {
-            ThreadingSupportImpl.resumeRecurringCallbackAtNextSafepoint();
             StackOverflowCheck.singleton().protectYellowZone();
         }
     }
@@ -169,10 +236,16 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
     @Uninterruptible(reason = "Avoid stack overflow error before yellow zone has been activated", calleeMustBe = false)
     private static void slowPathMonitorExit(Object obj) {
         StackOverflowCheck.singleton().makeYellowZoneAvailable();
-        ThreadingSupportImpl.pauseRecurringCallback("No exception must flow out of the monitor code.");
         try {
             singleton().monitorExit(obj);
 
+        } catch (OutOfMemoryError ex) {
+            /*
+             * Exposing OutOfMemoryError to application. Note that since the foreign call from
+             * snippets to this method does not have an exception edge, it is possible this throw
+             * will miss the proper exception handler.
+             */
+            throw ex;
         } catch (Throwable ex) {
             /*
              * The foreign call from snippets to this method does not have an exception edge. So we
@@ -185,7 +258,6 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
             throw VMError.shouldNotReachHere("Unexpected exception in MonitorSupport.monitorExit", ex);
 
         } finally {
-            ThreadingSupportImpl.resumeRecurringCallbackAtNextSafepoint();
             StackOverflowCheck.singleton().protectYellowZone();
         }
     }
@@ -198,30 +270,71 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
     }
 
     @Override
-    public void lockRematerializedObject(Object obj, IsolateThread lockingThread, int recursionDepth) {
-        assert obj != null;
-        int monitorOffset = getMonitorOffset(obj);
+    public Object prepareRelockObject(Object obj) {
+        /*
+         * We ensure that the lock for the object exists, so that the actual re-locking during
+         * deoptimization can be uninterruptible.
+         * 
+         * Unfortunately, we cannot do any assertion checking in this method: deoptimization can run
+         * in any thread, i.e., not necessarily in the thread that the lock will be for. And while
+         * the frame that is deoptimized must have had the object locked, the thread could have
+         * given up the lock as part of a wait() - so at this time any thread is allowed to hold the
+         * lock.
+         * 
+         * Because any thread can hold the lock at this time, there is no way we can patch any
+         * internal state of the lock immediately here. The actual state patching therefore happens
+         * later in doRelockObject.
+         */
+        return getOrCreateMonitor(obj, true);
+    }
 
-        ReentrantLock newMonitor = newLockedMonitorForThread(lockingThread, recursionDepth);
-        Object existingMonitor;
+    @Uninterruptible(reason = "called during deoptimization")
+    @Override
+    public void doRelockObject(Object obj, Object lockData) {
+        Target_java_util_concurrent_locks_ReentrantLock lock = SubstrateUtil.cast(lockData, Target_java_util_concurrent_locks_ReentrantLock.class);
 
-        if (monitorOffset != 0) {
-            existingMonitor = UNSAFE.getAndSetObject(obj, monitorOffset, newMonitor);
-        } else {
-            additionalMonitorsLock.lock();
-            try {
-                existingMonitor = additionalMonitors.put(obj, newMonitor);
-            } finally {
-                additionalMonitorsLock.unlock();
-            }
-        }
-        VMError.guarantee(existingMonitor == null, "Rematerialized object was already locked");
+        /*
+         * We need 3 variables for the same value because target classes do not model the
+         * inheritance hierarchy.
+         */
+        Target_java_util_concurrent_locks_ReentrantLock_Sync lSync = lock.sync;
+        Target_java_util_concurrent_locks_AbstractQueuedSynchronizer qSync = SubstrateUtil.cast(lSync, Target_java_util_concurrent_locks_AbstractQueuedSynchronizer.class);
+        Target_java_util_concurrent_locks_AbstractOwnableSynchronizer aSync = SubstrateUtil.cast(lSync, Target_java_util_concurrent_locks_AbstractOwnableSynchronizer.class);
+
+        /*
+         * This code runs just before we are returning to the actual deoptimized frame. This means
+         * that the thread either must already hold the lock (if recursive locking is eliminated),
+         * or the object must be unlocked (if the object was rematerialized during deoptimization).
+         * If the object is locked by another thread, lock elimination in the compiler has a serious
+         * bug.
+         */
+        Thread currentThread = Thread.currentThread();
+        Thread ownerThread = aSync.exclusiveOwnerThread;
+        VMError.guarantee(ownerThread == null || ownerThread == currentThread, "Object that needs re-locking during deoptimization is already locked by another thread");
+
+        /*
+         * Since this code must be uninterruptible, we cannot just call lock.tryLock() but instead
+         * replicate that logic here by using only direct field accesses.
+         */
+        int oldState = qSync.state;
+        int newState = oldState + 1;
+        VMError.guarantee(newState > 0, "Maximum lock count exceeded");
+
+        boolean success = UNSAFE.compareAndSwapInt(qSync, SYNC_STATE_FIELD_OFFSET, oldState, newState);
+        VMError.guarantee(success, "Could not re-lock object during deoptimization");
+        aSync.exclusiveOwnerThread = currentThread;
     }
 
     @Override
-    public boolean holdsLock(Object obj) {
+    public boolean isLockedByCurrentThread(Object obj) {
         ReentrantLock lockObject = getOrCreateMonitor(obj, false);
         return lockObject != null && lockObject.isHeldByCurrentThread();
+    }
+
+    @Override
+    public boolean isLockedByAnyThread(Object obj) {
+        ReentrantLock lockObject = getOrCreateMonitor(obj, false);
+        return lockObject != null && lockObject.isLocked();
     }
 
     @SuppressFBWarnings(value = {"WA_AWAIT_NOT_IN_LOOP"}, justification = "This method is a wait implementation.")
@@ -298,6 +411,8 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
 
     protected ReentrantLock getOrCreateMonitorFromMap(Object obj, boolean createIfNotExisting) {
         assert obj.getClass() != Target_java_lang_ref_ReferenceQueue_Lock.class : "ReferenceQueue.Lock must have a monitor field or we can deadlock accessing WeakIdentityHashMap below";
+        VMError.guarantee(!additionalMonitorsLock.isHeldByCurrentThread(),
+                        "Recursive manipulation of the additionalMonitors map can lead to table corruptions and double insertion of a monitor for the same object");
 
         /*
          * Lock the monitor map and maybe add a monitor for this object. This serialization might be
@@ -342,8 +457,8 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
         Target_java_util_concurrent_locks_ReentrantLock lock = SubstrateUtil.cast(result, Target_java_util_concurrent_locks_ReentrantLock.class);
         Target_java_util_concurrent_locks_AbstractOwnableSynchronizer sync = SubstrateUtil.cast(lock.sync, Target_java_util_concurrent_locks_AbstractOwnableSynchronizer.class);
 
-        assert sync.getExclusiveOwnerThread() == Thread.currentThread() : "Must be locked by current thread";
-        sync.setExclusiveOwnerThread(JavaThreads.fromVMThread(isolateThread));
+        assert sync.exclusiveOwnerThread == Thread.currentThread() : "Must be locked by current thread";
+        sync.exclusiveOwnerThread = JavaThreads.fromVMThread(isolateThread);
 
         return result;
     }
@@ -399,11 +514,8 @@ public class MultiThreadedMonitorSupport extends MonitorSupport {
 @TargetClass(value = AbstractOwnableSynchronizer.class)
 final class Target_java_util_concurrent_locks_AbstractOwnableSynchronizer {
 
-    @Alias
-    protected native Thread getExclusiveOwnerThread();
-
-    @Alias
-    protected native void setExclusiveOwnerThread(Thread thread);
+    @Alias //
+    Thread exclusiveOwnerThread;
 }
 
 @TargetClass(value = ReentrantLock.class, innerClass = "Sync")
@@ -427,6 +539,9 @@ final class Target_java_util_concurrent_locks_ReentrantLock_NonfairSync {
 final class Target_com_oracle_svm_core_monitor_MultiThreadedMonitorSupport {
     @Alias @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.FieldOffset, name = "objectMonitorCondition", declClass = Target_java_util_concurrent_locks_ReentrantLock_NonfairSync.class) //
     static long SYNC_MONITOR_CONDITION_FIELD_OFFSET;
+
+    @Alias @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.FieldOffset, name = "state", declClass = AbstractQueuedSynchronizer.class) //
+    static long SYNC_STATE_FIELD_OFFSET;
 }
 
 @TargetClass(ReentrantLock.class)
@@ -437,6 +552,8 @@ final class Target_java_util_concurrent_locks_ReentrantLock {
 
 @TargetClass(AbstractQueuedSynchronizer.class)
 final class Target_java_util_concurrent_locks_AbstractQueuedSynchronizer {
+    @Alias //
+    volatile int state;
 }
 
 @TargetClass(value = ConditionObject.class)

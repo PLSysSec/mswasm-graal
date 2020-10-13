@@ -27,7 +27,6 @@ package com.oracle.graal.pointsto.flow;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.extended.JavaReadNode;
 import org.graalvm.compiler.nodes.extended.RawLoadNode;
-import org.graalvm.compiler.nodes.java.AtomicReadAndWriteNode;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.api.UnsafePartitionKind;
@@ -181,6 +180,18 @@ public abstract class OffsetLoadTypeFlow extends TypeFlow<BytecodePosition> {
         protected abstract AbstractUnsafeLoadTypeFlow makeCopy(BigBang bb, MethodFlowsGraph methodFlows);
 
         @Override
+        public void initClone(BigBang bb) {
+            /*
+             * Unsafe load type flow models unsafe reads from both instance and static fields. From
+             * an analysis stand point for static fields the base doesn't matter. An unsafe load can
+             * read from any of the static fields marked for unsafe access.
+             */
+            for (AnalysisField field : bb.getUniverse().getUnsafeAccessedStaticFields()) {
+                field.getStaticFieldFlow().addUse(bb, this);
+            }
+        }
+
+        @Override
         public void onObservedUpdate(BigBang bb) {
             /* Only a clone should be updated */
             assert this.isClone();
@@ -320,7 +331,7 @@ public abstract class OffsetLoadTypeFlow extends TypeFlow<BytecodePosition> {
 
     public static class AtomicReadTypeFlow extends AbstractUnsafeLoadTypeFlow {
 
-        public AtomicReadTypeFlow(AtomicReadAndWriteNode node, AnalysisType objectType, AnalysisType componentType, TypeFlow<?> objectFlow, MethodTypeFlow methodFlow) {
+        public AtomicReadTypeFlow(ValueNode node, AnalysisType objectType, AnalysisType componentType, TypeFlow<?> objectFlow, MethodTypeFlow methodFlow) {
             super(node, objectType, componentType, objectFlow, methodFlow);
         }
 

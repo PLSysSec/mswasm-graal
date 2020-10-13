@@ -292,7 +292,7 @@ public abstract class NativeImageCodeCache {
     public abstract void writeCode(RelocatableBuffer buffer);
 
     public void writeConstants(NativeImageHeapWriter writer, RelocatableBuffer buffer) {
-        ByteBuffer bb = buffer.getBuffer();
+        ByteBuffer bb = buffer.getByteBuffer();
         dataSection.buildDataSection(bb, (position, constant) -> {
             writer.writeReference(buffer, position, SubstrateObjectConstant.asObject(constant), "VMConstant: " + constant);
         });
@@ -338,7 +338,7 @@ public abstract class NativeImageCodeCache {
         @Override
         protected Class<?> getDeclaringJavaClass(ResolvedJavaMethod method) {
             HostedType type = (HostedType) method.getDeclaringClass();
-            assert type.getWrapped().isInTypeCheck() : "Declaring class not marked as used, therefore the DynamicHub is not initialized properly: " + method.format("%H.%n(%p)");
+            assert type.getWrapped().isReachable() : "Declaring class not marked as used, therefore the DynamicHub is not initialized properly: " + method.format("%H.%n(%p)");
             return type.getJavaClass();
         }
 

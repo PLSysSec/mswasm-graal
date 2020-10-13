@@ -11,7 +11,7 @@ Read on to learn how to embed [Insight](Insight.md) into your own application.
 [Context](https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html) API.
 [Insight](Insight-Manual.md) isn't an exception and it can also be
 controlled via the same API as well. See
-[AgentScript class documentation](https://www.graalvm.org/tools/javadoc/com/oracle/truffle/tools/agentscript/AgentScript.html)
+[formal Insight documentation](https://www.graalvm.org/tools/javadoc/org/graalvm/tools/insight/Insight.html)
 for more details:
 
 ```java
@@ -93,7 +93,7 @@ For example following script is going to observe who calls `process.exit`:
 ```bash
 $ curl --data \
   'insight.on("enter", (ctx, frame) => { console.log(new Error("call to exit").stack); }, \
-  { roots: true, rootNameFilter: n => n === "exit" });' \
+  { roots: true, rootNameFilter: "exit" });' \
   -X POST http://localhost:9999/
 ```
 

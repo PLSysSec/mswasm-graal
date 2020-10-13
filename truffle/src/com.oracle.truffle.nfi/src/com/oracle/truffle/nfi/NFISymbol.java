@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -121,7 +121,7 @@ final class NFISymbol implements TruffleObject {
     Object invokeMember(String member, Object[] args,
                     @Cached BindSignatureNode bind,
                     @CachedLibrary("this.nativeSymbol") NativeSymbolLibrary symbolLibrary,
-                    @Cached("createBinaryProfile()") ConditionProfile isCallable,
+                    @Cached ConditionProfile isCallable,
                     @Exclusive @Cached BranchProfile exception) throws ArityException, UnknownIdentifierException, UnsupportedTypeException, UnsupportedMessageException {
         if (!"bind".equals(member)) {
             exception.enter();

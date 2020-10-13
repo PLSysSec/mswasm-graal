@@ -54,6 +54,7 @@ import org.graalvm.compiler.core.common.spi.LIRKindTool;
 import org.graalvm.compiler.core.common.type.RawPointerStamp;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.core.common.type.StampFactory;
+import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.lir.LIRFrameState;
 import org.graalvm.compiler.lir.LIRInstruction;
 import org.graalvm.compiler.lir.LabelRef;
@@ -74,6 +75,7 @@ import org.graalvm.nativeimage.c.constant.CEnum;
 import org.graalvm.util.GuardedAnnotationAccess;
 
 import com.oracle.svm.core.FrameAccess;
+import com.oracle.svm.core.ReservedRegisters;
 import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.annotate.Uninterruptible;
@@ -734,18 +736,18 @@ public class LLVMGenerator implements LIRGeneratorTool, SubstrateLIRGenerator {
     @Override
     public Variable emitReadRegister(Register register, ValueKind<?> kind) {
         LLVMValueRef value;
-        if (register.equals(getRegisterConfig().getThreadRegister())) {
+        if (register.equals(ReservedRegisters.singleton().getThreadRegister())) {
             if (isEntryPoint || canModifySpecialRegisters) {
                 return new LLVMPendingSpecialRegisterRead(this, SpecialRegister.ThreadPointer);
             }
             value = getSpecialRegister(SpecialRegister.ThreadPointer);
-        } else if (register.equals(getRegisterConfig().getHeapBaseRegister())) {
+        } else if (register.equals(ReservedRegisters.singleton().getHeapBaseRegister())) {
             if (isEntryPoint || canModifySpecialRegisters) {
                 return new LLVMPendingSpecialRegisterRead(this, SpecialRegister.HeapBase);
             }
             value = getSpecialRegister(SpecialRegister.HeapBase);
-        } else if (register.equals(getRegisterConfig().getFrameRegister())) {
-            value = builder.buildReadRegister(builder.register(getRegisterConfig().getFrameRegister().name));
+        } else if (register.equals(ReservedRegisters.singleton().getFrameRegister())) {
+            value = builder.buildReadRegister(builder.register(ReservedRegisters.singleton().getFrameRegister().name));
         } else {
             throw VMError.shouldNotReachHere();
         }
@@ -754,7 +756,7 @@ public class LLVMGenerator implements LIRGeneratorTool, SubstrateLIRGenerator {
 
     @Override
     public void emitWriteRegister(Register dst, Value src, ValueKind<?> kind) {
-        if (dst.equals(getRegisterConfig().getThreadRegister())) {
+        if (dst.equals(ReservedRegisters.singleton().getThreadRegister())) {
             VMError.guarantee(isEntryPoint || canModifySpecialRegisters, "Can only write to registers in a method where it is expected.");
             if (LLVMOptions.ReturnSpecialRegs.getValue()) {
                 setSpecialRegisterValue(SpecialRegister.ThreadPointer, getVal(src));
@@ -762,7 +764,7 @@ public class LLVMGenerator implements LIRGeneratorTool, SubstrateLIRGenerator {
                 builder.buildStore(getVal(src), getSpecialRegisterPointer(SpecialRegister.ThreadPointer));
             }
             return;
-        } else if (dst.equals(getRegisterConfig().getHeapBaseRegister())) {
+        } else if (dst.equals(ReservedRegisters.singleton().getHeapBaseRegister())) {
             VMError.guarantee(isEntryPoint || canModifySpecialRegisters, "Can only write to registers in a method where it is expected.");
             if (LLVMOptions.ReturnSpecialRegs.getValue()) {
                 setSpecialRegisterValue(SpecialRegister.HeapBase, getVal(src));
@@ -1740,6 +1742,16 @@ public class LLVMGenerator implements LIRGeneratorTool, SubstrateLIRGenerator {
             }
             LLVMValueRef castedAddress = builder.buildBitcast(address, builder.pointerType(valueType, LLVMIRBuilder.isObjectType(addressType), false));
             builder.buildStore(castedValue, castedAddress);
+        }
+
+        @Override
+        public Variable emitVolatileLoad(LIRKind kind, Value address, LIRFrameState state) {
+            throw GraalError.shouldNotReachHere();
+        }
+
+        @Override
+        public void emitVolatileStore(ValueKind<?> kind, Value address, Value input, LIRFrameState state) {
+            throw GraalError.shouldNotReachHere();
         }
     }
 

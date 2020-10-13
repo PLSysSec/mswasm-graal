@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,9 +23,6 @@
  * questions.
  */
 package org.graalvm.compiler.truffle.runtime.debug;
-
-import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.TraceCompilation;
-import static org.graalvm.compiler.truffle.options.PolyglotCompilerOptions.TraceCompilationDetails;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -61,15 +58,15 @@ public final class TraceCompilationListener extends AbstractGraalTruffleRuntimeL
 
     private static Map<String, Object> defaultProperties(OptimizedCallTarget target) {
         Map<String, Object> properties = new LinkedHashMap<>();
-        properties.putAll(target.getDebugProperties(null));
-        properties.put("Source", formatSourceSection(target.getRootNode().getSourceSection()));
+        properties.putAll(target.getDebugProperties());
+        properties.put("Src", formatSourceSection(target.getRootNode().getSourceSection()));
         return properties;
     }
 
     @Override
     public void onCompilationQueued(OptimizedCallTarget target) {
         if (target.engine.traceCompilationDetails) {
-            runtime.logEvent(0, "opt queued", target.toString(), defaultProperties(target));
+            runtime.logEvent(target, 0, "opt queued", defaultProperties(target));
         }
     }
 
@@ -78,7 +75,7 @@ public final class TraceCompilationListener extends AbstractGraalTruffleRuntimeL
         if (target.engine.traceCompilationDetails) {
             Map<String, Object> properties = defaultProperties(target);
             properties.put("Reason", reason);
-            runtime.logEvent(0, "opt unqueued", target.toString(), properties);
+            runtime.logEvent(target, 0, "opt unqueued", properties);
         }
     }
 
@@ -90,7 +87,7 @@ public final class TraceCompilationListener extends AbstractGraalTruffleRuntimeL
             } else {
                 Map<String, Object> properties = defaultProperties(target);
                 properties.put("Reason", reason);
-                runtime.logEvent(0, "opt failed", target.toString(), properties);
+                runtime.logEvent(target, 0, "opt failed", properties);
             }
             currentCompilation.set(null);
         }
@@ -99,7 +96,7 @@ public final class TraceCompilationListener extends AbstractGraalTruffleRuntimeL
     @Override
     public void onCompilationStarted(OptimizedCallTarget target) {
         if (target.engine.traceCompilationDetails) {
-            runtime.logEvent(0, "opt start", target.toString(), defaultProperties(target));
+            runtime.logEvent(target, 0, "opt start", defaultProperties(target));
         }
 
         if (target.engine.traceCompilation || target.engine.traceCompilationDetails) {
@@ -110,7 +107,7 @@ public final class TraceCompilationListener extends AbstractGraalTruffleRuntimeL
     @Override
     public void onCompilationDeoptimized(OptimizedCallTarget target, Frame frame) {
         if (target.engine.traceCompilation || target.engine.traceCompilationDetails) {
-            runtime.logEvent(0, "opt deopt", target.toString(), defaultProperties(target));
+            runtime.logEvent(target, 0, "opt deopt", defaultProperties(target));
         }
     }
 
@@ -151,22 +148,23 @@ public final class TraceCompilationListener extends AbstractGraalTruffleRuntimeL
 
         int dispatchedCalls = calls - inlinedCalls;
         Map<String, Object> properties = new LinkedHashMap<>();
-        GraalTruffleRuntimeListener.addASTSizeProperty(target, inliningDecision, properties);
-        properties.put("Time", String.format("%5.0f(%4.0f+%-4.0f)ms", //
+        GraalTruffleRuntimeListener.addASTSizeProperty(target, properties);
+        properties.put("Time", String.format("%4.0f(%4.0f+%-4.0f)ms", //
                         (timeCompilationFinished - compilation.timeCompilationStarted) / 1e6, //
                         (compilation.timePartialEvaluationFinished - compilation.timeCompilationStarted) / 1e6, //
                         (timeCompilationFinished - compilation.timePartialEvaluationFinished) / 1e6));
-        properties.put("DirectCallNodes", String.format("I %4d/D %4d", inlinedCalls, dispatchedCalls));
-        properties.put("GraalNodes", String.format("%5d/%5d", compilation.nodeCountPartialEval, nodeCountLowered));
+        properties.put("Tier", target.isValidLastTier() ? "2" : "1");
+        properties.put("Inlined", String.format("%3dY %3dN", inlinedCalls, dispatchedCalls));
+        properties.put("IR", String.format("%5d/%5d", compilation.nodeCountPartialEval, nodeCountLowered));
         properties.put("CodeSize", result.getTargetCodeSize());
         if (target.getCodeAddress() != 0) {
-            properties.put("CodeAddress", "0x" + Long.toHexString(target.getCodeAddress()));
+            properties.put("Addr", "0x" + Long.toHexString(target.getCodeAddress()));
         } else {
-            properties.put("CodeAddress", "N/A");
+            properties.put("Addr", "N/A");
         }
-        properties.put("Source", formatSourceSection(target.getRootNode().getSourceSection()));
+        properties.put("Src", formatSourceSection(target.getRootNode().getSourceSection()));
 
-        runtime.logEvent(0, "opt done", target.toString(), properties);
+        runtime.logEvent(target, 0, "opt done", properties);
 
         currentCompilation.set(null);
     }
@@ -180,10 +178,10 @@ public final class TraceCompilationListener extends AbstractGraalTruffleRuntimeL
 
     @Override
     public void onCompilationInvalidated(OptimizedCallTarget target, Object source, CharSequence reason) {
-        if (target.getOptionValue(TraceCompilation) || target.getOptionValue(TraceCompilationDetails)) {
+        if (target.engine.traceCompilation || target.engine.traceCompilationDetails) {
             Map<String, Object> properties = defaultProperties(target);
             properties.put("Reason", reason);
-            runtime.logEvent(0, "opt invalidated", target.toString(), properties);
+            runtime.logEvent(target, 0, "opt inv.", properties);
         }
     }
 

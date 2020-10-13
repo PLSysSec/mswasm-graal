@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,17 +28,16 @@ import static org.graalvm.compiler.core.common.GraalOptions.ConditionalEliminati
 import static org.graalvm.compiler.core.common.GraalOptions.OptDeoptimizationGrouping;
 import static org.graalvm.compiler.core.common.GraalOptions.OptFloatingReads;
 import static org.graalvm.compiler.core.common.GraalOptions.PartialUnroll;
-import static org.graalvm.compiler.core.common.GraalOptions.ReassociateInvariants;
+import static org.graalvm.compiler.core.common.GraalOptions.ReassociateExpressions;
 import static org.graalvm.compiler.core.common.GraalOptions.VerifyHeapAtReturn;
-import static org.graalvm.compiler.core.common.SpeculativeExecutionAttacksMitigations.GuardTargets;
-import static org.graalvm.compiler.core.common.SpeculativeExecutionAttacksMitigations.NonDeoptGuardTargets;
-import static org.graalvm.compiler.core.common.SpeculativeExecutionAttacksMitigations.Options.MitigateSpeculativeExecutionAttacks;
+import static org.graalvm.compiler.core.common.SpectrePHTMitigations.GuardTargets;
+import static org.graalvm.compiler.core.common.SpectrePHTMitigations.NonDeoptGuardTargets;
+import static org.graalvm.compiler.core.common.SpectrePHTMitigations.Options.SpectrePHTBarriers;
 
 import org.graalvm.compiler.loop.DefaultLoopPolicies;
 import org.graalvm.compiler.loop.LoopPolicies;
 import org.graalvm.compiler.loop.phases.LoopPartialUnrollPhase;
 import org.graalvm.compiler.loop.phases.LoopSafepointEliminationPhase;
-import org.graalvm.compiler.loop.phases.ReassociateInvariantPhase;
 import org.graalvm.compiler.nodes.spi.LoweringTool;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.phases.common.CanonicalizerPhase;
@@ -53,6 +52,7 @@ import org.graalvm.compiler.phases.common.LockEliminationPhase;
 import org.graalvm.compiler.phases.common.LoopSafepointInsertionPhase;
 import org.graalvm.compiler.phases.common.LoweringPhase;
 import org.graalvm.compiler.phases.common.OptimizeDivPhase;
+import org.graalvm.compiler.phases.common.ReassociationPhase;
 import org.graalvm.compiler.phases.common.RemoveValueProxyPhase;
 import org.graalvm.compiler.phases.common.VerifyHeapAtReturnPhase;
 import org.graalvm.compiler.phases.common.WriteBarrierAdditionPhase;
@@ -77,7 +77,7 @@ public class MidTier extends BaseTier<MidTierContext> {
 
         appendPhase(new GuardLoweringPhase());
 
-        if (MitigateSpeculativeExecutionAttacks.getValue(options) == GuardTargets || MitigateSpeculativeExecutionAttacks.getValue(options) == NonDeoptGuardTargets) {
+        if (SpectrePHTBarriers.getValue(options) == GuardTargets || SpectrePHTBarriers.getValue(options) == NonDeoptGuardTargets) {
             appendPhase(new InsertGuardFencesPhase());
         }
 
@@ -100,8 +100,8 @@ public class MidTier extends BaseTier<MidTierContext> {
             appendPhase(new LoopPartialUnrollPhase(loopPolicies, canonicalizer));
         }
 
-        if (ReassociateInvariants.getValue(options)) {
-            appendPhase(new ReassociateInvariantPhase());
+        if (ReassociateExpressions.getValue(options)) {
+            appendPhase(new ReassociationPhase(canonicalizer));
         }
 
         if (OptDeoptimizationGrouping.getValue(options)) {

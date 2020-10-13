@@ -59,8 +59,9 @@ public class DwarfDebugInfo extends DebugInfoBase {
      * Define all the abbrev section codes we need for our DIEs.
      */
     @SuppressWarnings("unused") public static final int DW_ABBREV_CODE_null = 0;
-    public static final int DW_ABBREV_CODE_compile_unit = 1;
-    public static final int DW_ABBREV_CODE_subprogram = 2;
+    public static final int DW_ABBREV_CODE_compile_unit_1 = 1;
+    public static final int DW_ABBREV_CODE_compile_unit_2 = 2;
+    public static final int DW_ABBREV_CODE_subprogram = 3;
 
     /*
      * Define all the Dwarf tags we need for our DIEs.
@@ -72,7 +73,7 @@ public class DwarfDebugInfo extends DebugInfoBase {
      */
     public static final int DW_AT_null = 0x0;
     public static final int DW_AT_name = 0x3;
-    @SuppressWarnings("unused") public static final int DW_AT_comp_dir = 0x1b;
+    public static final int DW_AT_comp_dir = 0x1b;
     public static final int DW_AT_stmt_list = 0x10;
     public static final int DW_AT_low_pc = 0x11;
     public static final int DW_AT_hi_pc = 0x12;
@@ -140,7 +141,7 @@ public class DwarfDebugInfo extends DebugInfoBase {
     /* Values encoded in high 2 bits. */
     public static final byte DW_CFA_advance_loc = 0x1;
     public static final byte DW_CFA_offset = 0x2;
-    @SuppressWarnings("unused") public static final byte DW_CFA_restore = 0x3;
+    public static final byte DW_CFA_restore = 0x3;
 
     /* Values encoded in low 6 bits. */
     public static final byte DW_CFA_nop = 0x0;
@@ -163,9 +164,11 @@ public class DwarfDebugInfo extends DebugInfoBase {
     private DwarfARangesSectionImpl dwarfARangesSection;
     private DwarfLineSectionImpl dwarfLineSection;
     private DwarfFrameSectionImpl dwarfFameSection;
+    public final ELFMachine elfMachine;
 
     public DwarfDebugInfo(ELFMachine elfMachine, ByteOrder byteOrder) {
         super(byteOrder);
+        this.elfMachine = elfMachine;
         dwarfStrSection = new DwarfStrSectionImpl(this);
         dwarfAbbrevSection = new DwarfAbbrevSectionImpl(this);
         dwarfInfoSection = new DwarfInfoSectionImpl(this);

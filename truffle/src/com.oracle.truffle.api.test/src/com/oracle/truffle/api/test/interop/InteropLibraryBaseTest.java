@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -152,6 +152,11 @@ public abstract class InteropLibraryBaseTest extends AbstractParametrizedLibrary
         InteropLibrary lib = createLibrary(InteropLibrary.class, value);
         assertFalse(lib.hasLanguage(value));
         assertUnsupported(() -> lib.getLanguage(value));
+    }
+
+    protected final void assertNoIdentity(Object value) {
+        InteropLibrary lib = createLibrary(InteropLibrary.class, value);
+        assertFalse(lib.hasIdentity(value));
     }
 
     protected final void assertHasNoMetaObject(Object value) {

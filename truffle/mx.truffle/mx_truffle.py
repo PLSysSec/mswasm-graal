@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # The Universal Permissive License (UPL), Version 1.0
@@ -229,7 +229,9 @@ def _truffle_gate_runner(args, tasks):
     with Task('File name length check', tasks) as t:
         if t: check_filename_length([])
     with Task('Check Copyrights', tasks) as t:
-        if t: mx.checkcopyrights(['--primary'])
+        if t:
+            if mx.checkcopyrights(['--primary']) != 0:
+                t.abort('Copyright errors found. Please run "mx checkcopyrights --primary -- --fix" to fix them.')
 
 mx_gate.add_gate_runner(_suite, _truffle_gate_runner)
 
@@ -597,7 +599,7 @@ def create_sl_parser(args=None, out=None):
     """create the SimpleLanguage parser using antlr"""
     create_parser("com.oracle.truffle.sl", "com.oracle.truffle.sl.parser", "SimpleLanguage", COPYRIGHT_HEADER_UPL, args, out)
 
-def create_parser(grammar_project, grammar_package, grammar_name, copyright_template, args=None, out=None):
+def create_parser(grammar_project, grammar_package, grammar_name, copyright_template, args=None, out=None, postprocess=None):
     """create the DSL expression parser using antlr"""
     grammar_dir = os.path.join(mx.project(grammar_project).source_dirs()[0], *grammar_package.split(".")) + os.path.sep
     mx.run_java(mx.get_runtime_jvm_args(['ANTLR4_COMPLETE']) + ["org.antlr.v4.Tool", "-package", grammar_package, "-no-listener"] + args + [grammar_dir + grammar_name + ".g4"], out=out)
@@ -613,6 +615,9 @@ def create_parser(grammar_project, grammar_package, grammar_name, copyright_temp
         content = PTRN_TOKEN_CAST.sub('_errHandler.recoverInline(this)', content)
         # add copyright header
         content = copyright_template.format(content)
+        # user provided post-processing hook:
+        if postprocess is not None:
+            content = postprocess(content)
         with open(filename, 'w') as content_file:
             content_file.write(content)
 
@@ -743,8 +748,8 @@ class LibffiBuildTask(mx.AbstractNativeBuildTask):
         mx.Extractor.create(self.subject.sources.get_path(False)).extract(self.subject.out_dir)
 
         mx.log('Applying patches...')
-        git_apply = ['git', 'apply', '--whitespace=nowarn', '--directory',
-                     os.path.relpath(self.subject.delegate.dir, self.subject.suite.vc_dir).replace(os.sep, '/')]
+        git_apply = ['git', 'apply', '--whitespace=nowarn', '--unsafe-paths', '--directory',
+                     os.path.relpath(self.subject.delegate.dir, self.subject.suite.vc_dir)]
         for patch in self.subject.patches:
             mx.run(git_apply + [patch], cwd=self.subject.suite.vc_dir)
 
@@ -807,3 +812,5 @@ mx.update_commands(_suite, {
     'create-dsl-parser' : [create_dsl_parser, "create the DSL expression parser using antlr"],
     'create-sl-parser' : [create_sl_parser, "create the SimpleLanguage parser using antlr"],
 })
+
+mx_gate.add_jacoco_includes(['org.graalvm.*', 'com.oracle.truffle.*'])

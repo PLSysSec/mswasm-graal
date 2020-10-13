@@ -29,10 +29,7 @@
  */
 package com.oracle.truffle.llvm.runtime;
 
-import java.math.BigInteger;
-
 import com.oracle.truffle.api.frame.FrameSlot;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.llvm.runtime.LLVMUnsupportedException.UnsupportedReason;
 import com.oracle.truffle.llvm.runtime.datalayout.DataLayout;
 import com.oracle.truffle.llvm.runtime.debug.scope.LLVMDebugGlobalVariable;
@@ -41,7 +38,6 @@ import com.oracle.truffle.llvm.runtime.debug.value.LLVMDebugManagedValue;
 import com.oracle.truffle.llvm.runtime.debug.value.LLVMDebugObject;
 import com.oracle.truffle.llvm.runtime.debug.value.LLVMDebugObjectBuilder;
 import com.oracle.truffle.llvm.runtime.debug.value.LLVMDebugValue;
-import com.oracle.truffle.llvm.runtime.debug.value.LLVMFrameValueAccess;
 import com.oracle.truffle.llvm.runtime.debug.value.LLVMSourceTypeFactory;
 import com.oracle.truffle.llvm.runtime.except.LLVMParserException;
 import com.oracle.truffle.llvm.runtime.floating.LLVM80BitFloat;
@@ -113,14 +109,11 @@ import com.oracle.truffle.llvm.runtime.nodes.cast.LLVMToVectorZeroExtNodeFactory
 import com.oracle.truffle.llvm.runtime.nodes.cast.LLVMToVectorZeroExtNodeFactory.LLVMUnsignedCastToI64VectorNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.cast.LLVMToVectorZeroExtNodeFactory.LLVMUnsignedCastToI8VectorNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.func.LLVMCallNode;
-import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMDebugBuilder;
-import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMDebugInitNodeFactory;
 import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMDebugSimpleObjectBuilder;
 import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMDebugTrapNodeGen;
-import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMDebugWriteNodeFactory;
-import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMFrameValueAccessImpl;
-import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMToDebugDeclarationNodeGen;
+import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMToDebugDeclaration;
 import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug.LLVMToDebugValueNodeGen;
+import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.va.LLVMVAArgNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.literals.LLVMSimpleLiteralNodeFactory.LLVM80BitFloatLiteralNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.literals.LLVMSimpleLiteralNodeFactory.LLVMDoubleLiteralNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.literals.LLVMSimpleLiteralNodeFactory.LLVMFloatLiteralNodeGen;
@@ -241,6 +234,8 @@ import com.oracle.truffle.llvm.runtime.types.VectorType;
 import com.oracle.truffle.llvm.runtime.types.VoidType;
 import com.oracle.truffle.llvm.runtime.vector.LLVMVector;
 
+import java.math.BigInteger;
+
 public class CommonNodeFactory {
 
     public CommonNodeFactory() {
@@ -338,8 +333,8 @@ public class CommonNodeFactory {
         }
     }
 
-    public static TruffleObject toGenericDebuggerValue(Object llvmType, Object value, DataLayout dataLayout) {
-        final TruffleObject complexObject = asDebuggerIRValue(llvmType, value, dataLayout);
+    public static Object toGenericDebuggerValue(Object llvmType, Object value, DataLayout dataLayout) {
+        final Object complexObject = asDebuggerIRValue(llvmType, value, dataLayout);
         if (complexObject != null) {
             return complexObject;
         }
@@ -347,7 +342,7 @@ public class CommonNodeFactory {
         return LLVMDebugManagedValue.create(llvmType, value);
     }
 
-    private static TruffleObject asDebuggerIRValue(Object llvmType, Object value, DataLayout dataLayout) {
+    private static Object asDebuggerIRValue(Object llvmType, Object value, DataLayout dataLayout) {
         final Type type;
         if (llvmType instanceof Type) {
             type = (Type) llvmType;
@@ -383,29 +378,6 @@ public class CommonNodeFactory {
         return LLVMDebugObject.create(sourceType, 0L, debugValue, null);
     }
 
-    public static LLVMFrameValueAccess createDebugFrameValue(int slot, boolean isDeclaration) {
-        final LLVMDebugValue.Builder builder = getDebugDynamicValueBuilder(isDeclaration).createBuilder();
-        return new LLVMFrameValueAccessImpl(slot, builder);
-    }
-
-    // these have no internal state but are used often, so we cache and reuse them
-    private static LLVMDebugBuilder debugDeclarationBuilder = null;
-    private static LLVMDebugBuilder debugValueBuilder = null;
-
-    private static LLVMDebugBuilder getDebugDynamicValueBuilder(boolean isDeclaration) {
-        if (isDeclaration) {
-            if (debugDeclarationBuilder == null) {
-                debugDeclarationBuilder = LLVMDebugBuilder.createDeclaration();
-            }
-            return debugDeclarationBuilder;
-        } else {
-            if (debugValueBuilder == null) {
-                debugValueBuilder = LLVMDebugBuilder.createValue();
-            }
-            return debugValueBuilder;
-        }
-    }
-
     public static LLVMDebugObjectBuilder createDebugStaticValue(LLVMContext context, LLVMExpressionNode valueNode, boolean isGlobal) {
         LLVMDebugValue.Builder toDebugNode = createDebugValueBuilder();
 
@@ -413,7 +385,7 @@ public class CommonNodeFactory {
         if (isGlobal) {
             assert valueNode instanceof LLVMAccessSymbolNode;
             LLVMAccessSymbolNode node = (LLVMAccessSymbolNode) valueNode;
-            LLVMSymbol symbol = node.getDescriptor();
+            LLVMSymbol symbol = node.getSymbol();
             if (symbol.isGlobalVariable()) {
                 value = new LLVMDebugGlobalVariable(symbol.asGlobalVariable(), context);
             } else {
@@ -431,14 +403,6 @@ public class CommonNodeFactory {
             return LLVMDebugSimpleObjectBuilder.create(toDebugNode, value);
         } else {
             return LLVMDebugObjectBuilder.UNAVAILABLE;
-        }
-    }
-
-    public static LLVMStatementNode createDebugValueInit(FrameSlot targetSlot, int[] offsets, int[] lengths) {
-        if (offsets == null || lengths == null) {
-            return null;
-        } else {
-            return LLVMDebugInitNodeFactory.AggregateInitNodeGen.create(targetSlot, offsets, lengths);
         }
     }
 
@@ -616,16 +580,6 @@ public class CommonNodeFactory {
         throw new AssertionError(llvmType + " for " + frameSlot.getIdentifier());
     }
 
-    public static LLVMStatementNode createDebugValueUpdate(boolean isDeclaration, LLVMExpressionNode valueRead, FrameSlot targetSlot, LLVMExpressionNode containerRead, int partIndex,
-                    int[] clearParts) {
-        final LLVMDebugBuilder builder = getDebugDynamicValueBuilder(isDeclaration);
-        if (partIndex < 0 || clearParts == null) {
-            return LLVMDebugWriteNodeFactory.SimpleWriteNodeGen.create(builder, targetSlot, valueRead);
-        } else {
-            return LLVMDebugWriteNodeFactory.AggregateWriteNodeGen.create(builder, partIndex, clearParts, containerRead, valueRead);
-        }
-    }
-
     public static LLVMLoadNode createLoad(Type resolvedResultType, LLVMExpressionNode loadTarget) {
         if (resolvedResultType instanceof VectorType) {
             return createLoadVector((VectorType) resolvedResultType, loadTarget, ((VectorType) resolvedResultType).getNumberOfElementsInt());
@@ -633,6 +587,10 @@ public class CommonNodeFactory {
             int bits = resolvedResultType instanceof VariableBitWidthType ? ((VariableBitWidthType) resolvedResultType).getBitSizeInt() : 0;
             return createLoad(resolvedResultType, loadTarget, bits);
         }
+    }
+
+    public static LLVMExpressionNode createVaArg(Type type, LLVMExpressionNode source) {
+        return LLVMVAArgNodeGen.create(type, source);
     }
 
     private static LLVMLoadNode createLoadVector(VectorType resultType, LLVMExpressionNode loadTarget, int size) {
@@ -724,7 +682,7 @@ public class CommonNodeFactory {
     }
 
     public static ForeignToLLVM createForeignToLLVM(Value type) {
-        switch (type.getKind()) {
+        switch (type.kind) {
             case I1:
                 return ToI1NodeGen.create();
             case I8:
@@ -740,9 +698,9 @@ public class CommonNodeFactory {
             case DOUBLE:
                 return ToDoubleNodeGen.create();
             case POINTER:
-                return ToPointer.create(type.getBaseType());
+                return ToPointer.create(type.baseType);
             default:
-                throw new IllegalStateException("unexpected interop kind " + type.getKind());
+                throw new IllegalStateException("unexpected interop kind " + type.kind);
         }
     }
 
@@ -756,11 +714,11 @@ public class CommonNodeFactory {
     }
 
     public static LLVMDebugValue.Builder createDebugDeclarationBuilder() {
-        return LLVMToDebugDeclarationNodeGen.create();
+        return LLVMToDebugDeclaration.getInstance();
     }
 
     public static LLVMDebugValue.Builder createDebugValueBuilder() {
-        return LLVMToDebugValueNodeGen.create();
+        return LLVMToDebugValueNodeGen.getUncached();
     }
 
     public static LLVMExpressionNode createArithmeticOp(ArithmeticOperation op, Type type, LLVMExpressionNode left, LLVMExpressionNode right) {
@@ -962,8 +920,7 @@ public class CommonNodeFactory {
         }
     }
 
-    @SuppressWarnings("unused")
-    public static LLVMExpressionNode createBitcast(LLVMExpressionNode fromNode, Type targetType, Type fromType) {
+    public static LLVMExpressionNode createBitcast(LLVMExpressionNode fromNode, Type targetType, @SuppressWarnings("unused") Type fromType) {
         // does a reinterpreting cast between pretty much anything as long as source and target have
         // the same bit width.
         assert targetType != null;

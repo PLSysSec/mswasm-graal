@@ -110,7 +110,7 @@ public abstract class RegexResult extends AbstractConstantKeysObject {
             case PROP_GET_END:
                 return new RegexResultGetEndMethod(this);
             default:
-                CompilerDirectives.transferToInterpreter();
+                CompilerDirectives.transferToInterpreterAndInvalidate();
                 throw UnknownIdentifierException.create(symbol);
         }
     }
@@ -136,7 +136,7 @@ public abstract class RegexResult extends AbstractConstantKeysObject {
                         @Cached ToIntNode toIntNode,
                         @Cached RegexResultGetStartNode getStartNode) throws ArityException, UnsupportedTypeException {
             if (args.length != 1) {
-                CompilerDirectives.transferToInterpreter();
+                CompilerDirectives.transferToInterpreterAndInvalidate();
                 throw ArityException.create(1, args.length);
             }
             return getStartNode.execute(result, toIntNode.execute(args[0]));
@@ -164,7 +164,7 @@ public abstract class RegexResult extends AbstractConstantKeysObject {
                         @Cached ToIntNode toIntNode,
                         @Cached RegexResultGetEndNode getEndNode) throws ArityException, UnsupportedTypeException {
             if (args.length != 1) {
-                CompilerDirectives.transferToInterpreter();
+                CompilerDirectives.transferToInterpreterAndInvalidate();
                 throw ArityException.create(1, args.length);
             }
             return getEndNode.execute(result, toIntNode.execute(args[1]));
@@ -184,7 +184,7 @@ public abstract class RegexResult extends AbstractConstantKeysObject {
                     @Cached InvokeCacheNode invokeCache,
                     @Shared("receiverProfile") @Cached("createIdentityProfile()") ValueProfile receiverProfile) throws UnknownIdentifierException, ArityException, UnsupportedTypeException {
         if (args.length != 1) {
-            CompilerDirectives.transferToInterpreter();
+            CompilerDirectives.transferToInterpreterAndInvalidate();
             throw ArityException.create(1, args.length);
         }
         return invokeCache.execute(receiverProfile.profile(this), member, toIntNode.execute(args[0]));
@@ -218,7 +218,6 @@ public abstract class RegexResult extends AbstractConstantKeysObject {
         }
     }
 
-    @ReportPolymorphism
     @ImportStatic(RegexResult.class)
     @GenerateUncached
     abstract static class InvokeCacheNode extends Node {
@@ -257,6 +256,7 @@ public abstract class RegexResult extends AbstractConstantKeysObject {
             return getEndNode.execute(receiver, groupNumber);
         }
 
+        @ReportPolymorphism.Megamorphic
         @Specialization(replaces = {"getStartEquals", "getEndEquals"})
         static Object invokeGeneric(RegexResult receiver, String symbol, int groupNumber,
                         @Cached RegexResultGetStartNode getStartNode,
@@ -267,7 +267,7 @@ public abstract class RegexResult extends AbstractConstantKeysObject {
                 case PROP_GET_END:
                     return getEndNode.execute(receiver, groupNumber);
                 default:
-                    CompilerDirectives.transferToInterpreter();
+                    CompilerDirectives.transferToInterpreterAndInvalidate();
                     throw UnknownIdentifierException.create(symbol);
             }
         }

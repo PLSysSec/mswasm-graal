@@ -1,130 +1,138 @@
-# Substrate VM
+# Native Image
 
-## Introduction
+GraalVM Native Image allows to ahead-of-time compile Java code to a standalone executable, called
+a **native image**. This executable includes the application classes, classes
+from its dependencies, runtime library classes from JDK and statically linked
+native code from JDK. It does not run on the Java VM, but includes necessary
+components like memory management and thread scheduling from a different virtual
+machine, called "Substrate VM". Substrate VM is the name for the runtime
+components (like the deoptimizer, garbage collector, thread scheduling etc.).
+The resulting program has faster startup time and lower runtime memory overhead
+compared to a Java VM.
 
-Substrate VM is a framework that allows ahead-of-time (AOT) compilation of Java applications under closed-world assumption into executable images or shared objects (ELF-64 or 64-bit Mach-O).
+The **Native Image builder** or `native-image` is a utility that processes all
+the classes of your application and their dependencies, including those from the
+JDK. It analyses these classes to determine which classes, methods and fields
+are reachable during application execution. It then ahead-of-time compiles all
+reachable code and data into a native executable for a specific operating system
+and architecture. This entire process is called **image build time** to
+clearly distinguish it from the compilation of Java source code to bytecode.
 
+GraalVM Native Image supports JVM-based languages, e.g., Java, Scala, Clojure,
+Kotlin. The resulting native image can, optionally, execute dynamic languages
+like JavaScript, Ruby, R or Python. Polyglot embeddings can also be compiled
+ahead-of-time. To inform `native-image` of guest languages used by an
+application, specify `--language:<languageId>` for each guest language used
+(e.g., `--language:js`).
 
-## Quick start
+### License
+GraalVM Native Image is licensed under the GPL 2 with Classpath Exception.
 
-Install [mx](https://github.com/graalvm/mx) and point `JAVA_HOME` to a JVMCI-enabled [JDK 8](https://github.com/graalvm/openjdk8-jvmci-builder/releases).
+## Install Native Image
 
-For compilation `native-image` depends on the local toolchain, so make sure: `glibc-devel`, `zlib-devel` (header files for the C library and `zlib`) and `gcc` are available on your system.
-Building images on Windows is still experimental.
-On Windows [Python 2.7](https://www.python.org/downloads/release), [Git for Windows](https://github.com/git-for-windows/git/releases) and the [Windows SDK for Windows 7](https://www.microsoft.com/en-us/download/details.aspx?id=8442) need to be installed.
-All building needs to be performed from the `Windows SDK 7.1 Command Prompt`.
+Native Image is distributed as a separate installable and can be added to the core installation with the [GraalVM Updater](https://www.graalvm.org/docs/reference-manual/gu/) tool.
 
-After cloning the repository, run
-
-```bash
-cd substratevm
-mx build
-
-echo "public class HelloWorld { public static void main(String[] args) { System.out.println(\"Hello World\"); } }" > HelloWorld.java
-$JAVA_HOME/bin/javac HelloWorld.java
-mx native-image HelloWorld
-./helloworld
+If you use GraalVM, run this command to install Native Image from GitHub:
+```
+gu install native-image
 ```
 
-To build truffle-based images please refer to the documentation in the [VM suite](../vm/README.md).
+After this additional step, the `native-image` executable will become available in
+the `bin` directory.
 
-## Build Script
+Take a look at the [native image generation](https://www.graalvm.org/docs/examples/native-list-dir/) or [compiling a Java and Kotlin app ahead-of-time](https://www.graalvm.org/docs/examples/java-kotlin-aot/) samples.
 
-Using Substrate VM requires the mx tool to be installed first, so that it is on your path.
-Visit the [MX Homepage](https://github.com/graalvm/mx) for more details.
+## Prerequisites
 
-Substrate VM requires a JDK 8 with JVMCI.
-It is available from [GitHub](https://github.com/graalvm/openjdk8-jvmci-builder/releases).
+For compilation `native-image` depends on the local toolchain. Install
+ `glibc-devel`, `zlib-devel` (header files for the C library and `zlib`)
+and `gcc`, using a package manager available on your OS. Some Linux distributions may additionally require `libstdc++-static`.
 
-In the main directory, invoke `mx help` to see the list of commands.
-Most of the commands are inherited from the Graal and Truffle code bases.
-The most important commands for the Substrate VM are listed below.
-More information on the parameters of a command is available by running `mx help <command>`
+On Oracle Linux use `yum` package manager:
+```
+sudo yum install gcc glibc-devel zlib-devel
+```
+You can still install `libstdc++-static` as long as the optional repositories are enabled (_ol7_optional_latest_ on Oracle Linux 7 and _ol8_codeready_builder_ on Oracle Linux 8).
 
-* `build`: Compile all Java and native code.
-* `clean`: Remove all compilation artifacts.
-* `ideinit`: Create project files for Eclipse and other common IDEs.
-See the [documentation on IDE integration](../compiler/docs/IDEs.md) for details.
-
-## Building images
-
-After running `mx build` you can use `mx native-image` to build native images.
-You can specify the main entry point, i.e., the application you want to create the image for.
-For more information run `mx native-image --help`.
-
-Native image generation is performed by a Java program that runs on JDK 8 with JVMCI.
-You can debug it with a regular Java debugger.
-Use `mx native-image --debug-attach` to start native image generation so that it waits for a Java debugger to attach first (by default, at port 8000).
-In Eclipse, use the debugging configuration "substratevm-localhost-8000" to attach to it.
-This debugging configuration is automatically generated by `mx ideinit`.
-
-If you find yourself having to debug into the Graal level of SubstrateVM, you should read the Graal [debugging](../compiler/docs/Debugging.md) page.
-You can use Ideal Graph Visualizer to view individual compilation steps:
-```bash
-mx igv &>/dev/null &
-mx native-image HelloWorld -H:Dump= -H:MethodFilter=HelloWorld.*
+On  Ubuntu Linux use `apt-get` package manager:
+```
+sudo apt-get install build-essential libz-dev zlib1g-dev
+```
+On other Linux distributions use `dnf` package manager:
+```
+sudo dnf install gcc glibc-devel zlib-devel libstdc++-static
+```
+On macOS use `xcode`:
+```
+xcode-select --install
 ```
 
-## Images and Entry Points
+#### Prerequisites for Using Native Image on Windows
+To make use of Native Image on Windows, follow the further recommendations. The
+required Microsoft Visual C++ (MSVC) version depends on the JDK version that
+GraalVM is based on. For GraalVM distribution based on JDK 8, you will need MSVC
+2010 SP1 version. The recommended installation method is using Microsoft Windows
+SDK 7.1:
+1. Download the SDK file `GRMSDKX_EN_DVD.iso` for from [Microsoft](https://www.microsoft.com/en-gb/download).
+2. Mount the image by opening `F:\Setup\SDKSetup.exe` directly.
 
-An SVM image can be built as a standalone executable, which is the default, or as a shared library by passing `--shared` to `native-image`.
-For an image to be useful, it needs to have at least one entry point method.
+For GraalVM distribution based on JDK 11, you will need MSVC 2017 15.5.5 or later version.
 
-For executables, SVM supports Java main methods with a signature that takes the command-line arguments as an array of strings:
+The last prerequisite, common for both GraalVM distribution based on JDK 11 and JDK 8, is the proper [Developer Command Prompt](https://docs.microsoft.com/en-us/cpp/build/building-on-the-command-line?view=vs-2019#developer_command_prompt_shortcuts) for your version of [Visual Studio](https://visualstudio.microsoft.com/vs/). On Windows the `native-image` tool only works when it is executed from the **x64 Native Tools Command Prompt**.
 
-```java
-public static void main(String[] arg) { /* ... */ }
+### How to Determine What Version of GraalVM an Image Is Generated With?
+
+Assuming you have a Java class file _EmptyHello.class_ containing an empty main method
+and have generated an empty shared object `emptyhello` with GraalVM Native Image Generator utility of it:
+```
+native-image -cp hello EmptyHello
+[emptyhello:11228]    classlist:     149.59 ms
+...
 ```
 
-For shared libraries, SVM provides the `@CEntryPoint` annotation to specify entry point methods that should be exported and callable from C.
-Entry point methods must be static and may only have non-object parameters and return types – this includes Java primitives, but also Word types (including pointers).
-One of the parameters of an entry point method has to be of type `IsolateThread` or `Isolate`.
-This parameter provides the current thread's execution context for the call.
-For example:
+If you do not know what GraalVM distribution is set to the `PATH` environment
+variable, how to determine if a native image was compiled with Community or
+Enterprise Edition? Run this command:
 
-```java
-@CEntryPoint static int add(IsolateThread thread, int a, int b) {
-    return a + b;
-}
+```
+strings emptyhello | grep com.oracle.svm.core.VM
 ```
 
-Shared library builds generate an additional C header file.
-This header file contains declarations for the [SVM C API](C-API.md), which allows creating isolates and attaching threads from C code, as well as declarations for each entry point in user code.
-The generated C declaration for the above example is:
-```c
-int add(graal_isolatethread_t* thread, int a, int b);
+The expected output should match the following:
+```
+com.oracle.svm.core.VM GraalVM 20.2.0 Java 11 EE
 ```
 
-Both executable images and shared library images can have an arbitrary number of entry points, for example to implement callbacks or APIs.
+**Note:**
+Python source code or LLVM bitcode interpreted or compiled with GraalVM
+Community Edition will not have the same security characteristics as the same
+code interpreted or compiled using GraalVM Enterprise Edition. There is a
+GraalVM string embedded in each image that allows to figure out the version and
+variant of the base (Community or Enterprise) used to build an image.
+The following command will query that information from an image:
+```
+strings <path to native-image exe or shared object> | grep com.oracle.svm.core.VM
+```
+Here is an example output:
+```
+com.oracle.svm.core.VM.Target.LibC=com.oracle.svm.core.posix.linux.libc.GLibC
+com.oracle.svm.core.VM.Target.Platform=org.graalvm.nativeimage.Platform$LINUX_AMD64
+com.oracle.svm.core.VM.Target.StaticLibraries=liblibchelper.a|libnet.a|libffi.a|libextnet.a|libnio.a|libjava.a|libfdlibm.a|libzip.a|libjvm.a
+com.oracle.svm.core.VM=GraalVM 20.2.0 Java 11
+com.oracle.svm.core.VM.Target.Libraries=pthread|dl|z|rt
+com.oracle.svm.core.VM.Target.CCompiler=gcc|redhat|x86_64|10.2.1
+```
+If the image was build with Oracle GraalVM Enterprise Edition the output would instead contain:
+```
+com.oracle.svm.core.VM=GraalVM 20.2.0 Java 11 EE
+```
 
-## Options
+## Ahead-of-time Compilation Limitations
 
-More information about options, and the important distinction between hosted and runtime options, is available [here](OPTIONS.md).
-
-## Project Structure
-
-The list of projects is defined in a custom format in the file `mx.substratevm/suite.py`.
-It is never necessary to create new projects in the IDE.
-Instead, a new project is created by adding it in `suite.py` and running `mx ideinit` to generate a corresponding IDE project.
-
-## Code Formatting
-
-Style rules and procedures for checking adherence are described in the [style guide](STYLE.md).
-
-## Troubleshooting Eclipse
-
-Sometimes, Eclipse gives strange error messages, especially after pulling a bigger changeset.
-Also, projects are frequently added or removed, leading to error messages about missing projects if you do not import the new projects.
-The following should reset everything:
-
-* Delete all projects in Eclipse
-* `mx clean`
-* `mx ideclean`
-* `mx fsckprojects`
-* `mx build`
-* `mx ideinit`
-* Import all projects into Eclipse again
-
-## License
-
-The Substrate VM is licensed under the GPL 2 with Classpath Exception.
+There is a small portion of Java features are not susceptible to ahead-of-time
+compilation, and will therefore miss out on the performance advantages. To be
+able to build a highly optimized native executable, GraalVM runs an aggressive static
+analysis that requires a closed-world assumption, which means that all classes
+and all bytecodes that are reachable at run time must be known at build time.
+Therefore, it is not possible to load new data that have not been available
+during ahead-of-time compilation. Continue reading to the [GraalVM Native Image Compatibility and Optimization Guide](Limitations.md).

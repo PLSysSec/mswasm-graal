@@ -29,9 +29,6 @@
  */
 package com.oracle.truffle.llvm.runtime;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import com.oracle.truffle.api.CompilerAsserts;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
@@ -40,7 +37,6 @@ import com.oracle.truffle.api.dsl.Fallback;
 import com.oracle.truffle.api.dsl.GenerateUncached;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.InteropLibrary;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.utilities.AssumedValue;
 import com.oracle.truffle.llvm.runtime.LLVMFunctionCodeFactory.ResolveFunctionNodeGen;
@@ -48,10 +44,12 @@ import com.oracle.truffle.llvm.runtime.NFIContextExtension.NativeLookupResult;
 import com.oracle.truffle.llvm.runtime.debug.type.LLVMSourceFunctionType;
 import com.oracle.truffle.llvm.runtime.except.LLVMLinkerException;
 import com.oracle.truffle.llvm.runtime.memory.LLVMNativeMemory;
-import com.oracle.truffle.llvm.runtime.nodes.api.LLVMExpressionNode;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMNode;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMNativePointer;
 import com.oracle.truffle.llvm.runtime.types.FunctionType;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * {@link LLVMFunctionCode} represents the callable function of a {@link LLVMFunction}.
@@ -120,12 +118,6 @@ public class LLVMFunctionCode {
             return newTarget;
         }
 
-        public LLVMExpressionNode generateNode(FunctionType type, LLVMExpressionNode[] arguments) {
-            CompilerAsserts.neverPartOfCompilation();
-            LLVMExpressionNode node = provider.generateIntrinsicNode(intrinsicName, arguments, type.getArgumentTypes(), nodeFactory);
-            assert node != null;
-            return node;
-        }
     }
 
     public interface LazyToTruffleConverter {
@@ -147,7 +139,7 @@ public class LLVMFunctionCode {
             CompilerAsserts.neverPartOfCompilation();
         }
 
-        abstract TruffleObject createNativeWrapper(LLVMFunctionDescriptor descriptor);
+        abstract Object createNativeWrapper(LLVMFunctionDescriptor descriptor);
 
         LLVMSourceFunctionType getSourceType() {
             return null;
@@ -188,12 +180,12 @@ public class LLVMFunctionCode {
 
     abstract static class ManagedFunction extends Function {
         @Override
-        TruffleObject createNativeWrapper(LLVMFunctionDescriptor descriptor) {
+        Object createNativeWrapper(LLVMFunctionDescriptor descriptor) {
             CompilerAsserts.neverPartOfCompilation();
 
-            TruffleObject wrapper = null;
+            Object wrapper = null;
             LLVMNativePointer pointer = null;
-            NFIContextExtension nfiContextExtension = descriptor.getContext().getLanguage().getContextExtensionOrNull(NFIContextExtension.class);
+            NFIContextExtension nfiContextExtension = descriptor.getContext().getContextExtensionOrNull(NFIContextExtension.class);
             if (nfiContextExtension != null) {
                 wrapper = nfiContextExtension.createNativeWrapper(descriptor);
                 if (wrapper != null) {
@@ -266,13 +258,13 @@ public class LLVMFunctionCode {
                     return;
                 }
 
-                NFIContextExtension nfiContextExtension = context.getLanguage().getContextExtensionOrNull(NFIContextExtension.class);
+                NFIContextExtension nfiContextExtension = context.getContextExtensionOrNull(NFIContextExtension.class);
                 LLVMIntrinsicProvider intrinsicProvider = context.getLanguage().getCapability(LLVMIntrinsicProvider.class);
                 assert !intrinsicProvider.isIntrinsified(descriptor.getLLVMFunction().getName());
                 if (nfiContextExtension != null) {
                     NativeLookupResult nativeFunction = nfiContextExtension.getNativeFunctionOrNull(context, descriptor.getLLVMFunction().getName());
                     if (nativeFunction != null) {
-                        descriptor.define(nativeFunction.getLibrary(), new LLVMFunctionCode.NativeFunction(nativeFunction.getObject()));
+                        descriptor.define(new LLVMFunctionCode.NativeFunction(nativeFunction.getObject()));
                         return;
                     }
                 }
@@ -281,7 +273,7 @@ public class LLVMFunctionCode {
         }
 
         @Override
-        TruffleObject createNativeWrapper(LLVMFunctionDescriptor descriptor) {
+        Object createNativeWrapper(LLVMFunctionDescriptor descriptor) {
             CompilerAsserts.neverPartOfCompilation();
             resolve(descriptor.getFunctionCode());
             return descriptor.getFunctionCode().getFunction().createNativeWrapper(descriptor);
@@ -290,21 +282,28 @@ public class LLVMFunctionCode {
 
     public static final class IntrinsicFunction extends LLVMFunctionCode.ManagedFunction {
         private final LLVMFunctionCode.Intrinsic intrinsic;
+        private final LLVMSourceFunctionType sourceType;
 
-        public IntrinsicFunction(LLVMFunctionCode.Intrinsic intrinsic) {
+        public IntrinsicFunction(LLVMFunctionCode.Intrinsic intrinsic, LLVMSourceFunctionType sourceType) {
             this.intrinsic = intrinsic;
+            this.sourceType = sourceType;
+        }
+
+        @Override
+        LLVMSourceFunctionType getSourceType() {
+            return this.sourceType;
         }
     }
 
     public static final class NativeFunction extends LLVMFunctionCode.Function {
-        private final TruffleObject nativeFunction;
+        private final Object nativeFunction;
 
-        public NativeFunction(TruffleObject nativeFunction) {
+        public NativeFunction(Object nativeFunction) {
             this.nativeFunction = nativeFunction;
         }
 
         @Override
-        TruffleObject createNativeWrapper(LLVMFunctionDescriptor descriptor) {
+        Object createNativeWrapper(LLVMFunctionDescriptor descriptor) {
             return nativeFunction;
         }
     }
@@ -346,17 +345,16 @@ public class LLVMFunctionCode {
 
     public void define(LLVMIntrinsicProvider intrinsicProvider, NodeFactory nodeFactory) {
         Intrinsic intrinsification = new Intrinsic(intrinsicProvider, llvmFunction.getName(), nodeFactory);
-        define(intrinsicProvider.getLibrary(), new IntrinsicFunction(intrinsification), true);
+        define(new IntrinsicFunction(intrinsification, getFunction().getSourceType()), true);
     }
 
-    public void define(ExternalLibrary lib, Function newFunction) {
-        define(lib, newFunction, false);
+    public void define(Function newFunction) {
+        define(newFunction, false);
     }
 
-    private void define(ExternalLibrary lib, Function newFunction, boolean allowReplace) {
-        assert lib != null && newFunction != null;
+    private void define(Function newFunction, boolean allowReplace) {
+        assert newFunction != null;
         if (!isDefined() || allowReplace) {
-            llvmFunction.setLibrary(lib);
             setFunction(newFunction);
         } else {
             CompilerDirectives.transferToInterpreter();
@@ -384,14 +382,14 @@ public class LLVMFunctionCode {
         return ((IntrinsicFunction) fn).intrinsic;
     }
 
-    public TruffleObject getNativeFunctionSlowPath() {
+    public Object getNativeFunctionSlowPath() {
         CompilerAsserts.neverPartOfCompilation();
         return getNativeFunction(ResolveFunctionNodeGen.getUncached());
     }
 
-    public TruffleObject getNativeFunction(ResolveFunctionNode resolve) {
+    public Object getNativeFunction(ResolveFunctionNode resolve) {
         Function fn = resolve.execute(getFunction(), this);
-        TruffleObject nativeFunction = ((NativeFunction) fn).nativeFunction;
+        Object nativeFunction = ((NativeFunction) fn).nativeFunction;
         if (nativeFunction == null) {
             CompilerDirectives.transferToInterpreter();
             throw new LLVMLinkerException("Native function " + fn.toString() + " not found");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -42,26 +42,24 @@ package com.oracle.truffle.sl;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.RootCallTarget;
-import com.oracle.truffle.api.Scope;
 import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.TruffleLanguage.ContextPolicy;
 import com.oracle.truffle.api.debug.DebuggerTags;
 import com.oracle.truffle.api.dsl.NodeFactory;
-import com.oracle.truffle.api.frame.Frame;
+import com.oracle.truffle.api.instrumentation.AllocationReporter;
 import com.oracle.truffle.api.instrumentation.ProvidedTags;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 import com.oracle.truffle.api.interop.InteropLibrary;
-import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.object.DynamicObject;
+import com.oracle.truffle.api.object.DynamicObjectLibrary;
+import com.oracle.truffle.api.object.Shape;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.sl.builtins.SLBuiltinNode;
 import com.oracle.truffle.sl.builtins.SLDefineFunctionBuiltin;
@@ -93,7 +91,6 @@ import com.oracle.truffle.sl.nodes.expression.SLReadPropertyNode;
 import com.oracle.truffle.sl.nodes.expression.SLStringLiteralNode;
 import com.oracle.truffle.sl.nodes.expression.SLSubNode;
 import com.oracle.truffle.sl.nodes.expression.SLWritePropertyNode;
-import com.oracle.truffle.sl.nodes.local.SLLexicalScope;
 import com.oracle.truffle.sl.nodes.local.SLReadLocalVariableNode;
 import com.oracle.truffle.sl.nodes.local.SLWriteLocalVariableNode;
 import com.oracle.truffle.sl.parser.SLNodeFactory;
@@ -105,6 +102,7 @@ import com.oracle.truffle.sl.runtime.SLFunction;
 import com.oracle.truffle.sl.runtime.SLFunctionRegistry;
 import com.oracle.truffle.sl.runtime.SLLanguageView;
 import com.oracle.truffle.sl.runtime.SLNull;
+import com.oracle.truffle.sl.runtime.SLObject;
 
 /**
  * SL is a simple language to demonstrate and showcase features of Truffle. The implementation is as
@@ -154,9 +152,9 @@ import com.oracle.truffle.sl.runtime.SLNull;
  * {@link DebuggerTags#AlwaysHalt} tag to halt the execution when run under the debugger.
  * <li>Function calls: {@link SLInvokeNode invocations} are efficiently implemented with
  * {@link SLDispatchNode polymorphic inline caches}.
- * <li>Object access: {@link SLReadPropertyNode} uses {@link SLReadPropertyCacheNode} as the
- * polymorphic inline cache for property reads. {@link SLWritePropertyNode} uses
- * {@link SLWritePropertyCacheNode} as the polymorphic inline cache for property writes.
+ * <li>Object access: {@link SLReadPropertyNode} and {@link SLWritePropertyNode} use a cached
+ * {@link DynamicObjectLibrary} as the polymorphic inline cache for property reads and writes,
+ * respectively.
  * </ul>
  *
  * <p>
@@ -196,8 +194,11 @@ public final class SLLanguage extends TruffleLanguage<SLContext> {
     public static final String ID = "sl";
     public static final String MIME_TYPE = "application/x-sl";
 
+    private final Shape rootShape;
+
     public SLLanguage() {
         counter++;
+        this.rootShape = Shape.newBuilder().layout(SLObject.class).build();
     }
 
     @Override
@@ -273,48 +274,23 @@ public final class SLLanguage extends TruffleLanguage<SLContext> {
     }
 
     @Override
-    public Iterable<Scope> findLocalScopes(SLContext context, Node node, Frame frame) {
-        final SLLexicalScope scope = SLLexicalScope.createScope(node);
-        return new Iterable<Scope>() {
-            @Override
-            public Iterator<Scope> iterator() {
-                return new Iterator<Scope>() {
-                    private SLLexicalScope previousScope;
-                    private SLLexicalScope nextScope = scope;
-
-                    @Override
-                    public boolean hasNext() {
-                        if (nextScope == null) {
-                            nextScope = previousScope.findParent();
-                        }
-                        return nextScope != null;
-                    }
-
-                    @Override
-                    public Scope next() {
-                        if (!hasNext()) {
-                            throw new NoSuchElementException();
-                        }
-                        Object functionObject = findFunctionObject();
-                        Scope vscope = Scope.newBuilder(nextScope.getName(), nextScope.getVariables(frame)).node(nextScope.getNode()).arguments(nextScope.getArguments(frame)).rootInstance(
-                                        functionObject).build();
-                        previousScope = nextScope;
-                        nextScope = null;
-                        return vscope;
-                    }
-
-                    private Object findFunctionObject() {
-                        String name = node.getRootNode().getName();
-                        return context.getFunctionRegistry().getFunction(name);
-                    }
-                };
-            }
-        };
+    protected Object getScope(SLContext context) {
+        return context.getFunctionRegistry().getFunctionsObject();
     }
 
-    @Override
-    protected Iterable<Scope> findTopScopes(SLContext context) {
-        return context.getTopScopes();
+    public Shape getRootShape() {
+        return rootShape;
+    }
+
+    /**
+     * Allocate an empty object. All new objects initially have no properties. Properties are added
+     * when they are first stored, i.e., the store triggers a shape change of the object.
+     */
+    public SLObject createObject(AllocationReporter reporter) {
+        reporter.onEnter(null, 0, AllocationReporter.SIZE_UNKNOWN);
+        SLObject object = new SLObject(rootShape);
+        reporter.onReturnValue(object, 0, AllocationReporter.SIZE_UNKNOWN);
+        return object;
     }
 
     public static SLContext getCurrentContext() {

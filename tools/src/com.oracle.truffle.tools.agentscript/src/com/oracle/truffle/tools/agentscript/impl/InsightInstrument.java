@@ -89,7 +89,7 @@ public class InsightInstrument extends TruffleInstrument {
                     if (file == null || !file.exists()) {
                         throw InsightException.notFound(file);
                     }
-                    String mimeType = file.getMimeType();
+                    String mimeType = file.detectMimeType();
                     String lang = null;
                     for (Map.Entry<String, LanguageInfo> e : env.getLanguages().entrySet()) {
                         if (mimeType != null && e.getValue().getMimeTypes().contains(mimeType)) {
@@ -138,7 +138,7 @@ public class InsightInstrument extends TruffleInstrument {
                     CallTarget target;
                     try {
                         target = env.parse(script, "insight", "agent");
-                    } catch (IOException ex) {
+                    } catch (Exception ex) {
                         throw InsightException.raise(ex);
                     }
                     target.call(insight, agent);

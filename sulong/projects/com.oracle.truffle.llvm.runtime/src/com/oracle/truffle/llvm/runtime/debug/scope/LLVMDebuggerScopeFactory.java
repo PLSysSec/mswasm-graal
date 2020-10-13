@@ -31,16 +31,16 @@ package com.oracle.truffle.llvm.runtime.debug.scope;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.Scope;
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameSlot;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
@@ -51,16 +51,16 @@ import com.oracle.truffle.llvm.runtime.LLVMScope;
 import com.oracle.truffle.llvm.runtime.LLVMSymbol;
 import com.oracle.truffle.llvm.runtime.datalayout.DataLayout;
 import com.oracle.truffle.llvm.runtime.debug.LLVMSourceContext;
-import com.oracle.truffle.llvm.runtime.debug.value.LLVMDebugObject;
 import com.oracle.truffle.llvm.runtime.debug.value.LLVMDebugObjectBuilder;
-import com.oracle.truffle.llvm.runtime.debug.value.LLVMFrameValueAccess;
 import com.oracle.truffle.llvm.runtime.global.LLVMGlobal;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMInstrumentableNode;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMNode;
+import com.oracle.truffle.llvm.runtime.nodes.control.LLVMDispatchBasicBlockNode;
 import com.oracle.truffle.llvm.runtime.options.SulongEngineOption;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMPointer;
 import com.oracle.truffle.llvm.runtime.types.PointerType;
 import com.oracle.truffle.llvm.runtime.types.symbols.LLVMIdentifier;
+import com.oracle.truffle.llvm.runtime.types.symbols.LocalVariableDebugInfo;
 import com.oracle.truffle.llvm.runtime.types.symbols.SSAValue;
 
 public final class LLVMDebuggerScopeFactory {
@@ -94,7 +94,7 @@ public final class LLVMDebuggerScopeFactory {
                 if (slotValue == null) { // slots are null if they are cleared by LLVMFrameNuller
                     slotValue = "<unavailable>";
                 }
-                TruffleObject value = CommonNodeFactory.toGenericDebuggerValue(stackValue.getType(), slotValue, dataLayout);
+                Object value = CommonNodeFactory.toGenericDebuggerValue(stackValue.getType(), slotValue, dataLayout);
                 entries.add(convertIdentifier(identifier, context), value);
             }
         }
@@ -111,7 +111,7 @@ public final class LLVMDebuggerScopeFactory {
                 int id = global.getBitcodeID(false);
                 int index = global.getSymbolIndex(false);
                 AssumedValue<LLVMPointer>[] globals = context.findSymbolTable(id);
-                final TruffleObject value = CommonNodeFactory.toGenericDebuggerValue(global.getPointeeType(), globals[index].get(), dataLayout);
+                final Object value = CommonNodeFactory.toGenericDebuggerValue(global.getPointeeType(), globals[index].get(), dataLayout);
                 entries.add(LLVMIdentifier.toGlobalIdentifier(global.getName()), value);
             }
         }
@@ -126,7 +126,7 @@ public final class LLVMDebuggerScopeFactory {
                 int id = global.getBitcodeID(false);
                 int index = global.getSymbolIndex(false);
                 AssumedValue<LLVMPointer>[] globals = context.findSymbolTable(id);
-                final TruffleObject value = CommonNodeFactory.toGenericDebuggerValue(new PointerType(global.getPointeeType()), globals[index].get(), dataLayout);
+                final Object value = CommonNodeFactory.toGenericDebuggerValue(new PointerType(global.getPointeeType()), globals[index].get(), dataLayout);
                 entries.add(LLVMIdentifier.toGlobalIdentifier(global.getName()), value);
             }
         }
@@ -144,15 +144,17 @@ public final class LLVMDebuggerScopeFactory {
     }
 
     @TruffleBoundary
-    public static Iterable<Scope> createIRLevelScope(Node node, Frame frame, LLVMContext context) {
+    @SuppressWarnings("deprecation")
+    public static Iterable<com.oracle.truffle.api.Scope> createIRLevelScope(Node node, Frame frame, LLVMContext context) {
         DataLayout dataLayout = LLVMNode.findDataLayout(node);
-        final Scope localScope = Scope.newBuilder("function", getIRLevelEntries(frame, context, dataLayout)).node(node).build();
-        final Scope globalScope = Scope.newBuilder("module", getIRLevelEntries(node, context, dataLayout)).build();
+        final com.oracle.truffle.api.Scope localScope = com.oracle.truffle.api.Scope.newBuilder("function", getIRLevelEntries(frame, context, dataLayout)).node(node).build();
+        final com.oracle.truffle.api.Scope globalScope = com.oracle.truffle.api.Scope.newBuilder("module", getIRLevelEntries(node, context, dataLayout)).build();
         return Arrays.asList(localScope, globalScope);
     }
 
     @TruffleBoundary
-    public static Iterable<Scope> createSourceLevelScope(Node node, Frame frame, LLVMContext context) {
+    @SuppressWarnings("deprecation")
+    public static Collection<com.oracle.truffle.api.Scope> createSourceLevelScope(Node node, Frame frame, LLVMContext context) {
         final LLVMSourceContext sourceContext = context.getSourceContext();
         final RootNode rootNode = node.getRootNode();
         LLVMSourceLocation scope = findSourceLocation(node);
@@ -163,11 +165,11 @@ public final class LLVMDebuggerScopeFactory {
 
         final SourceSection sourceSection = scope.getSourceSection();
 
-        LLVMDebuggerScopeFactory baseScope = new LLVMDebuggerScopeFactory(context, sourceContext, new ArrayList<>(), rootNode);
+        LLVMDebuggerScopeFactory baseScope = new LLVMDebuggerScopeFactory(context, sourceContext, new ArrayList<>(), node);
         LLVMDebuggerScopeFactory staticScope = null;
 
         for (boolean isLocalScope = true; isLocalScope && scope != null; scope = scope.getParent()) {
-            final LLVMDebuggerScopeFactory next = toScope(context, scope, sourceContext, rootNode, sourceSection);
+            final LLVMDebuggerScopeFactory next = toScope(context, scope, sourceContext, node, sourceSection);
             copySymbols(next, baseScope);
             if (scope.getKind() == LLVMSourceLocation.Kind.FUNCTION) {
                 baseScope.setName(next.getName());
@@ -178,7 +180,7 @@ public final class LLVMDebuggerScopeFactory {
             }
         }
 
-        List<Scope> scopeList = new ArrayList<>();
+        List<com.oracle.truffle.api.Scope> scopeList = new ArrayList<>();
         scopeList.add(baseScope.toScope(frame));
         for (; scope != null; scope = scope.getParent()) {
             // e.g. lambdas are compiled to calls to a method in a locally defined class. We
@@ -319,14 +321,15 @@ public final class LLVMDebuggerScopeFactory {
 
         final LLVMDebuggerScopeEntries vars = new LLVMDebuggerScopeEntries();
 
-        if (frame != null) {
-            for (FrameSlot slot : frame.getFrameDescriptor().getSlots()) {
-                if (slot.getIdentifier() instanceof LLVMSourceSymbol && frame.getValue(slot) instanceof LLVMDebugObjectBuilder) {
-                    final LLVMSourceSymbol symbol = (LLVMSourceSymbol) slot.getIdentifier();
-                    final LLVMDebugObject value = ((LLVMDebugObjectBuilder) frame.getValue(slot)).getValue(symbol);
-                    if (symbols.contains(symbol)) {
-                        vars.add(convertIdentifier(symbol.getName(), context), value);
-                    }
+        LLVMDispatchBasicBlockNode dispatchBlock = LLVMNode.getParent(node, LLVMDispatchBasicBlockNode.class);
+
+        if (frame != null && dispatchBlock != null) {
+            LocalVariableDebugInfo debugInfo = dispatchBlock.getDebugInfo();
+            Map<LLVMSourceSymbol, Object> localVariables = debugInfo.getLocalVariables(frame, node);
+            for (Map.Entry<LLVMSourceSymbol, Object> entry : localVariables.entrySet()) {
+                LLVMSourceSymbol symbol = entry.getKey();
+                if (symbols.contains(symbol)) {
+                    vars.add(symbol.getName(), entry.getValue());
                 }
             }
         }
@@ -334,13 +337,6 @@ public final class LLVMDebuggerScopeFactory {
         for (LLVMSourceSymbol symbol : symbols) {
             if (!vars.contains(symbol.getName())) {
                 LLVMDebugObjectBuilder dbgVal = sourceContext.getStatic(symbol);
-
-                if (dbgVal == null) {
-                    final LLVMFrameValueAccess allocation = sourceContext.getFrameValue(symbol);
-                    if (allocation != null && frame != null) {
-                        dbgVal = allocation.getValue(frame);
-                    }
-                }
 
                 if (dbgVal == null) {
                     dbgVal = LLVMDebugObjectBuilder.UNAVAILABLE;
@@ -356,9 +352,10 @@ public final class LLVMDebuggerScopeFactory {
     private static final String DEFAULT_RECEIVER_NAME = "this";
     private static final String DEFAULT_RECEIVER = "<none>";
 
-    private Scope toScope(Frame frame) {
+    @SuppressWarnings("deprecation")
+    private com.oracle.truffle.api.Scope toScope(Frame frame) {
         final LLVMDebuggerScopeEntries variables = getVariables(frame);
-        final Scope.Builder scopeBuilder = Scope.newBuilder(name, variables);
+        final com.oracle.truffle.api.Scope.Builder scopeBuilder = com.oracle.truffle.api.Scope.newBuilder(name, variables);
 
         // while the Truffle API allows any name for the receiver, the chrome inspector protocol
         // requires "this" as member of the local scope. the current chrome inspector implementation

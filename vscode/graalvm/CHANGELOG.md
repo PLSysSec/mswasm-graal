@@ -1,5 +1,20 @@
 # Change Log
 
+## Version 0.0.11
+* GraalVM DAP support added
+* GraalVM installations management added
+* GraalVM for Windows supported
+
+## Version 0.0.10
+* Usability improvements
+
+## Version 0.0.9
+* Bug fixes
+
+## Version 0.0.8
+* Support Python, R, and Ruby languages merged from their separate extensions
+* Code coverage support added
+
 ## Version 0.0.7
 * Security: updated dependencies
 

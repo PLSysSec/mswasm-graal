@@ -27,14 +27,14 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include <polyglot.h>
+#include <graalvm/llvm/polyglot.h>
 
 void *global;
 
 __attribute__((noinline)) int argTest(int a, int b, int c, int d) {
-  return polyglot_as_i32(polyglot_get_arg(2)) + c;
+    return polyglot_as_i32(polyglot_get_arg(2)) + c;
 }
 
 int main() {
-  return argTest(1, 2, 21, 4);
+    return argTest(1, 2, 21, 4);
 }
