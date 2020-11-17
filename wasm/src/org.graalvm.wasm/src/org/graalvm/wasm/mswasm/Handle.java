@@ -66,22 +66,34 @@ public class Handle {
         return ! isCorrupted && base + offset <= bound;
     }
 
-    /* MSWASM-TODO: remove?
-    // Converts to long containing base & offset
-    public long convertToLongBaseOffset() {
-        return ((long)base << 32) | ((long)offset);
+    public long[] toLongs() {
+        long[] longHandle = new long[2];
+
+        longHandle[0] = ((long)base << 32) | ((long)offset);
+        longHandle[1] = ((long)bound << 32) | ((long)isCorrupted);
+
+        return longHandle;
     }
 
-    // Converts to long containing bound & isCorrupted
-    public long convertToLongBoundIsC() {
-        return ((long)bound << 32) | ((long)isCorrupted);
-    }
+    public static Handle fromLongs(long[] values) {
+        int base = (int) (values[0] >> 32);
+        int offset = (int) values[0];
+        int bound = (int) (values[1] >> 32);
+        boolean isCorrupted = (boolean) values[1];
 
-    public static Handle retrieveFromLong(long baseOffset, long boundIsC) {
-        int base = (int) (baseOffset >> 32);
-        int offset = (int) baseOffset;
-        int bound = (int) (boundIsC >> 32);
-        boolean isCorrupted = (boolean) boundIsC;
         return new Handle(base, offset, bound, isCorrupted);
-    }*/
+    }
+
+    public Handle slice(int baseShift, int boundShift) {
+        // TODO: Defensive coding on baseShift, boundShift
+        Handle result = new Handle(base + baseShift, handle.getOffset(),
+                                   bound - boundShift, false);
+        return result;
+    }
+
+    public Handle shift(int shiftOffset) {
+        // TODO: Defensive coding on shiftOffset
+        Handle result = new Handle(base, offset + shiftOffset, bound, false);
+        return result;
+    }
 }
