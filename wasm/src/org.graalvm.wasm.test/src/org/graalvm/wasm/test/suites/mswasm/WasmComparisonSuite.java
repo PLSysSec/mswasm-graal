@@ -21,29 +21,20 @@ import java.util.Properties;
 import org.graalvm.wasm.utils.SystemProperties;
 
 public class WasmComparisonSuite extends WasmSuiteBase {
-    private String folderPath = "./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/wasmTests/";
+    private final String FOLDER_PATH = "./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/wasmTests/";
 
-     private static Properties opts = SystemProperties.createFromOptions(
-                    "zero-memory = false\n" +
-                                    "interpreter-iterations = 0\n" +
-                                    "sync-noinline-iterations = 10\n" +
-                                    "sync-inline-iterations = 10\n" +
-                                    "async-iterations = 10\n");
+    private static Properties opts = SystemProperties
+            .createFromOptions("zero-memory = false\n" + "interpreter-iterations = 0\n"
+                    + "sync-noinline-iterations = 10\n" + "sync-inline-iterations = 10\n" + "async-iterations = 10\n");
 
     private WasmBinaryCase[] testCases = {
-                    WasmCase.create("STORE_AND_LOAD_1", WasmCase.expected(10),
-                                    parseWasmFile(folderPath + "wasm_store-load_1.wasm"),
-                                    null, opts), 
-                    WasmCase.create("ADD_1", WasmCase.expected(11),
-                                    parseWasmFile(folderPath + "wasm_add_1.wasm"),
-                                    null, opts), 
-                    WasmCase.create("ADD64_1", WasmCase.expected(0L),
-                                    parseWasmFile(folderPath + "wasm_add64_1.wasm"),
-                                    null, opts),
-                    WasmCase.create("FREESEGMENT_ADD", WasmCase.expected(24),
-                                    parseWasmFile(folderPath + "wasm_freesegment_add.wasm"),
-                                    null, opts),
-    };
+            WasmCase.create("STORE_AND_LOAD_1", WasmCase.expected(10),
+                    parseWasmFile(FOLDER_PATH + "wasm_store-load_1.wasm"), null, opts),
+            WasmCase.create("ADD_1", WasmCase.expected(11), parseWasmFile(FOLDER_PATH + "wasm_add_1.wasm"), null, opts),
+            WasmCase.create("ADD64_1", WasmCase.expected(0L), parseWasmFile(FOLDER_PATH + "wasm_add64_1.wasm"), null,
+                    opts),
+            WasmCase.create("FREESEGMENT_ADD", WasmCase.expected(24),
+                    parseWasmFile(FOLDER_PATH + "wasm_freesegment_add.wasm"), null, opts), };
 
     private byte[] parseWasmFile(String fileName) {
         try {
@@ -55,10 +46,10 @@ public class WasmComparisonSuite extends WasmSuiteBase {
             return bytes;
         } catch (RuntimeException | IOException e) {
             e.printStackTrace();
-            return new byte[0];  
+            return new byte[0];
         }
     }
-                    
+
     @Override
     protected Collection<? extends WasmCase> collectStringTestCases() {
         return Arrays.asList(testCases);

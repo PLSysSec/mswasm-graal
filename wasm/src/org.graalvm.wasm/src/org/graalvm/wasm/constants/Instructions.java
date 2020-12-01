@@ -247,8 +247,7 @@ public final class Instructions {
     public static final int HANDLE_SEGMENT_STORE = 0xF8;
     public static final int HANDLE_ADD = 0xF9;
     public static final int HANDLE_SUB = 0xFA;
-
-
+    public static final int HANDLE_OFFSET = 0xFB;
 
     private static String[] decodingTable = new String[256];
 
@@ -261,10 +260,10 @@ public final class Instructions {
                 if (Modifier.isStatic(f.getModifiers()) && f.getType().isPrimitive()) {
                     int code = f.getInt(null);
                     String representation = f.getName().toLowerCase(Locale.ENGLISH);
-                    if (representation.startsWith("i32") || representation.startsWith("i64") ||
-                        representation.startsWith("f32") || representation.startsWith("f64") || 
-                        representation.startsWith("handle") || 
-                        representation.startsWith("local") || representation.startsWith("global")) {
+                    if (representation.startsWith("i32") || representation.startsWith("i64")
+                            || representation.startsWith("f32") || representation.startsWith("f64")
+                            || representation.startsWith("handle") || representation.startsWith("local")
+                            || representation.startsWith("global")) {
                         representation = representation.replaceFirst("_", ".");
                     }
                     decodingTable[code] = representation;

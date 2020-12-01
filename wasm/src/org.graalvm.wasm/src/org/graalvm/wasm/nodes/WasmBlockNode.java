@@ -224,6 +224,7 @@ import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_LOAD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_STORE;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_ADD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SUB;
+import static org.graalvm.wasm.constants.Instructions.HANDLE_OFFSET;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerAsserts;
@@ -2648,6 +2649,17 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer++;
                     trace("push handle.sub %d [i32] ; " + handle + " --> " + result, shift);
                     break;
+                }
+                case HANDLE_OFFSET: {
+                    // MSWasm
+                    stackPointer--;
+                    Handle handle = popHandle(frame, stackPointer);
+                    
+                    int offset = handle.getOffset();
+                    pushInt(frame, stackPointer, offset);
+                    
+                    stackPointer++;
+                    trace("push handle.offset " + handle + " --> %d [i32]", offset);
                 }
                 default:
                     Assert.fail(Assert.format("Unknown opcode: 0x%02X", opcode));
