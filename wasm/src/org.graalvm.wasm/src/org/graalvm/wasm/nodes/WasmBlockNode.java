@@ -260,41 +260,56 @@ import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
-    //private static String mswasmErr = ""; //MS-WASM test
+    // private static String mswasmErr = ""; //MS-WASM test
 
     /**
      * The number of bytes in the byte constant table used by this node.
      */
-    @CompilationFinal private int byteConstantLength;
+    @CompilationFinal
+    private int byteConstantLength;
 
     /**
      * The number of integers in the int constant table used by this node.
      */
-    @CompilationFinal private int intConstantLength;
+    @CompilationFinal
+    private int intConstantLength;
 
     /**
      * The number of literals in the numeric literals table used by this node.
      */
-    @CompilationFinal private int longConstantLength;
+    @CompilationFinal
+    private int longConstantLength;
 
     /**
      * The number of branch tables used by this node.
      */
-    @CompilationFinal private int branchTableLength;
+    @CompilationFinal
+    private int branchTableLength;
 
-    @CompilationFinal private final int startOffset;
-    @CompilationFinal private final byte returnTypeId;
-    @CompilationFinal private final byte continuationTypeId;
-    @CompilationFinal private final int initialStackPointer;
-    @CompilationFinal private final int initialByteConstantOffset;
-    @CompilationFinal private final int initialIntConstantOffset;
-    @CompilationFinal private final int initialLongConstantOffset;
-    @CompilationFinal private final int initialBranchTableOffset;
-    @CompilationFinal private ContextReference<WasmContext> rawContextReference;
-    @Children private Node[] children;
+    @CompilationFinal
+    private final int startOffset;
+    @CompilationFinal
+    private final byte returnTypeId;
+    @CompilationFinal
+    private final byte continuationTypeId;
+    @CompilationFinal
+    private final int initialStackPointer;
+    @CompilationFinal
+    private final int initialByteConstantOffset;
+    @CompilationFinal
+    private final int initialIntConstantOffset;
+    @CompilationFinal
+    private final int initialLongConstantOffset;
+    @CompilationFinal
+    private final int initialBranchTableOffset;
+    @CompilationFinal
+    private ContextReference<WasmContext> rawContextReference;
+    @Children
+    private Node[] children;
 
-    public WasmBlockNode(WasmModule wasmModule, WasmCodeEntry codeEntry, int startOffset, byte returnTypeId, byte continuationTypeId, int initialStackPointer,
-                    int initialByteConstantOffset, int initialIntConstantOffset, int initialLongConstantOffset, int initialBranchTableOffset) {
+    public WasmBlockNode(WasmModule wasmModule, WasmCodeEntry codeEntry, int startOffset, byte returnTypeId,
+            byte continuationTypeId, int initialStackPointer, int initialByteConstantOffset,
+            int initialIntConstantOffset, int initialLongConstantOffset, int initialBranchTableOffset) {
         super(wasmModule, codeEntry, -1);
         this.startOffset = startOffset;
         this.returnTypeId = returnTypeId;
@@ -315,8 +330,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     }
 
     @SuppressWarnings("hiding")
-    public void initialize(Node[] children, int byteLength, int byteConstantLength,
-                    int intConstantLength, int longConstantLength, int branchTableLength) {
+    public void initialize(Node[] children, int byteLength, int byteConstantLength, int intConstantLength,
+            int longConstantLength, int branchTableLength) {
         initialize(byteLength);
         this.byteConstantLength = byteConstantLength;
         this.intConstantLength = intConstantLength;
@@ -593,7 +608,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             // MSWasm
                             pushHandle(frame, stackPointer, (Handle) result);
                             stackPointer++;
-                            break; 
+                            break;
                         }
                         case ValueTypes.VOID_TYPE: {
                             // Void return type - do nothing.
@@ -640,8 +655,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         // TODO: This check may be too rigorous, as the WebAssembly specification
                         // seems to allow multiple definitions of the same type.
                         // We should refine the check.
-                        throw new WasmTrap(this, Assert.format("Actual (type %d of function %s) and expected (type %d in module %s) types differ in the indirect call.",
-                                        function.typeIndex(), function.name(), expectedFunctionTypeIndex, module().name()));
+                        throw new WasmTrap(this, Assert.format(
+                                "Actual (type %d of function %s) and expected (type %d in module %s) types differ in the indirect call.",
+                                function.typeIndex(), function.name(), expectedFunctionTypeIndex, module().name()));
                     }
 
                     // Invoke the resolved function.
@@ -684,7 +700,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             // MSWasm
                             pushHandle(frame, stackPointer, (Handle) result);
                             stackPointer++;
-                            break; 
+                            break;
                         }
                         case ValueTypes.VOID_TYPE: {
                             // Void return type - do nothing.
@@ -759,10 +775,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
 
-                            //mswasmErr += "local.get handle " + value + "\n";
+                            // mswasmErr += "local.get handle " + value + "\n";
 
                             trace("local.get %d, value = " + value, index);
-                            break; 
+                            break;
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -814,10 +830,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = popHandle(frame, stackPointer);
                             setHandle(frame, index, value);
 
-                            //mswasmErr += "local.set handle " + value + "\n";
+                            // mswasmErr += "local.set handle " + value + "\n";
 
                             trace("local.set %d, value = " + value, index);
-                            break; 
+                            break;
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -879,7 +895,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer++;
                             setHandle(frame, index, value);
                             trace("local.tee %d, value = " + value, index);
-                            break; 
+                            break;
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -937,7 +953,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
                             trace("global.get %d, value = " + value, index);
-                            break; 
+                            break;
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -997,7 +1013,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = popHandle(frame, stackPointer);
                             int address = module().symbolTable().globalAddress(index);
                             trace("global.set %d, value = " + value, index);
-                            break; 
+                            break;
                         }
                         default: {
                             throw new WasmTrap(this, "Local variable cannot have the void type.");
@@ -2460,10 +2476,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
                     Object value = context.segmentMemory().loadFromSegment(x);
-                    
+
                     if (value == null) { // load failed
-                        throw new WasmTrap(this,
-                                           "i32.segment_load failed due to invalid handle: " + x);
+                        throw new WasmTrap(this, "i32.segment_load failed due to invalid handle: " + x);
                     }
 
                     int result = ((Integer) value).intValue();
@@ -2471,7 +2486,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer++;
                     trace("push i32.segment_load " + x + " --> %d [i32]", result);
 
-                    //mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
+                    // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
 
                     break;
                 }
@@ -2480,10 +2495,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
                     Object value = context.segmentMemory().loadFromSegment(x);
-                    
+
                     if (value == null) { // load failed
-                        throw new WasmTrap(this,
-                                           "i64.segment_load failed due to invalid handle: " + x);
+                        throw new WasmTrap(this, "i64.segment_load failed due to invalid handle: " + x);
                     }
 
                     long result = ((Long) value).longValue();
@@ -2491,7 +2505,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer++;
                     trace("push i64.segment_load " + x + " --> %d [i64]", result);
 
-                    //mswasmErr += "i64.segment_load " + x + " --> " + result + "\n";
+                    // mswasmErr += "i64.segment_load " + x + " --> " + result + "\n";
 
                     break;
                 }
@@ -2503,14 +2517,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle key = popHandle(frame, stackPointer);
                     String init = "i32.segment_store " + value + ", " + key;
 
-                    boolean success = context.segmentMemory()
-                                             .storeToSegment(key, new Integer(value));
+                    boolean success = context.segmentMemory().storeToSegment(key, new Integer(value));
 
-                    //mswasmErr += "i32.segment_store " + value + " to " + key + " --> " + success + "\n";
+                    // mswasmErr += "i32.segment_store " + value + " to " + key + " --> " + success
+                    // + "\n";
 
-                    if ( ! success) {
-                        throw new WasmTrap(this,
-                                        "i32.segment_store failed: (" + key + ", " + value + ")");
+                    if (!success) {
+                        throw new WasmTrap(this, "i32.segment_store failed: (" + key + ", " + value + ")");
                     }
 
                     break;
@@ -2521,14 +2534,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     long value = pop(frame, stackPointer);
                     stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    boolean success = context.segmentMemory()
-                                             .storeToSegment(key, new Long(value));
+                    boolean success = context.segmentMemory().storeToSegment(key, new Long(value));
 
-                    //mswasmErr += "i64.segment_store " + value + " to " + key + " --> " + success + "\n";
+                    // mswasmErr += "i64.segment_store " + value + " to " + key + " --> " + success
+                    // + "\n";
 
-                    if ( ! success) {
-                        throw new WasmTrap(this,
-                                        "i64.segment_store failed: (" + key + ", " + value + ")");
+                    if (!success) {
+                        throw new WasmTrap(this, "i64.segment_store failed: (" + key + ", " + value + ")");
                     }
                     break;
                 }
@@ -2539,7 +2551,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle result = context.segmentMemory().newSegment(segSize);
                     pushHandle(frame, stackPointer, result);
 
-                    //mswasmErr += "newSegment " + segSize + " --> " + result + "\n";
+                    // mswasmErr += "newSegment " + segSize + " --> " + result + "\n";
 
                     stackPointer++;
                     trace("push new_segment " + segSize + " --> " + result);
@@ -2551,11 +2563,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle handle = popHandle(frame, stackPointer);
                     boolean success = context.segmentMemory().freeSegment(handle);
 
-                    //mswasmErr += "freeSegment " + handle + " --> " + success + "\n";
+                    // mswasmErr += "freeSegment " + handle + " --> " + success + "\n";
 
-                    if ( ! success) {
-                        throw new WasmTrap(this,
-                                           "free_segment failed: " + handle + " does not exist");
+                    if (!success) {
+                        throw new WasmTrap(this, "free_segment failed: " + handle + " does not exist");
                     }
                     break;
                 }
@@ -2567,15 +2578,15 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     int base = popInt(frame, stackPointer);
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
-                    
+
                     Handle result = context.segmentMemory().sliceSegment(handle, base, bound);
 
-                    //mswasmErr += "segment_slice " + handle + ", bound " + bound + ", base " + " --> " + result + "\n";
+                    // mswasmErr += "segment_slice " + handle + ", bound " + bound + ", base " + "
+                    // --> " + result + "\n";
 
                     pushHandle(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, 
-                          base, bound); 
+                    trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, base, bound);
                     break;
                 }
                 case HANDLE_SEGMENT_LOAD: {
@@ -2583,19 +2594,17 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
                     Object value = context.segmentMemory().loadFromSegment(x);
-                    
+
                     if (value == null) { // load failed
-                        throw new WasmTrap(this,
-                                    "handle.segment_load failed due to invalid handle: " + x);
-                    } else if (! (value instanceof Handle)) {
-                        throw new WasmTrap(this,
-                                    "handle.segment_load failed due to non-handle segment");
+                        throw new WasmTrap(this, "handle.segment_load failed due to invalid handle: " + x);
+                    } else if (!(value instanceof Handle)) {
+                        throw new WasmTrap(this, "handle.segment_load failed due to non-handle segment");
                     }
 
-                    Handle result = (Handle)value;
+                    Handle result = (Handle) value;
                     pushHandle(frame, stackPointer, result);
 
-                    //mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
+                    // mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
 
                     stackPointer++;
                     trace("push handle.segment_load " + x + " --> " + result);
@@ -2607,14 +2616,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle value = popHandle(frame, stackPointer);
                     stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    boolean success = context.segmentMemory()
-                                             .storeToSegment(key, new Handle(value));
+                    boolean success = context.segmentMemory().storeToSegment(key, new Handle(value));
 
-                    //mswasmErr += "handle.segment_store " + value + " to " + key + " --> " + success + "\n";
+                    // mswasmErr += "handle.segment_store " + value + " to " + key + " --> " +
+                    // success + "\n";
 
-                    if ( ! success) {
-                        throw new WasmTrap(this,
-                                    "handle.segment_store failed: (" + key + ", " + value + ")");
+                    if (!success) {
+                        throw new WasmTrap(this, "handle.segment_store failed: (" + key + ", " + value + ")");
                     }
                     break;
                 }
@@ -2628,7 +2636,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle result = context.segmentMemory().shiftSegment(handle, shift);
                     pushHandle(frame, stackPointer, result);
 
-                    //mswasmErr += "handle.add " + handle + " + shift " + shift + " --> " + result;
+                    // mswasmErr += "handle.add " + handle + " + shift " + shift + " --> " + result;
 
                     stackPointer++;
                     trace("push handle.add %d [i32] ; " + handle + " --> " + result, shift);
@@ -2644,7 +2652,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle result = context.segmentMemory().shiftSegment(handle, -1 * shift);
                     pushHandle(frame, stackPointer, result);
 
-                    //mswasmErr += "handle.sub " + handle + " - shift " + shift + " --> " + result;
+                    // mswasmErr += "handle.sub " + handle + " - shift " + shift + " --> " + result;
 
                     stackPointer++;
                     trace("push handle.sub %d [i32] ; " + handle + " --> " + result, shift);
@@ -2654,12 +2662,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // MSWasm
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
-                    
-                    int offset = handle.getOffset();
-                    pushInt(frame, stackPointer, offset);
-                    
+
+                    int h_offset = handle.getOffset();
+                    pushInt(frame, stackPointer, h_offset);
+
                     stackPointer++;
-                    trace("push handle.offset " + handle + " --> %d [i32]", offset);
+                    trace("push handle.offset " + handle + " --> %d [i32]", h_offset);
+                    break;
                 }
                 default:
                     Assert.fail(Assert.format("Unknown opcode: 0x%02X", opcode));
@@ -2680,7 +2689,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     }
 
     @ExplodeLoop
-    private Object[] createArgumentsForCall(VirtualFrame frame, WasmFunction function, int numArgs, int stackPointerOffset) {
+    private Object[] createArgumentsForCall(VirtualFrame frame, WasmFunction function, int numArgs,
+            int stackPointerOffset) {
         CompilerAsserts.partialEvaluationConstant(numArgs);
         Object[] args = new Object[numArgs];
         int stackPointer = stackPointerOffset;
@@ -2703,7 +2713,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case ValueTypes.HANDLE_TYPE: {
                     // MSWasm
                     args[i] = popHandle(frame, stackPointer);
-                    break; 
+                    break;
                 }
                 default: {
                     throw new WasmTrap(this, "Unknown type: " + type);
@@ -2714,8 +2724,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     }
 
     @ExplodeLoop
-    private void unwindStack(VirtualFrame frame, int initStackPointer, int initialContinuationStackPointer, int targetBlockReturnLength) {
-        // TODO: If the targetBlockReturnLength could ever be > 1, this would invert the stack
+    private void unwindStack(VirtualFrame frame, int initStackPointer, int initialContinuationStackPointer,
+            int targetBlockReturnLength) {
+        // TODO: If the targetBlockReturnLength could ever be > 1, this would invert the
+        // stack
         // values.
         // The spec seems to imply that the operand stack should not be inverted.
         CompilerAsserts.partialEvaluationConstant(targetBlockReturnLength);
@@ -2770,7 +2782,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case ALL:
                 return codeEntry().intConstant(intConstantOffset);
             case LARGE_ONLY:
-                return isLargeConstant(offset) ? codeEntry().intConstant(intConstantOffset) : codeEntry().data()[offset];
+                return isLargeConstant(offset) ? codeEntry().intConstant(intConstantOffset)
+                        : codeEntry().data()[offset];
             case NONE:
                 return BinaryStreamParser.peekUnsignedInt32(codeEntry().data(), offset);
             default:

@@ -3,6 +3,7 @@ package org.graalvm.wasm.mswasm;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.mswasm.Handle;
 import java.util.Set;
+import com.oracle.truffle.api.nodes.Node;
 import java.util.HashSet;
 
 // Alternative segment memory, based on WasmMemory
@@ -30,8 +31,9 @@ public class SegmentWasmMemory {
         // TODO in freeSegment?
         memory.growToAddress(end);
 
-        Handle view = new Handle(start, 0, end, false);
-        segmentKeys.put(view);
+        // TODO: examine this again (should a handle take a long?)
+        Handle view = new Handle((int) start, 0, (int) end, false);
+        segmentKeys.add(view);
         return view;
     }
 
@@ -42,7 +44,7 @@ public class SegmentWasmMemory {
 
     public boolean freeSegment(Handle handle) {
         // if ( ! segments.containsKey(handle)) {
-        //     return false;
+        // return false;
         // }
         // segments.remove(handle);
         // return true;
@@ -58,19 +60,18 @@ public class SegmentWasmMemory {
     public boolean storeToSegment(Handle handle, Object value) {
         // Potential optimization: split into store methods per-data type
 
-        if ( ! handle.isValid() || value == null) {
+        if (!handle.isValid() || value == null) {
             return false;
         }
 
-
         // if ( ! segments.containsKey(handle)) {
-        //     size = Math.max(size, handle.getBound());
+        // size = Math.max(size, handle.getBound());
         // }
 
         // if (value instanceof Handle) {
-        //     segments.put(handle, new SegmentValue(value, SegmentType.HANDLE_SEGMENT));
+        // segments.put(handle, new SegmentValue(value, SegmentType.HANDLE_SEGMENT));
         // } else {
-        //     segments.put(handle, new SegmentValue(value, SegmentType.DATA_SEGMENT));
+        // segments.put(handle, new SegmentValue(value, SegmentType.DATA_SEGMENT));
         // }
 
         // return true;
@@ -81,17 +82,17 @@ public class SegmentWasmMemory {
     public Object loadFromSegment(Handle handle) {
         // Potential optimization: split into load methods per-data type
 
-        if ( ! handle.isValid() || ! segmentKeys.containsKey(handle)) {
+        if (!handle.isValid() || !segmentKeys.contains(handle)) {
             return null;
         }
 
         // SegmentValue storedValue = segments.get(handle);
 
-        // if (storedValue.getValue() instanceof Handle && 
-        //     storedValue.getType() == SegmentType.DATA_SEGMENT) {
-        //     Handle result = (Handle)storedValue.getValue();
-        //     result.setCorrupted();
-        //     return result;
+        // if (storedValue.getValue() instanceof Handle &&
+        // storedValue.getType() == SegmentType.DATA_SEGMENT) {
+        // Handle result = (Handle)storedValue.getValue();
+        // result.setCorrupted();
+        // return result;
         // }
 
         // return storedValue.getValue();
@@ -99,68 +100,69 @@ public class SegmentWasmMemory {
     }
 
     public Integer segment_load_i32(Node node, Handle handle) {
-        if ( ! handle.isValid() || ! segmentKeys.containsKey(handle)) {
-            return null;
-        }
+        // if (!handle.isValid() || !segmentKeys.contains(handle)) {
+        // return null;
+        // }
 
-        int value = memory.load_i32(handle.getBase() + handle.getOffset());
-        return value;
+        // int value = memory.load_i32(handle.getBase() + handle.getOffset());
+        // return value;
+        return null; // TODO: don't do this
     }
 
-    public Long segment_load_i64(Node node, Handle handle) {
-
+    public long segment_load_i64(Node node, Handle handle) {
+        return 0;
     }
 
-    public Float segment_load_f32(Node node, Handle handle) {
-
+    public float segment_load_f32(Node node, Handle handle) {
+        return 0;
     }
 
-    public Double segment_load_f64(Node node, Handle handle) {
-
+    public double segment_load_f64(Node node, Handle handle) {
+        return 0;
     }
 
-    public Int segment_load_i32_8s(Node node, Handle handle) {
-
+    public int segment_load_i32_8s(Node node, Handle handle) {
+        return 0;
     }
 
-    public Int segment_load_i32_8u(Node node, Handle handle) {
-
+    public int segment_load_i32_8u(Node node, Handle handle) {
+        return 0;
     }
 
-    public Int segment_load_i32_16s(Node node, Handle handle) {
-
+    public int segment_load_i32_16s(Node node, Handle handle) {
+        return 0;
     }
 
-    public Int segment_load_i32_16u(Node node, Handle handle) {
-
+    public int segment_load_i32_16u(Node node, Handle handle) {
+        return 0;
     }
 
-    public Long segment_load_i64_8s(Node node, Handle handle) {
-
+    public long segment_load_i64_8s(Node node, Handle handle) {
+        return 0;
     }
 
-    public Long segment_load_i64_8u(Node node, Handle handle) {
-
+    public long segment_load_i64_8u(Node node, Handle handle) {
+        return 0;
     }
 
-    public Long segment_load_i64_16s(Node node, Handle handle) {
-
+    public long segment_load_i64_16s(Node node, Handle handle) {
+        return 0;
     }
 
-    public Long segment_load_i64_16u(Node node, Handle handle) {
-
+    public long segment_load_i64_16u(Node node, Handle handle) {
+        return 0;
     }
 
-    public Long segment_load_i64_32s(Node node, Handle handle) {
-
+    public long segment_load_i64_32s(Node node, Handle handle) {
+        return 0;
     }
 
-    public Long segment_load_i64_32u(Node node, Handle handle){
-
+    public long segment_load_i64_32u(Node node, Handle handle) {
+        return 0;
     }
 
     public boolean segment_store_i32(Node node, Handle handle, int value) {
-        if ( ! handle.isValid() || ! segmentKeys.containsKey(handle)) {
+        if (!handle.isValid() || !segmentKeys.contains(handle)) {
             return false;
         }
 
@@ -169,39 +171,38 @@ public class SegmentWasmMemory {
     }
 
     public boolean segment_store_i64(Node node, Handle handle, long value) {
-
+        return false;
     }
 
     public boolean segment_store_f32(Node node, Handle handle, float value) {
-
+        return false;
     }
 
     public boolean segment_store_f64(Node node, Handle handle, double value) {
-
+        return false;
     }
 
     public boolean segment_store_i32_8(Node node, Handle handle, byte value) {
-
+        return false;
     }
 
     public boolean segment_store_i32_16(Node node, Handle handle, short value) {
-
+        return false;
     }
 
     public boolean segment_store_i64_8(Node node, Handle handle, byte value) {
-
+        return false;
     }
 
     public boolean segment_store_i64_16(Node node, Handle handle, short value) {
-
+        return false;
     }
 
     public boolean segment_store_i64_32(Node node, Handle handle, int value) {
-
+        return false;
     }
 
     public enum SegmentType {
-        DATA_SEGMENT,
-        HANDLE_SEGMENT
+        DATA_SEGMENT, HANDLE_SEGMENT
     }
 }

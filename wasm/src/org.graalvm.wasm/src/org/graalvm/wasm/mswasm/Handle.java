@@ -22,18 +22,17 @@ public class Handle {
 
     @Override
     public String toString() {
-        return "Handle: (" + base + ", " + offset + ", " + bound + ", " + isCorrupted + ")"; 
+        return "Handle: (" + base + ", " + offset + ", " + bound + ", " + isCorrupted + ")";
     }
 
     @Override
     public boolean equals(Object obj) {
-        if ( ! (obj instanceof Handle)) {
+        if (!(obj instanceof Handle)) {
             return false;
         }
 
         Handle handle = (Handle) obj;
-        return handle.getOffset() == offset && handle.getBase() == base && 
-               handle.getBound() == bound;
+        return handle.getOffset() == offset && handle.getBase() == base && handle.getBound() == bound;
     }
 
     @Override
@@ -63,14 +62,14 @@ public class Handle {
     }
 
     public boolean isValid() {
-        return ! isCorrupted && base + offset <= bound;
+        return !isCorrupted && base + offset <= bound;
     }
 
     public long[] toLongs() {
         long[] longHandle = new long[2];
 
-        longHandle[0] = ((long)base << 32) | ((long)offset);
-        longHandle[1] = ((long)bound << 32) | ((long)isCorrupted);
+        longHandle[0] = ((long) base << 32) | ((long) offset);
+        longHandle[1] = ((long) bound << 32) | ((long) (isCorrupted ? 1 : 0));
 
         return longHandle;
     }
@@ -79,15 +78,14 @@ public class Handle {
         int base = (int) (values[0] >> 32);
         int offset = (int) values[0];
         int bound = (int) (values[1] >> 32);
-        boolean isCorrupted = (boolean) values[1];
+        boolean isCorrupted = values[1] == 1;
 
         return new Handle(base, offset, bound, isCorrupted);
     }
 
     public Handle slice(int baseShift, int boundShift) {
         // TODO: Defensive coding on baseShift, boundShift
-        Handle result = new Handle(base + baseShift, handle.getOffset(),
-                                   bound - boundShift, false);
+        Handle result = new Handle(base + baseShift, offset, bound - boundShift, false);
         return result;
     }
 

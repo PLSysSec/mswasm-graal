@@ -65,8 +65,7 @@
           local.get 2
           i32.const -32
           handle.add ;; third arg = third arg - 32
-          i32.const 0 ;; what we really want is the new offset, but we don't have a way to get it
-                      ;; so we're just going to hardcode. Add handle.get_offset?
+          handle.offset ;; get new offset
           i32.eqz ;; ask whether third arg = zero after decrementing
           br_if 3 (;@0;) ;; if true, branch to @3
           drop ;; drop the random zero if we didn't branch
