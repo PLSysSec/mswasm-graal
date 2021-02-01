@@ -1,3 +1,5 @@
+# An Overview Of What We've Done
+
 ## Their linear memory implementation:
 [*memory/UnsafeWasmMemory.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/memory/UnsafeWasmMemory.java)
 
@@ -79,14 +81,14 @@ than using a HashMap to store everything.
 -   Handles: convert each into a pair of longs: one containing base +
     offset, other contains the bound + isCorrupted
 
-## [*The haskell interpreter*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/mswasm/SegmentMemory.java)
+## [*The Haskell interpreter*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/mswasm/SegmentMemory.java)
 
 Hijacks an existing tool to prototype, mainly used now to convert from
 .wat (WebAssembly Text) to .wasm (WebAssembly but actual) using our
 defined opcodes. It's much easier to feed bytecode to GraalVM, we
 weren't able to find an easy way to go from WasmText to bytecode.
 
-## The Opcodes we have
+## The opcodes we have
 
 [*constants/Instructions.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/constants/Instructions.java)
 
