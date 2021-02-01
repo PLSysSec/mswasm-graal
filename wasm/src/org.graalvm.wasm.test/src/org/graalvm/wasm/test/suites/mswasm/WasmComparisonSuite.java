@@ -34,7 +34,11 @@ public class WasmComparisonSuite extends WasmSuiteBase {
             WasmCase.create("ADD64_1", WasmCase.expected(0L), parseWasmFile(FOLDER_PATH + "wasm_add64_1.wasm"), null,
                     opts),
             WasmCase.create("FREESEGMENT_ADD", WasmCase.expected(24),
-                    parseWasmFile(FOLDER_PATH + "wasm_freesegment_add.wasm"), null, opts), };
+                    parseWasmFile(FOLDER_PATH + "wasm_freesegment_add.wasm"), null, opts),
+
+            // new year, new tests
+            WasmCase.create("WASM_LOOP", WasmCase.expected(12000),
+                    parseWasmFile(FOLDER_PATH + "wasm_loop.wasm"), null, opts), };
 
     private byte[] parseWasmFile(String fileName) {
         try {
