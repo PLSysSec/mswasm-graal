@@ -88,21 +88,12 @@ Hijacks an existing tool to prototype, mainly used now to convert from
 defined opcodes. It's much easier to feed bytecode to GraalVM, we
 weren't able to find an easy way to go from WasmText to bytecode.
 
-<<<<<<< HEAD
-The Opcodes we have:
-
-wasm \> src \> org.graalvm.wasm \> src \> org \> graalvm \> wasm \>
-constants \> Instructions.java
-
-Instruction       |Opcode  |Type                         |Explanation
-=======
 ## The opcodes we have
 
 [*constants/Instructions.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/constants/Instructions.java)
 
 
 Instruction           |Opcode      |Type                             |Explanation
->>>>>>> a0d89ba765a60d07d1e3c25a8ac5c248acf42f92
 ----------------------|------------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------
 I32_SEGMENT_LOAD      |0xF0        |\[handle\] → \[i32\]             |Pushes the i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
 I64_SEGMENT_LOAD      |0xF1        |\[handle\] → \[i64\]             |Pushes the i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
@@ -116,7 +107,4 @@ HANDLE_SEGMENT_STORE  |0xF8        |\[handle handle\] → \[\]         |Stores t
 HANDLE_ADD            |0xF9        |\[i32 handle\] → \[handle\]      |Adds the provided i32 to the handle's offset and returns the result.
 HANDLE_SUB            |0xFA        |\[i32 handle\] → \[handle\]      |Subtracts the provided i32 from the handle's offset and returns the result.
 HANDLE_OFFSET         |0xFB        |\[handle\] → \[i32\]             |Returns the provided handle's offset.
-<<<<<<< HEAD
-=======
 ---------------------- ------------ --------------------------------- ------------------------------------------------------------------------------------------------------------------------------------
->>>>>>> a0d89ba765a60d07d1e3c25a8ac5c248acf42f92
