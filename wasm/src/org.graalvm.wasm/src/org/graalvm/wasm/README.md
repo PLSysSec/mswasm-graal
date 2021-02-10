@@ -101,20 +101,17 @@ The Opcodes we have:
 wasm \> src \> org.graalvm.wasm \> src \> org \> graalvm \> wasm \>
 constants \> Instructions.java
 
-  ---------------------- ------------ --------------------------------- ------------------------------------------------------------------------------------------------------------------------------------
-  **Instruction**        **Opcode**   **Type**                          **Explanation**
-  I32_SEGMENT_LOAD       0xF0         \[handle\] → \[i32\]              Pushes the i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
-  I64_SEGMENT_LOAD       0xF1         \[handle\] → \[i64\]              Pushes the i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
-  I32_SEGMENT_STORE      0xF2         \[handle i32\] → \[\]             Stores the provided int in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
-  I64_SEGMENT_STORE      0xF3         \[handle i64\] → \[\]             Stores the provided long in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
-  NEW_SEGMENT            0xF4         \[i32\] → \[handle\]              Allocates segment of provided byte size, returns handle that points to it.
-  FREE_SEGMENT           0xF5         \[handle\] → \[\]                 Deallocates segment pointed to by handle.
-  SEGMENT_SLICE          0xF6         \[handle i32 i32\] → \[handle\]   Takes handle to be sliced, new base, new bound.
-  HANDLE_SEGMENT_LOAD    0xF7         \[handle\] → \[handle\]           Pushes the handle at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
-  HANDLE_SEGMENT_STORE   0xF8         \[handle handle\] → \[\]          Stores the provided handle in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
-  HANDLE_ADD             0xF9         \[i32 handle\] → \[handle\]       Adds the provided i32 to the handle's offset and returns the result.
-  HANDLE_SUB             0xFA         \[i32 handle\] → \[handle\]       Subtracts the provided i32 from the handle's offset and returns the result.
-  HANDLE_OFFSET          0xFB         \[handle\] → \[i32\]              Returns the provided handle's offset.
-  ---------------------- ------------ --------------------------------- ------------------------------------------------------------------------------------------------------------------------------------
-
-\
+Instruction       |Opcode  |Type                         |Explanation
+----------------------|------------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------
+I32_SEGMENT_LOAD      |0xF0        |\[handle\] → \[i32\]             |Pushes the i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD      |0xF1        |\[handle\] → \[i64\]             |Pushes the i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_STORE     |0xF2        |\[handle i32\] → \[\]            |Stores the provided int in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_STORE     |0xF3        |\[handle i64\] → \[\]            |Stores the provided long in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+NEW_SEGMENT           |0xF4        |\[i32\] → \[handle\]             |Allocates segment of provided byte size, returns handle that points to it.
+FREE_SEGMENT          |0xF5        |\[handle\] → \[\]                |Deallocates segment pointed to by handle.
+SEGMENT_SLICE         |0xF6        |\[handle i32 i32\] → \[handle\]  |Takes handle to be sliced, new base, new bound.
+HANDLE_SEGMENT_LOAD   |0xF7        |\[handle\] → \[handle\]          |Pushes the handle at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+HANDLE_SEGMENT_STORE  |0xF8        |\[handle handle\] → \[\]         |Stores the provided handle in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+HANDLE_ADD            |0xF9        |\[i32 handle\] → \[handle\]      |Adds the provided i32 to the handle's offset and returns the result.
+HANDLE_SUB            |0xFA        |\[i32 handle\] → \[handle\]      |Subtracts the provided i32 from the handle's offset and returns the result.
+HANDLE_OFFSET         |0xFB        |\[handle\] → \[i32\]             |Returns the provided handle's offset.
