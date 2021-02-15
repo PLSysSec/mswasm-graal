@@ -2475,13 +2475,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // MSWasm
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
-                    Object value = context.segmentMemory().loadFromSegment(x);
+                    int result = x.load_i32(this);
 
-                    if (value == null) { // load failed
-                        throw new WasmTrap(this, "i32.segment_load failed due to invalid handle: " + x);
-                    }
-
-                    int result = ((Integer) value).intValue();
                     pushInt(frame, stackPointer, result);
                     stackPointer++;
                     trace("push i32.segment_load " + x + " --> %d [i32]", result);
@@ -2494,13 +2489,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // MSWasm
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
-                    Object value = context.segmentMemory().loadFromSegment(x);
+                    long result = x.load_i64(this);
 
-                    if (value == null) { // load failed
-                        throw new WasmTrap(this, "i64.segment_load failed due to invalid handle: " + x);
-                    }
-
-                    long result = ((Long) value).longValue();
                     push(frame, stackPointer, result);
                     stackPointer++;
                     trace("push i64.segment_load " + x + " --> %d [i64]", result);
@@ -2515,16 +2505,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     int value = popInt(frame, stackPointer);
                     stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    String init = "i32.segment_store " + value + ", " + key;
+                    // String init = "i32.segment_store " + value + ", " + key;
 
-                    boolean success = context.segmentMemory().storeToSegment(key, new Integer(value));
+                    key.store_i32(this, value);
 
                     // mswasmErr += "i32.segment_store " + value + " to " + key + " --> " + success
                     // + "\n";
-
-                    if (!success) {
-                        throw new WasmTrap(this, "i32.segment_store failed: (" + key + ", " + value + ")");
-                    }
 
                     break;
                 }
@@ -2534,21 +2520,20 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     long value = pop(frame, stackPointer);
                     stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    boolean success = context.segmentMemory().storeToSegment(key, new Long(value));
+                    
+                    key.store_i64(this, value);
 
                     // mswasmErr += "i64.segment_store " + value + " to " + key + " --> " + success
                     // + "\n";
 
-                    if (!success) {
-                        throw new WasmTrap(this, "i64.segment_store failed: (" + key + ", " + value + ")");
-                    }
                     break;
                 }
                 case NEW_SEGMENT: {
                     // MSWasm
                     stackPointer--;
                     int segSize = popInt(frame, stackPointer);
-                    Handle result = context.segmentMemory().newSegment(segSize);
+
+                    Handle result = new Handle(segSize);
                     pushHandle(frame, stackPointer, result);
 
                     // mswasmErr += "newSegment " + segSize + " --> " + result + "\n";
@@ -2561,13 +2546,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // MSWasm
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
-                    boolean success = context.segmentMemory().freeSegment(handle);
+                    handle.free(this);
 
                     // mswasmErr += "freeSegment " + handle + " --> " + success + "\n";
 
-                    if (!success) {
-                        throw new WasmTrap(this, "free_segment failed: " + handle + " does not exist");
-                    }
                     break;
                 }
                 case SEGMENT_SLICE: {
@@ -2579,7 +2561,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
 
-                    Handle result = context.segmentMemory().sliceSegment(handle, base, bound);
+                    Handle result = handle.slice(base, bound);
 
                     // mswasmErr += "segment_slice " + handle + ", bound " + bound + ", base " + "
                     // --> " + result + "\n";
@@ -2591,17 +2573,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 }
                 case HANDLE_SEGMENT_LOAD: {
                     // MSWasm
+                    // TODO
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
-                    Object value = context.segmentMemory().loadFromSegment(x);
-
-                    if (value == null) { // load failed
-                        throw new WasmTrap(this, "handle.segment_load failed due to invalid handle: " + x);
-                    } else if (!(value instanceof Handle)) {
-                        throw new WasmTrap(this, "handle.segment_load failed due to non-handle segment");
-                    }
-
-                    Handle result = (Handle) value;
+                    
+                    // placeholder method
+                    Handle result = x.load_handle(this);
                     pushHandle(frame, stackPointer, result);
 
                     // mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
@@ -2612,18 +2589,18 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 }
                 case HANDLE_SEGMENT_STORE: {
                     // MSWasm
+                    // TODO
                     stackPointer--;
                     Handle value = popHandle(frame, stackPointer);
                     stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    boolean success = context.segmentMemory().storeToSegment(key, new Handle(value));
+
+                    // placeholder
+                    key.store_handle(this, value);
 
                     // mswasmErr += "handle.segment_store " + value + " to " + key + " --> " +
                     // success + "\n";
 
-                    if (!success) {
-                        throw new WasmTrap(this, "handle.segment_store failed: (" + key + ", " + value + ")");
-                    }
                     break;
                 }
                 case HANDLE_ADD: {
@@ -2631,9 +2608,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
                     stackPointer--;
-                    int shift = popInt(frame, stackPointer);
+                    int add_offset = popInt(frame, stackPointer);
 
-                    Handle result = context.segmentMemory().shiftSegment(handle, shift);
+                    Handle result = handle.add(add_offset);
                     pushHandle(frame, stackPointer, result);
 
                     // mswasmErr += "handle.add " + handle + " + shift " + shift + " --> " + result;
@@ -2647,9 +2624,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
                     stackPointer--;
-                    int shift = popInt(frame, stackPointer);
+                    int sub_offset = popInt(frame, stackPointer);
 
-                    Handle result = context.segmentMemory().shiftSegment(handle, -1 * shift);
+                    Handle result = handle.sub(sub_offset);
                     pushHandle(frame, stackPointer, result);
 
                     // mswasmErr += "handle.sub " + handle + " - shift " + shift + " --> " + result;

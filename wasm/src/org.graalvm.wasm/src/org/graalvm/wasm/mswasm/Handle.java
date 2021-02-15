@@ -122,7 +122,7 @@ public class Handle {
         this.offset -= subOffset;
     }
 
-    /**
+    /*
      _________________________________________
     / Hi there! I see that you'd like to load \
     | data from a Handle. Would you like help |
@@ -139,13 +139,13 @@ public class Handle {
         || ||
         |\_/|
         \___/
-    **/
+    */
 
     @Override
-    public long load_i32(Node node) {
+    public int load_i32(Node node) {
         WasmTracing.trace("load.i32 address = %d", startAddress());
         validateHandle(node, 4);
-        int value = unsafe.getLong(startAddress());
+        int value = this.unsafe.getInt(startAddress());
         WasmTracing.trace("load.i32 value = 0x%08X (%d)", value, value);
         return value;
     }
@@ -267,6 +267,13 @@ public class Handle {
         return value;
     }
 
+    public Handle load_handle(Node node) {
+        // TODO implement properly
+        WasmTracing.trace("load.handle address = %d", startAddress());
+        validateHandle(node, 4);
+        return this;
+    }
+
     @Override
     public void store_i32(Node node, int value) {
         WasmTracing.trace("store.i32 address = %d, value = 0x%08X (%d)", startAddress(), value, value);
@@ -329,7 +336,13 @@ public class Handle {
         validateHandle(node, 4);
         unsafe.putInt(startAddress(), value);
     }
-    // Checkstyle: resume
+
+    public void store_handle(Node node, Handle value) {
+        // TODO implement properly
+        WasmTracing.trace("store.handle address = %d", startAddress());
+        validateHandle(node, 4);
+        // not implemented; do nothing
+    }
 
 
     // @Override

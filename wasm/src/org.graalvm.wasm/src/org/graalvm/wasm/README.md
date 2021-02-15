@@ -1,3 +1,16 @@
+# Status
+
+## Currently Working On
+- Removing Handle->Segment map and instead accessing segment from handle itself
+
+## TODO
+- Handling use-after-frees/duplicate handles/slices (how do we know whether the memory is allocated?)
+- Loading and storing handles
+
+## Finished
+- Handle.java reimplemented on a basic level to hold addresses to segments
+
+
 # An Overview Of What We've Done
 
 ## Their linear memory implementation:
