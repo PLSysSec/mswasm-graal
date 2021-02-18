@@ -1,5 +1,13 @@
 package org.graalvm.wasm.mswasm;
 
+import java.lang.reflect.Field;
+
+import com.oracle.truffle.api.CompilerDirectives;
+import sun.misc.Unsafe;
+import com.oracle.truffle.api.nodes.Node;
+import org.graalvm.wasm.exception.WasmTrap;
+import org.graalvm.wasm.WasmTracing;
+
 public class Handle {
     private final Unsafe unsafe;
 
@@ -12,8 +20,15 @@ public class Handle {
     private boolean isCorrupted;
     private final boolean isSlice;
 
-    // Default constructor
-    public Handle() {}
+    // Manual constructor used to generate slices
+    private Handle(Unsafe unsafe, long base, long bound, long offset, boolean isCorrupted, boolean isSlice) {
+        this.unsafe = unsafe;
+        this.base = base;
+        this.bound = bound;
+        this.offset = offset;
+        this.isCorrupted = isCorrupted;
+        this.isSlice = isSlice;
+    }
 
     /*
      * Allocate new segment
@@ -32,7 +47,7 @@ public class Handle {
         this.base = this.unsafe.allocateMemory(byteSize); // start of allocation
         this.offset = 0; // where we begin looking at memory
         this.bound = this.base + byteSize;
-        this.unsafe.setMemory(startAddress, byteSize, (byte) 0);
+        this.unsafe.setMemory(startAddress(), byteSize, (byte) 0);
 
         // set flags
         this.isCorrupted = false;
@@ -49,17 +64,17 @@ public class Handle {
         this.isSlice = other.isSlice;
     }
 
-    @Override
+    
     public String toString() {
         return "Handle: (" + this.base + ", " + this.offset + ", " + this.bound + ", "
                 + this.isCorrupted + ", " + this.isSlice + ")";
     }
 
     public int getOffset() {
-        return this.offset;
+        return (int)this.offset;
     }
 
-    @Override
+    
     public void validateHandle(Node node, long accessSize) {
         WasmTracing.trace("validating handle at 0x%016X (%d)", startAddress(), startAddress());
         if (this.isCorrupted) {
@@ -104,13 +119,10 @@ public class Handle {
 
     // Handle operations
     public Handle slice(long sliceBase, long sliceBound) {
-        Handle result = new Handle();
-        result.unsafe = this.unsafe;
-        result.base = Math.max(this.base, sliceBase);
-        result.offset = 0;
-        result.bound = Math.max(this.bound, sliceBound);
-        result.isCorrupted = false;
-        result.isSlice = true;
+        long resultBase = Math.max(this.base, sliceBase);
+        long resultBound = Math.max(this.bound, sliceBound);
+
+        Handle result = new Handle(this.unsafe, resultBase, resultBound, 0, false, true);
         return result;
     }
 
@@ -141,7 +153,7 @@ public class Handle {
         \___/
     */
 
-    @Override
+    
     public int load_i32(Node node) {
         WasmTracing.trace("load.i32 address = %d", startAddress());
         validateHandle(node, 4);
@@ -150,16 +162,16 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public long load_i64(Node node) {
         WasmTracing.trace("load.i64 address = %d", startAddress());
         validateHandle(node, 8);
-        int value = this.unsafe.getLong(startAddress());
+        long value = this.unsafe.getLong(startAddress());
         WasmTracing.trace("load.i64 value = 0x%08X (%d)", value, value);
         return value;
     }
 
-    @Override
+    
     public float load_f32(Node node) {
         WasmTracing.trace("load.f32 address = %d", startAddress());
         validateHandle(node, 4);
@@ -168,7 +180,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public double load_f64(Node node) {
         WasmTracing.trace("load.f64 address = %d", startAddress());
         validateHandle(node, 8);
@@ -177,7 +189,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public int load_i32_8s(Node node) {
         WasmTracing.trace("load.i32_8s address = %d", startAddress());
         validateHandle(node, 1);
@@ -186,7 +198,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public int load_i32_8u(Node node) {
         WasmTracing.trace("load.i32_8u address = %d", startAddress());
         validateHandle(node, 1);
@@ -195,7 +207,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public int load_i32_16s(Node node) {
         WasmTracing.trace("load.i32_16s address = %d", startAddress());
         validateHandle(node, 2);
@@ -204,7 +216,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public int load_i32_16u(Node node) {
         WasmTracing.trace("load.i32_16u address = %d", startAddress() );
         validateHandle(node, 2);
@@ -213,7 +225,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public long load_i64_8s(Node node) {
         WasmTracing.trace("load.i64_8s address = %d", startAddress());
         validateHandle(node, 1);
@@ -222,7 +234,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public long load_i64_8u(Node node) {
         WasmTracing.trace("load.i64_8u address = %d", startAddress());
         validateHandle(node, 1);
@@ -231,7 +243,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public long load_i64_16s(Node node) {
         WasmTracing.trace("load.i64_16s address = %d", startAddress());
         validateHandle(node, 2);
@@ -240,7 +252,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public long load_i64_16u(Node node) {
         WasmTracing.trace("load.i64_16u address = %d", startAddress());
         validateHandle(node, 2);
@@ -249,7 +261,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public long load_i64_32s(Node node) {
         WasmTracing.trace("load.i64_32s address = %d", startAddress());
         validateHandle(node, 4);
@@ -258,7 +270,7 @@ public class Handle {
         return value;
     }
 
-    @Override
+    
     public long load_i64_32u(Node node) {
         WasmTracing.trace("load.i64_32u address = %d", startAddress());
         validateHandle(node, 4);
@@ -274,63 +286,63 @@ public class Handle {
         return this;
     }
 
-    @Override
+    
     public void store_i32(Node node, int value) {
         WasmTracing.trace("store.i32 address = %d, value = 0x%08X (%d)", startAddress(), value, value);
         validateHandle(node, 4);
         unsafe.putInt(startAddress(), value);
     }
 
-    @Override
+    
     public void store_i64(Node node, long value) {
         WasmTracing.trace("store.i64 address = %d, value = 0x%016X (%d)", startAddress(), value, value);
         validateHandle(node, 8);
         unsafe.putLong(startAddress(), value);
     }
 
-    @Override
+    
     public void store_f32(Node node, float value) {
         WasmTracing.trace("store.f32 address = %d, value = 0x%08X (%f)", startAddress(), Float.floatToRawIntBits(value), value);
         validateHandle(node, 4);
         unsafe.putFloat(startAddress(), value);
     }
 
-    @Override
+    
     public void store_f64(Node node, double value) {
         WasmTracing.trace("store.f64 address = %d, value = 0x%016X (%f)", startAddress(), Double.doubleToRawLongBits(value), value);
         validateHandle(node, 8);
         unsafe.putDouble(startAddress(), value);
     }
 
-    @Override
+    
     public void store_i32_8(Node node, byte value) {
         WasmTracing.trace("store.i32_8 address = %d, value = 0x%02X (%d)", startAddress(), value, value);
         validateHandle(node, 1);
         unsafe.putByte(startAddress(), value);
     }
 
-    @Override
+    
     public void store_i32_16(Node node, short value) {
         WasmTracing.trace("store.i32_16 address = %d, value = 0x%04X (%d)", startAddress(), value, value);
         validateHandle(node, 2);
         unsafe.putShort(startAddress(), value);
     }
 
-    @Override
+    
     public void store_i64_8(Node node, byte value) {
         WasmTracing.trace("store.i64_8 address = %d, value = 0x%02X (%d)", startAddress(), value, value);
         validateHandle(node, 1);
         unsafe.putByte(startAddress(), value);
     }
 
-    @Override
+    
     public void store_i64_16(Node node, short value) {
         WasmTracing.trace("store.i64_16 address = %d, value = 0x%04X (%d)", startAddress(), value, value);
         validateHandle(node, 2);
         unsafe.putShort(startAddress(), value);
     }
 
-    @Override
+    
     public void store_i64_32(Node node, int value) {
         WasmTracing.trace("store.i64_32 address = %d, value = 0x%08X (%d)", startAddress(), value, value);
         validateHandle(node, 4);
@@ -345,7 +357,7 @@ public class Handle {
     }
 
 
-    // @Override
+    // 
     // public boolean equals(Object obj) {
     // if (!(obj instanceof Handle)) {
     // return false;
@@ -356,7 +368,7 @@ public class Handle {
     // handle.getBound() == bound;
     // }
 
-    // @Override
+    // 
     // public int hashCode() {
     // String eq = "" + base + " " + offset + " " + bound;
     // return eq.hashCode();

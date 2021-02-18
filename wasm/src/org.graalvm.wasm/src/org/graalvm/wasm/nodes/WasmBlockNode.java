@@ -254,7 +254,7 @@ import org.graalvm.wasm.exception.WasmTrap;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.memory.WasmMemoryException;
 import org.graalvm.wasm.mswasm.Handle; // MSWasm
-import org.graalvm.wasm.mswasm.SegmentMemory;
+// import org.graalvm.wasm.mswasm.SegmentMemory;
 
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
@@ -2610,13 +2610,14 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     int add_offset = popInt(frame, stackPointer);
 
-                    Handle result = handle.add(add_offset);
+                    Handle result = new Handle(handle);
+                    result.add(add_offset);
                     pushHandle(frame, stackPointer, result);
 
                     // mswasmErr += "handle.add " + handle + " + shift " + shift + " --> " + result;
 
                     stackPointer++;
-                    trace("push handle.add %d [i32] ; " + handle + " --> " + result, shift);
+                    trace("push handle.add %d [i32] ; " + handle + " --> " + result, add_offset);
                     break;
                 }
                 case HANDLE_SUB: {
@@ -2626,13 +2627,14 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     int sub_offset = popInt(frame, stackPointer);
 
-                    Handle result = handle.sub(sub_offset);
+                    Handle result = new Handle(handle);
+                    result.sub(sub_offset);
                     pushHandle(frame, stackPointer, result);
 
                     // mswasmErr += "handle.sub " + handle + " - shift " + shift + " --> " + result;
 
                     stackPointer++;
-                    trace("push handle.sub %d [i32] ; " + handle + " --> " + result, shift);
+                    trace("push handle.sub %d [i32] ; " + handle + " --> " + result, sub_offset);
                     break;
                 }
                 case HANDLE_OFFSET: {
