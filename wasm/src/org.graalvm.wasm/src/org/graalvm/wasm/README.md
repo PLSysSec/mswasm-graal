@@ -3,6 +3,9 @@
 ## Currently Working On
 - Removing Handle->Segment map and instead accessing segment from handle itself
 
+## To Discuss
+- Regarding Handle -> Key map, what happens if we have two handles with the exact same values, should they be treated the same in the map?
+
 ## TODO
 - Handling use-after-frees/duplicate handles/slices (how do we know whether the memory is allocated?)
 - Loading and storing handles

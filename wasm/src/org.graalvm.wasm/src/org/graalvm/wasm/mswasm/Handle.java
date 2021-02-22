@@ -1,6 +1,7 @@
 package org.graalvm.wasm.mswasm;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import sun.misc.Unsafe;
@@ -10,6 +11,9 @@ import org.graalvm.wasm.WasmTracing;
 
 public class Handle {
     private final Unsafe unsafe;
+
+    // static mapping table for Handle keys
+    private static HashMap<Integer, Handle> keysToHandles = new HashMap<>();
 
     // memory access validation
     private final long base;
@@ -64,6 +68,16 @@ public class Handle {
         this.isSlice = other.isSlice;
     }
 
+    /**
+     * Generate random key for the given handle. Returns key in
+     *      (Integer.MIN_VALUE, Integer.MAX_VALUE)
+     */
+    public static int generateKey(Handle handle) {
+        double rand = Math.random();
+        double signRand = Math.random();
+        int unsKey = (int) (Integer.MAX_VALUE * rand);
+        return signRand >= 0.5 ? unsKey : -1 * unsKey;
+    }    
     
     public String toString() {
         return "Handle: (" + this.base + ", " + this.offset + ", " + this.bound + ", "
@@ -106,9 +120,12 @@ public class Handle {
         return this.bound - this.base;
     }
 
-    // free memory
+    /**
+     * Free memory associated with this handle. Slices cannot be freed; throw a trap
+     * if this handle is a slice.
+     */
     public void free(Node node) {
-        if (this.isSlice) {
+        if ( ! this.isSlice) {
             String message = "Slices of handles can't be freed";
             throw new WasmTrap(node, message);
         }
@@ -279,12 +296,30 @@ public class Handle {
         return value;
     }
 
+    /**
+     * Load a key corresponding to a handle. Use internal mapping to check whether that
+     * handle is valid
+     */
     public Handle load_handle(Node node) {
-        // TODO implement properly
         WasmTracing.trace("load.handle address = %d", startAddress());
         validateHandle(node, 4);
-        return this;
+
+        // load key at address
+        int key = this.unsafe.getInt(startAddress());
+        WasmTracing.trace("load.handle key = 0x%08X (%d)", value, value);
+
+        // validate key
+        if ( ! keysToHandles.containsKey(key)) {
+            // invalid key; throw a trap
+            // TODO do we want to return a corrupted handle instead?
+            String message = "Corrupted key does not reference a valid handle";
+            throw new WasmTrap(node, message);
+        }
+
+        // return valid handle
+        return keysToHandles.get(key);
     }
+
 
     
     public void store_i32(Node node, int value) {
@@ -350,10 +385,14 @@ public class Handle {
     }
 
     public void store_handle(Node node, Handle value) {
-        // TODO implement properly
         WasmTracing.trace("store.handle address = %d", startAddress());
         validateHandle(node, 4);
-        // not implemented; do nothing
+
+        // add handle to key table before storing
+        int key = generateKey(this);
+        keysToHandles.put(key, this);
+        
+        unsafe.putInt(startAddress(), key);
     }
 
 

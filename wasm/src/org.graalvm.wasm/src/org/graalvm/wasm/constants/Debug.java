@@ -41,7 +41,8 @@
 package org.graalvm.wasm.constants;
 
 public final class Debug {
-    public static final boolean TRACING = false;
+    // TODO: turn off for benchmarks
+    public static final boolean TRACING = true;
 
     private Debug() {
     }
