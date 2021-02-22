@@ -125,7 +125,7 @@ public class Handle {
      * if this handle is a slice.
      */
     public void free(Node node) {
-        if ( ! this.isSlice) {
+        if (this.isSlice) {
             String message = "Slices of handles can't be freed";
             throw new WasmTrap(node, message);
         }
@@ -306,7 +306,7 @@ public class Handle {
 
         // load key at address
         int key = this.unsafe.getInt(startAddress());
-        WasmTracing.trace("load.handle key = 0x%08X (%d)", value, value);
+        WasmTracing.trace("load.handle key = 0x%08X (%d)", key, key);
 
         // validate key
         if ( ! keysToHandles.containsKey(key)) {
