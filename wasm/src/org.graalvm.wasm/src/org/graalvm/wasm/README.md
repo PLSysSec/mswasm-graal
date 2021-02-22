@@ -2,13 +2,10 @@
 
 ## Currently Working On
 - Removing Handle->Segment map and instead accessing segment from handle itself
-
-## To Discuss
-- Regarding Handle -> Key map, what happens if we have two handles with the exact same values, should they be treated the same in the map?
+- Loading and storing handles
 
 ## TODO
 - Handling use-after-frees/duplicate handles/slices (how do we know whether the memory is allocated?)
-- Loading and storing handles
 
 ## Finished
 - Handle.java reimplemented on a basic level to hold addresses to segments
@@ -53,6 +50,16 @@ Added opcodes at
 [*constants/Instructions.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/constants/Instructions.java)
 
 ### stores & loads
+
+Update 2/22/2021
+- static mapping table for Handle keys
+- set isCorrupted to be true when we free something
+- Load: loads a key corresponding to a handle, uses internal mapping to check whether handle is valid or not
+    - load key at address
+    - validate key: if invalid, throw a trap (TODO: do we want to return a corrupted handle instead?)
+    - return valid handle
+- Store:
+    -  add handle to key table before storing
 
 - We store and load by quite literally just getting it from the map, or 
   putting it in the map
