@@ -11,6 +11,9 @@ import org.graalvm.wasm.WasmTracing;
 
 public class Handle {
     private final Unsafe unsafe;
+    
+    // segment model used to check if memory is free
+    private Segment segment;
 
     // static mapping table for Handle keys
     private static HashMap<Integer, Handle> keysToHandles = new HashMap<>();
@@ -25,11 +28,15 @@ public class Handle {
     private final boolean isSlice;
 
     // Manual constructor used to generate slices
-    private Handle(Unsafe unsafe, long base, long bound, long offset, boolean isCorrupted, boolean isSlice) {
+    private Handle(Unsafe unsafe, Segment segment, long base, long bound, long offset, 
+                   boolean isCorrupted, boolean isSlice) {
         this.unsafe = unsafe;
+        this.segment = segment;
+
         this.base = base;
         this.bound = bound;
         this.offset = offset;
+
         this.isCorrupted = isCorrupted;
         this.isSlice = isSlice;
     }
@@ -47,6 +54,9 @@ public class Handle {
             throw new RuntimeException(e);
         }
 
+        // define new segment
+        this.segment = new Segment();
+
         // allocate memory
         this.base = this.unsafe.allocateMemory(byteSize); // start of allocation
         this.offset = 0; // where we begin looking at memory
@@ -61,6 +71,8 @@ public class Handle {
     // Duplicate handle
     public Handle(Handle other) {
         this.unsafe = other.unsafe;
+        this.segment = other.segment;
+
         this.base = other.base;
         this.offset = other.offset;
         this.bound = other.bound;
@@ -93,22 +105,34 @@ public class Handle {
         WasmTracing.trace("validating handle at 0x%016X (%d)", startAddress(), startAddress());
         if (this.isCorrupted) {
             trapCorrupted(node);
-        } else if (this.offset < 0 || startAddress() + accessSize > this.bound) {
+        } else if (this.segment.isFree()) {
+            trapFreed(node);
+        } else if (this.segment.isFree() || this.offset < 0 || startAddress() + accessSize > this.bound) {
             trapOutOfBounds(node, accessSize);
         }
     }
 
     @CompilerDirectives.TruffleBoundary
     private void trapOutOfBounds(Node node, long accessSize) {
-        String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds (memory size %d bytes).",
-                        accessSize, startAddress(), startAddress(), byteSize());
+        // String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds (memory size %d bytes).",
+        //                 accessSize, startAddress(), startAddress(), byteSize());
+        String message = "Segment memory access is out-of-bounds";
         throw new WasmTrap(node, message);
     }
 
     @CompilerDirectives.TruffleBoundary
     private void trapCorrupted(Node node) {
-        String message = String.format("Segment memory access at address 0x%016X (%d) is corrupted.",
-                        startAddress(), startAddress());
+        // String message = String.format("Segment memory access at address 0x%016X (%d) is corrupted.",
+        //                 startAddress(), startAddress());
+        String message = "Segment memory pointer is corrupted";
+        throw new WasmTrap(node, message);
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private void trapFreed(Node node) {
+        // String message = String.format("Segment memory at address 0x%016X (%d) is not allocated.",
+        //                 startAddress(), startAddress());
+        String message = "Segment memory is not allocated";
         throw new WasmTrap(node, message);
     }
 
@@ -128,10 +152,12 @@ public class Handle {
         if (this.isSlice) {
             String message = "Slices of handles can't be freed";
             throw new WasmTrap(node, message);
+        } else if (this.segment.isFree()) {
+            trapFreed(node);
         }
 
         unsafe.freeMemory(this.base);
-        this.isCorrupted = true;
+        this.segment.free();
     }
 
     // Handle operations
@@ -139,7 +165,7 @@ public class Handle {
         long resultBase = Math.max(this.base, sliceBase);
         long resultBound = Math.max(this.bound, sliceBound);
 
-        Handle result = new Handle(this.unsafe, resultBase, resultBound, 0, false, true);
+        Handle result = new Handle(this.unsafe, this.segment, resultBase, resultBound, 0, false, true);
         return result;
     }
 

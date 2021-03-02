@@ -1,14 +1,19 @@
 # Status
 
 ## Currently Working On
-- Removing Handle->Segment map and instead accessing segment from handle itself
-- Loading and storing handles
+- Handling use-after-frees/duplicate handles/slices (how do we know whether the memory is allocated?)
+- FREESEGMENT_TRAP causes a double free Java error
 
 ## TODO
-- Handling use-after-frees/duplicate handles/slices (how do we know whether the memory is allocated?)
+- Remove generic error message for double-free
 
 ## Finished
 - Handle.java reimplemented on a basic level to hold addresses to segments
+- Loading and storing handles (might still need some debugging)
+- Removing Handle->Segment map and instead accessing segment from handle itself
+
+
+
 
 
 # An Overview Of What We've Done
