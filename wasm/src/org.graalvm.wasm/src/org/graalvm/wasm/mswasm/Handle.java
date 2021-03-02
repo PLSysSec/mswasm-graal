@@ -415,8 +415,8 @@ public class Handle {
         validateHandle(node, 4);
 
         // add handle to key table before storing
-        int key = generateKey(this);
-        keysToHandles.put(key, this);
+        int key = generateKey(value);
+        keysToHandles.put(key, value);
         
         unsafe.putInt(startAddress(), key);
     }

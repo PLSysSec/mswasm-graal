@@ -9,7 +9,7 @@
     (i32.segment_store (get_local $h2) (get_local $i2))
 
     (i32.segment_load (get_local $h2))
-    (free_segment (get_local $h2))
+    (free_segment (get_local $h1))
   )
 
    (func (export "_main") (result i32)
