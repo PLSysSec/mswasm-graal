@@ -161,9 +161,9 @@ public class Handle {
     }
 
     // Handle operations
-    public Handle slice(long sliceBase, long sliceBound) {
-        long resultBase = Math.max(this.base, sliceBase);
-        long resultBound = Math.max(this.bound, sliceBound);
+    public Handle slice(long sliceBaseOffset, long sliceBoundOffset) {
+        long resultBase = Math.max(this.bound, Math.max(this.base, this.base + sliceBaseOffset));
+        long resultBound = Math.max(this.bound, resultBase + sliceBoundOffset);
 
         Handle result = new Handle(this.unsafe, this.segment, resultBase, resultBound, 0, false, true);
         return result;

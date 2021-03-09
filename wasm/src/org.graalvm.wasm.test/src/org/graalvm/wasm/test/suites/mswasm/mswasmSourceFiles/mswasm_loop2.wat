@@ -1,10 +1,12 @@
 (module (memory 1)
   (func $loop (result i32)
-    (local $x i32) (local $y i32) (local $i i32) (local $addr handle)
-    (set_local $x (i32.const 5))
-    (set_local $y (i32.const 7))
+    (local $x i32) (local $y i32) (local $i i32)
+    (local $addr1 handle) (local $addr2 handle)
+    (set_local $x (i32.const 13))
+    (set_local $y (i32.const 31))
     (set_local $i (i32.const 0))
-    (set_local $addr (new_segment (i32.const 32)))
+    (set_local $addr1 (new_segment (i32.const 64)))
+    (set_local $addr2 (segment_slice (get_local $addr1) (i32.const 32) (i32.const 32)))
     (i32.segment_store (get_local $addr) (i32.const 0))
     (block
       (loop
