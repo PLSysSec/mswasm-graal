@@ -162,8 +162,20 @@ public class Handle {
 
     // Handle operations
     public Handle slice(long sliceBaseOffset, long sliceBoundOffset) {
-        long resultBase = Math.max(this.bound, Math.max(this.base, this.base + sliceBaseOffset));
-        long resultBound = Math.max(this.bound, resultBase + sliceBoundOffset);
+        // TODO throw a trap if result base is out of bounds instead of silently failing
+
+        // this all relies on this.base being an address, this.bound being an offset,
+        // and both the parameters to slice being an offset.
+
+        long resultBase = 0; // default error val, should change to throw trap
+        if (this.base + sliceBaseOffset <= this.base + this.bound) { // ADDRESS validation check
+            resultBase = this.base + sliceBaseOffset;
+        }
+        
+        long resultBound = 0; // default error val, should change to throw trap
+        if (resultBase + sliceBoundOffset <= this.base + this.bound) { // ADDRESS validation check
+            resultBound = sliceBoundOffset;
+        }
 
         Handle result = new Handle(this.unsafe, this.segment, resultBase, resultBound, 0, false, true);
         return result;
