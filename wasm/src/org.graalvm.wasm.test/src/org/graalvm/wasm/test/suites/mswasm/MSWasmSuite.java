@@ -46,9 +46,9 @@ public class MSWasmSuite extends WasmSuiteBase {
                                         parseWasmFile(folderPath + "mswasm_handleaddsub_1.wasm"), null, opts),
                         WasmCase.create("HANDLEADDSUB_2", WasmCase.expected(-19),
                                         parseWasmFile(folderPath + "mswasm_handleaddsub_2.wasm"), null, opts),
-                        WasmCase.create("SEGMENTSLICE_0", WasmCase.expected(10),
+                        WasmCase.create("SEGMENTSLICE_0", WasmCase.expected(64),
                                         parseWasmFile(folderPath + "mswasm_segmentslice_0.wasm"), null, opts),
-                        WasmCase.create("SEGMENTSLICE_1", WasmCase.expected(10),
+                        WasmCase.create("SEGMENTSLICE_1", WasmCase.expected(96),
                                         parseWasmFile(folderPath + "mswasm_segmentslice_1.wasm"), null, opts),
                         WasmCase.create("SEGMENTSLICE_2",
                                         WasmCase.expectedThrows(

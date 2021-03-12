@@ -161,23 +161,23 @@ public class Handle {
     }
 
     // Handle operations
-    public Handle slice(long sliceBaseOffset, long sliceBoundOffset) {
-        // TODO throw a trap if result base is out of bounds instead of silently failing
-
-        // this all relies on this.base being an address, this.bound being an offset,
-        // and both the parameters to slice being an offset.
-
-        long resultBase = 0; // default error val, should change to throw trap
-        if (this.base + sliceBaseOffset <= this.base + this.bound) { // ADDRESS validation check
-            resultBase = this.base + sliceBaseOffset;
-        }
-        
-        long resultBound = 0; // default error val, should change to throw trap
-        if (resultBase + sliceBoundOffset <= this.base + this.bound) { // ADDRESS validation check
-            resultBound = sliceBoundOffset;
+    // base: address
+    // bound: is also an address
+    // sliceBaseOffset: a number, which is offset from the base
+    // sliceBoundOffset: a separate number, which is also offset from the base
+    // effectively start addr, end addr
+    public Handle slice(Node node, long sliceBaseOffset, long sliceBoundOffset) {
+        // Validate slice offsets
+        if (sliceBaseOffset < 0 || sliceBoundOffset < sliceBaseOffset ||
+            this.base + sliceBaseOffset > this.bound) {
+            String message = "Slice base and/or bound offset is invalid";
+            throw new WasmTrap(node, message);
         }
 
+        long resultBase = this.base + sliceBaseOffset;
+        long resultBound = this.base + sliceBoundOffset;
         Handle result = new Handle(this.unsafe, this.segment, resultBase, resultBound, 0, false, true);
+
         return result;
     }
 
