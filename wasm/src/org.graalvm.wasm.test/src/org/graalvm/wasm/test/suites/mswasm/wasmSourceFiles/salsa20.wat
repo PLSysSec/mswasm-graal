@@ -219,4 +219,10 @@
 
   (export "salsa20" (func $salsa20))
   (export "read" (func $read))
+
+   (func (export "_main") (result i32)
+      (call $salsa20)
+	  (i32.const 64)
+      (call $read)
+   )
 )
