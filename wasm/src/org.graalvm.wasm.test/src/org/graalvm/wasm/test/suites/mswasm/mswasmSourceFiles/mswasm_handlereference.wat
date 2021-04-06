@@ -6,10 +6,9 @@
     (set_local $h2 (new_segment (i32.const 32)))
     (i32.segment_store (get_local $h1) (get_local $i1))
     
-    (set_local $i1 (i32.add (i32.segment_load (get_local $h1)) (i32.const 1)))
+    (set_local $i1 (i32.add (i32.segment_load (get_local $h1)) (i32.segment_load (get_local $h2))))
     
     (get_offset (get_local $h1))
-    (get_offset (get_local $h2))
     (get_local $i1)
   )
 
