@@ -1,5 +1,5 @@
 (module (memory 1)
- (func $ms_handlereferencetest (param $i1 i32) (result i32)
+ (func $ms_handlereference (param $i1 i32) (result i32)
     (local $h1 handle)
     
     (set_local $h1 (new_segment (i32.const 32)))
@@ -12,6 +12,6 @@
   )
 
   (func (export "_main") (result i32)
-    (call $ms_handlereferencetest (i32.const 1))
+    (call $ms_handlereference (i32.const 1))
   ) 
 )
