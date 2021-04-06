@@ -74,8 +74,6 @@ public class MSWasmSuite extends WasmSuiteBase {
                                         parseWasmFile(folderPath + "mswasm_handleloadstore_add_2.wasm"), null, opts),
                         WasmCase.create("HANDLE_OFFSET", WasmCase.expected(4),
                                         parseWasmFile(folderPath + "mswasm_handle_offset.wasm"), null, opts),
-                        WasmCase.create("HANDLEREFERENCE", WasmCase.expected(4),
-                                        parseWasmFile(folderPath + "mswasm_handlereferencetest.wasm"), null, opts),
 
                         // new year, new tests
                         WasmCase.create("MSWASM_LOOP", WasmCase.expected(12000),
