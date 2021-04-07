@@ -2,49 +2,55 @@
   (memory 1)
 
   (func $salsa20
-    (local $in_addr handle)
-    (local $out_addr handle)
-    (local $idx handle)
+	(local $in_arr handle) ;; segment for input array
+	(local $x_arr handle) ;; segment for output array
+	(local $idx handle) ;; handle idx
+	(local $idx2 handle)
+	(local $idx3 handle)
+	(local $in_idx handle)
     (local $i i32)
     (local $scratch i32)
     (local $in_index i32)
 
     ;; init 'const u32 input[16]' --- (offset 0 - 63)
-    (set_local $i (i32.const 60)) ;; $i is tracking bound
-	(set_local $in_addr (new_segment (i32.const 64)))
-	(set_local $idx (get_local $in_addr))
+	(set_local $in_arr (new_segment (i32.const 64)))
+	(set_local $idx (get_local $in_arr))
+    ;; (set_local $i (i32.const 0))
     (block
       (loop
-        (br_if 1 (i32.ge_u (get_local $i) (i32.const 64)))
-	  (i32.segment_store (get_local $idx) (i32.const 8888))
-	  (set_local $idx (segment_slice (get_local $idx) (i32.const 4) (get_local $i)))
-	  (i32.sub (get_local $i) (i32.const 4)))
-	  (br 0)
-	)
-      )
+        (br_if 1 (i32.ge_u (handle.get_offset $idx) (i32.const 64)))
+		(i32.segment_store (get_local $idx) (i32.const 8888))
+		(handle.add (get_local $idx) (i32.const 4))
+		(br 0)
+		)
+   	  )
 
     ;; init local 'u32 x[16]' --- (offset 64 - 127)
-    (set_local $i (i32.const 64))
-	(set_local $out_addr (new_segment (i32.const 64)))
-	(set_local $idx (get_local $out_addr))
+	(set_local $x_arr (new_segment (i32.const 64)))
+	(set_local $idx (get_local $x_arr))
+	(set_local $in_idx (get_local $in_arr))
+    ;; (set_local $i (i32.const 64))
     (block
       (loop
-	(br_if 1 (i32.ge_u (get_local $i) (i32.const 128)))
-	  (set_local $in_index (i32.sub (get_local $i) (i32.const 64)))
-	;;   (i32.store (get_local $i) (i32.load (get_local $in_index)))
-	  (i32.segment_store (get_local $idx) (i32.load (get_local $in_index)))
-	  (set_local $i (i32.add (get_local $i) (i32.const 4)))
-	  (br 0)
-	)
+		(br_if 1 (i32.ge_u (handle.get_offset $idx) (i32.const 64)))
+		(i32.segment_store (get_local $idx) (i32.segment_load (get_local $in_idx)))
+		(handle.add (get_local $idx) (i32.const 4))
+		(handle.add (get_local $in_idx) (i32.const 4))
+		(br 0)
+		)
       )
 
     ;; bit-muck
+	(set_local $idx (get_local $x_addr))
+	(set_local $idx2 (get_local $x_addr))
+	(set_local $idx3 (get_local $x_addr))
     (set_local $i (i32.const 0))
     (set_local $scratch (i32.const 0))
     (block
       (loop
         (br_if 1 (i32.ge_u (get_local $i) (i32.const 10)))
           ;; x[ 4] = XOR(x[ 4],ROTATE(PLUS(x[ 0],x[12]), 7));
+		  (set)
           (set_local $scratch (i32.add (i32.load (i32.const 64)) (i32.load (i32.const 112))))
 	  (set_local $scratch (i32.rotl (get_local $scratch) (i32.const 7)))
 	  (set_local $scratch (i32.xor (i32.load (i32.const 80)) (get_local $scratch)))

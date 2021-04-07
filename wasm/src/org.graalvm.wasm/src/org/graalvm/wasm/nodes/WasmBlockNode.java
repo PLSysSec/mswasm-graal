@@ -224,7 +224,8 @@ import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_LOAD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_STORE;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_ADD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SUB;
-import static org.graalvm.wasm.constants.Instructions.HANDLE_OFFSET;
+import static org.graalvm.wasm.constants.Instructions.HANDLE_GET_OFFSET;
+import static org.graalvm.wasm.constants.Instructions.HANDLE_SET_OFFSET;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerAsserts;
@@ -2637,7 +2638,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     trace("push handle.sub %d [i32] ; " + handle + " --> " + result, sub_offset);
                     break;
                 }
-                case HANDLE_OFFSET: {
+                case HANDLE_GET_OFFSET: {
                     // MSWasm
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
@@ -2646,7 +2647,21 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     pushInt(frame, stackPointer, h_offset);
 
                     stackPointer++;
-                    trace("push handle.offset " + handle + " --> %d [i32]", h_offset);
+                    trace("push handle.get_offset " + handle + " --> %d [i32]", h_offset);
+                    break;
+                }
+                case HANDLE_SET_OFFSET: {
+                    // MSWasm
+                    stackPointer--;
+                    int h_offset = popInt(frame, stackPointer);
+                    stackPointer--;
+                    Handle handle = popHandle(frame, stackPointer);
+
+                    handle.setOffset(this, h_offset);
+                    pushHandle(frame, stackPointer, handle);
+
+                    stackPointer++;
+                    trace("push handle.set_o fset%d [i32] ; " + handle + " --> " + handle, h_offset);
                     break;
                 }
                 default:

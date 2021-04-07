@@ -917,7 +917,12 @@ public class BinaryParser extends BinaryStreamParser {
                     state.pop();
                     state.push();
                     break;
-                case Instructions.HANDLE_OFFSET:
+                case Instructions.HANDLE_GET_OFFSET:
+                    state.pop();
+                    state.push();
+                    break;
+                case Instructions.HANDLE_SET_OFFSET:
+                    state.pop();
                     state.pop();
                     state.push();
                     break;

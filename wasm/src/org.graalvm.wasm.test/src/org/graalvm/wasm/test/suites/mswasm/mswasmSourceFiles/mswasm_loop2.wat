@@ -7,11 +7,11 @@
     (set_local $i (i32.const 0))
     (set_local $addr1 (new_segment (i32.const 64)))
     (set_local $addr2 (segment_slice (get_local $addr1) (i32.const 32) (i32.const 32)))
-    (i32.segment_store (get_local $addr) (i32.const 0))
+    (i32.segment_store (get_local $addr1) (i32.const 0))
     (block
       (loop
-        (get_local $addr)
-        (i32.segment_load (get_local $addr))
+        (get_local $addr1)
+        (i32.segment_load (get_local $addr1))
         (get_local $x)
         (i32.add)
         (get_local $y)
@@ -25,7 +25,7 @@
         (br 0)
       )
     )
-    (i32.segment_load (get_local $addr))
+    (i32.segment_load (get_local $addr1))
   )
 
    (func (export "_main") (result i32)

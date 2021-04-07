@@ -247,7 +247,8 @@ public final class Instructions {
     public static final int HANDLE_SEGMENT_STORE = 0xF8;
     public static final int HANDLE_ADD = 0xF9;
     public static final int HANDLE_SUB = 0xFA;
-    public static final int HANDLE_OFFSET = 0xFB;
+    public static final int HANDLE_GET_OFFSET = 0xFB;
+    public static final int HANDLE_SET_OFFSET = 0xFC;
 
     private static String[] decodingTable = new String[256];
 

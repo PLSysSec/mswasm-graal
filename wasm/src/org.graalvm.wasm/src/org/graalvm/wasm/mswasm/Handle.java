@@ -100,8 +100,21 @@ public class Handle {
         return (int)this.offset;
     }
 
+
+    /**
+     * Set offset of this handle to new value, or trap if new value is
+     * out-of-bounds
+     */
+    public void setOffset(Node node, int offset) {
+        this.offset = offset;
+        if (this.startAddress() > this.bound) {
+            // New offset is out of bounds, trap
+            trapInvalidOffset(node, offset);
+        }
+    }
+
     
-    public void validateHandle(Node node, long accessSize) {
+    public void validateHandleAccess(Node node, long accessSize) {
         WasmTracing.trace("validating handle at 0x%016X (%d)", startAddress(), startAddress());
         if (this.isCorrupted) {
             trapCorrupted(node);
@@ -110,6 +123,16 @@ public class Handle {
         } else if (this.segment.isFree() || this.offset < 0 || startAddress() + accessSize > this.bound) {
             trapOutOfBounds(node, accessSize);
         }
+    }
+
+    
+
+    @CompilerDirectives.TruffleBoundary
+    private void trapInvalidOffset(Node node, int offset) {
+        // String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds (memory size %d bytes).",
+        //                 accessSize, startAddress(), startAddress(), byteSize());
+        String message = "Offset " + offset + " is out of bounds";
+        throw new WasmTrap(node, message);
     }
 
     @CompilerDirectives.TruffleBoundary
@@ -212,7 +235,7 @@ public class Handle {
     
     public int load_i32(Node node) {
         WasmTracing.trace("load.i32 address = %d", startAddress());
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
         int value = this.unsafe.getInt(startAddress());
         WasmTracing.trace("load.i32 value = 0x%08X (%d)", value, value);
         return value;
@@ -221,7 +244,7 @@ public class Handle {
     
     public long load_i64(Node node) {
         WasmTracing.trace("load.i64 address = %d", startAddress());
-        validateHandle(node, 8);
+        validateHandleAccess(node, 8);
         long value = this.unsafe.getLong(startAddress());
         WasmTracing.trace("load.i64 value = 0x%08X (%d)", value, value);
         return value;
@@ -230,7 +253,7 @@ public class Handle {
     
     public float load_f32(Node node) {
         WasmTracing.trace("load.f32 address = %d", startAddress());
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
         float value = this.unsafe.getFloat(startAddress());
         WasmTracing.trace("load.f32 address = %d, value = 0x%08X (%f)", startAddress(), Float.floatToRawIntBits(value), value);
         return value;
@@ -239,7 +262,7 @@ public class Handle {
     
     public double load_f64(Node node) {
         WasmTracing.trace("load.f64 address = %d", startAddress());
-        validateHandle(node, 8);
+        validateHandleAccess(node, 8);
         double value = unsafe.getDouble(startAddress());
         WasmTracing.trace("load.f64 address = %d, value = 0x%016X (%f)", startAddress(), Double.doubleToRawLongBits(value), value);
         return value;
@@ -248,7 +271,7 @@ public class Handle {
     
     public int load_i32_8s(Node node) {
         WasmTracing.trace("load.i32_8s address = %d", startAddress());
-        validateHandle(node, 1);
+        validateHandleAccess(node, 1);
         int value = this.unsafe.getByte(startAddress());
         WasmTracing.trace("load.i32_8s value = 0x%02X (%d)", value, value);
         return value;
@@ -257,7 +280,7 @@ public class Handle {
     
     public int load_i32_8u(Node node) {
         WasmTracing.trace("load.i32_8u address = %d", startAddress());
-        validateHandle(node, 1);
+        validateHandleAccess(node, 1);
         int value = 0x0000_00ff & this.unsafe.getByte(startAddress());
         WasmTracing.trace("load.i32_8u value = 0x%02X (%d)", value, value);
         return value;
@@ -266,7 +289,7 @@ public class Handle {
     
     public int load_i32_16s(Node node) {
         WasmTracing.trace("load.i32_16s address = %d", startAddress());
-        validateHandle(node, 2);
+        validateHandleAccess(node, 2);
         int value = this.unsafe.getShort(startAddress());
         WasmTracing.trace("load.i32_16s value = 0x%04X (%d)", value, value);
         return value;
@@ -275,7 +298,7 @@ public class Handle {
     
     public int load_i32_16u(Node node) {
         WasmTracing.trace("load.i32_16u address = %d", startAddress() );
-        validateHandle(node, 2);
+        validateHandleAccess(node, 2);
         int value = 0x0000_ffff & this.unsafe.getShort(startAddress());
         WasmTracing.trace("load.i32_16u value = 0x%04X (%d)", value, value);
         return value;
@@ -284,7 +307,7 @@ public class Handle {
     
     public long load_i64_8s(Node node) {
         WasmTracing.trace("load.i64_8s address = %d", startAddress());
-        validateHandle(node, 1);
+        validateHandleAccess(node, 1);
         long value = this.unsafe.getByte(startAddress());
         WasmTracing.trace("load.i64_8s value = 0x%02X (%d)", value, value);
         return value;
@@ -293,7 +316,7 @@ public class Handle {
     
     public long load_i64_8u(Node node) {
         WasmTracing.trace("load.i64_8u address = %d", startAddress());
-        validateHandle(node, 1);
+        validateHandleAccess(node, 1);
         long value = 0x0000_0000_0000_00ffL & this.unsafe.getByte(startAddress());
         WasmTracing.trace("load.i64_8u value = 0x%02X (%d)", value, value);
         return value;
@@ -302,7 +325,7 @@ public class Handle {
     
     public long load_i64_16s(Node node) {
         WasmTracing.trace("load.i64_16s address = %d", startAddress());
-        validateHandle(node, 2);
+        validateHandleAccess(node, 2);
         long value = this.unsafe.getShort(startAddress());
         WasmTracing.trace("load.i64_16s value = 0x%04X (%d)", value, value);
         return value;
@@ -311,7 +334,7 @@ public class Handle {
     
     public long load_i64_16u(Node node) {
         WasmTracing.trace("load.i64_16u address = %d", startAddress());
-        validateHandle(node, 2);
+        validateHandleAccess(node, 2);
         long value = 0x0000_0000_0000_ffffL & this.unsafe.getShort(startAddress());
         WasmTracing.trace("load.i64_16u value = 0x%04X (%d)", value, value);
         return value;
@@ -320,7 +343,7 @@ public class Handle {
     
     public long load_i64_32s(Node node) {
         WasmTracing.trace("load.i64_32s address = %d", startAddress());
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
         long value = this.unsafe.getInt(startAddress());
         WasmTracing.trace("load.i64_32s value = 0x%08X (%d)", value, value);
         return value;
@@ -329,7 +352,7 @@ public class Handle {
     
     public long load_i64_32u(Node node) {
         WasmTracing.trace("load.i64_32u address = %d", startAddress());
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
         long value = 0x0000_0000_ffff_ffffL & this.unsafe.getInt(startAddress());
         WasmTracing.trace("load.i64_32u value = 0x%08X (%d)", value, value);
         return value;
@@ -341,7 +364,7 @@ public class Handle {
      */
     public Handle load_handle(Node node) {
         WasmTracing.trace("load.handle address = %d", startAddress());
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
 
         // load key at address
         int key = this.unsafe.getInt(startAddress());
@@ -363,69 +386,69 @@ public class Handle {
     
     public void store_i32(Node node, int value) {
         WasmTracing.trace("store.i32 address = %d, value = 0x%08X (%d)", startAddress(), value, value);
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
         unsafe.putInt(startAddress(), value);
     }
 
     
     public void store_i64(Node node, long value) {
         WasmTracing.trace("store.i64 address = %d, value = 0x%016X (%d)", startAddress(), value, value);
-        validateHandle(node, 8);
+        validateHandleAccess(node, 8);
         unsafe.putLong(startAddress(), value);
     }
 
     
     public void store_f32(Node node, float value) {
         WasmTracing.trace("store.f32 address = %d, value = 0x%08X (%f)", startAddress(), Float.floatToRawIntBits(value), value);
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
         unsafe.putFloat(startAddress(), value);
     }
 
     
     public void store_f64(Node node, double value) {
         WasmTracing.trace("store.f64 address = %d, value = 0x%016X (%f)", startAddress(), Double.doubleToRawLongBits(value), value);
-        validateHandle(node, 8);
+        validateHandleAccess(node, 8);
         unsafe.putDouble(startAddress(), value);
     }
 
     
     public void store_i32_8(Node node, byte value) {
         WasmTracing.trace("store.i32_8 address = %d, value = 0x%02X (%d)", startAddress(), value, value);
-        validateHandle(node, 1);
+        validateHandleAccess(node, 1);
         unsafe.putByte(startAddress(), value);
     }
 
     
     public void store_i32_16(Node node, short value) {
         WasmTracing.trace("store.i32_16 address = %d, value = 0x%04X (%d)", startAddress(), value, value);
-        validateHandle(node, 2);
+        validateHandleAccess(node, 2);
         unsafe.putShort(startAddress(), value);
     }
 
     
     public void store_i64_8(Node node, byte value) {
         WasmTracing.trace("store.i64_8 address = %d, value = 0x%02X (%d)", startAddress(), value, value);
-        validateHandle(node, 1);
+        validateHandleAccess(node, 1);
         unsafe.putByte(startAddress(), value);
     }
 
     
     public void store_i64_16(Node node, short value) {
         WasmTracing.trace("store.i64_16 address = %d, value = 0x%04X (%d)", startAddress(), value, value);
-        validateHandle(node, 2);
+        validateHandleAccess(node, 2);
         unsafe.putShort(startAddress(), value);
     }
 
     
     public void store_i64_32(Node node, int value) {
         WasmTracing.trace("store.i64_32 address = %d, value = 0x%08X (%d)", startAddress(), value, value);
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
         unsafe.putInt(startAddress(), value);
     }
 
     public void store_handle(Node node, Handle value) {
         WasmTracing.trace("store.handle address = %d", startAddress());
-        validateHandle(node, 4);
+        validateHandleAccess(node, 4);
 
         // add handle to key table before storing
         int key = generateKey(value);

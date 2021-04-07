@@ -134,5 +134,6 @@ HANDLE_SEGMENT_LOAD   |0xF7        |\[handle\] → \[handle\]          |Pushes t
 HANDLE_SEGMENT_STORE  |0xF8        |\[handle handle\] → \[\]         |Stores the provided handle in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
 HANDLE_ADD            |0xF9        |\[i32 handle\] → \[handle\]      |Adds the provided i32 to the handle's offset and returns the result.
 HANDLE_SUB            |0xFA        |\[i32 handle\] → \[handle\]      |Subtracts the provided i32 from the handle's offset and returns the result.
-HANDLE_OFFSET         |0xFB        |\[handle\] → \[i32\]             |Returns the provided handle's offset.
+HANDLE_GET_OFFSET     |0xFB        |\[handle\] → \[i32\]             |Returns the provided handle's offset.
+HANDLE_SET_OFFSET     |0xFC        |\[handle i32\] → \[handle\]      |Sets the handle's offset to the provided 
 ---------------------- ------------ --------------------------------- ------------------------------------------------------------------------------------------------------------------------------------
