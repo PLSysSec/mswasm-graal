@@ -135,5 +135,5 @@ HANDLE_SEGMENT_STORE  |0xF8        |\[handle handle\] → \[\]         |Stores t
 HANDLE_ADD            |0xF9        |\[i32 handle\] → \[handle\]      |Adds the provided i32 to the handle's offset and returns the result.
 HANDLE_SUB            |0xFA        |\[i32 handle\] → \[handle\]      |Subtracts the provided i32 from the handle's offset and returns the result.
 HANDLE_GET_OFFSET     |0xFB        |\[handle\] → \[i32\]             |Returns the provided handle's offset.
-HANDLE_SET_OFFSET     |0xFC        |\[handle i32\] → \[handle\]      |Sets the handle's offset to the provided 
+HANDLE_SET_OFFSET     |0xFC        |\[handle i32\] → \[handle\]      |Sets the handle's offset to the provided i32 and returns the resulting handle.
 ---------------------- ------------ --------------------------------- ------------------------------------------------------------------------------------------------------------------------------------
