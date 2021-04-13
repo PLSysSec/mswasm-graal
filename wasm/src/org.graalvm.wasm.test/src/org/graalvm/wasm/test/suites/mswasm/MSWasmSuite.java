@@ -81,7 +81,7 @@ public class MSWasmSuite extends WasmSuiteBase {
                                                         "Offset 16 is out of bounds",
                                                         WasmCaseData.ErrorType.Validation),
                                         parseWasmFile(folderPath + "mswasm_handle_set_offset_trap.wasm"), null, opts),
-                        WasmCase.create("HANDLE_REFERENCE", WasmCase.expected(4),
+                        WasmCase.create("HANDLE_REFERENCE", WasmCase.expected(0),
                                         parseWasmFile(folderPath + "mswasm_handle_reference.wasm"), null, opts),
 
 
