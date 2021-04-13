@@ -83,6 +83,11 @@ public class MSWasmSuite extends WasmSuiteBase {
                                         parseWasmFile(folderPath + "mswasm_handle_set_offset_trap.wasm"), null, opts),
                         WasmCase.create("HANDLE_REFERENCE", WasmCase.expected(0),
                                         parseWasmFile(folderPath + "mswasm_handle_reference.wasm"), null, opts),
+                        WasmCase.create("HANDLE_DUP",
+                                        WasmCase.expectedThrows(
+                                                "Segment memory is not allocated",
+                                                WasmCaseData.ErrorType.Validation),
+                                        parseWasmFile(folderPath + "mswasm_handle_dup.wasm"), null, opts),
 
 
                         // new year, new tests
