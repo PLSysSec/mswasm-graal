@@ -88,7 +88,8 @@ public class MSWasmSuite extends WasmSuiteBase {
                                                 "Segment memory is not allocated",
                                                 WasmCaseData.ErrorType.Validation),
                                         parseWasmFile(folderPath + "mswasm_handle_dup.wasm"), null, opts),
-
+                        WasmCase.create("MSWASM_SALSA", WasmCase.expected(2050581199),
+                                        parseWasmFile(folderPath + "mswasm_salsa20.wasm"), null, opts),
 
                         // new year, new tests
                         WasmCase.create("MSWASM_LOOP", WasmCase.expected(12000),
