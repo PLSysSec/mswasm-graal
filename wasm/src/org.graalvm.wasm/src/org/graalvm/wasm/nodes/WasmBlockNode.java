@@ -828,7 +828,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         case ValueTypes.HANDLE_TYPE: {
                             // MSWasm
                             stackPointer--;
-                            Handle value = popHandle(frame, stackPointer);
+                            Handle value = new Handle(popHandle(frame, stackPointer));
                             setHandle(frame, index, value);
 
                             // mswasmErr += "local.set handle " + value + "\n";
@@ -2657,11 +2657,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle handle = popHandle(frame, stackPointer);
 
-                    handle.setOffset(this, h_offset);
-                    pushHandle(frame, stackPointer, handle);
+                    Handle result = new Handle(handle);
+                    result.setOffset(this, h_offset);
+                    pushHandle(frame, stackPointer, result);
 
                     stackPointer++;
-                    trace("push handle.set_o fset%d [i32] ; " + handle + " --> " + handle, h_offset);
+                    trace("push handle.set_o fset%d [i32] ; " + handle + " --> " + result, h_offset);
                     break;
                 }
                 default:

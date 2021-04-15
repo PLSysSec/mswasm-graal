@@ -105,7 +105,7 @@
 	  (i32.segment_store (handle.set_offset (get_local $addr) (i32.const 68)) (get_local $scratch))
 	  ;; x[ 5] = XOR(x[ 5],ROTATE(PLUS(x[ 1],x[13]),18));
 	  ;; load at 68, 116
-          (set_local $scratch (i32.add (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 68)))
+          (set_local $scratch (i32.add (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 68))) 
 		                               (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 116)))))
 	  (set_local $scratch (i32.rotl (get_local $scratch) (i32.const 18)))
 	  ;; load 84
@@ -135,7 +135,7 @@
 	  (i32.segment_store (handle.set_offset (get_local $addr) (i32.const 72)) (get_local $scratch))
 	  ;; x[ 6] = XOR(x[ 6],ROTATE(PLUS(x[ 2],x[14]),13));
 	  ;; load at 72, 120
-          (set_local $scratch (i32.add (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 72))) 
+          (set_local $scratch (i32.add (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 72)))
 		                               (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 120)))))
 	  (set_local $scratch (i32.rotl (get_local $scratch) (i32.const 13)))
 	  ;; load 88
@@ -363,7 +363,7 @@
       (loop
         (br_if 1 (i32.ge_u (get_local $i) (i32.const 128)))
 	  (set_local $in_index (i32.sub (get_local $i) (i32.const 64)))
-	  (i32.segment_store (handle.set_offset (get_local $addr) (get_local $i))
+	  (i32.segment_store (get_local $addr)
 	                     (i32.add (i32.segment_load (handle.set_offset (get_local $addr) (get_local $i)))
 	                              (i32.segment_load (handle.set_offset (get_local $addr) (get_local $in_index)))))
 	  (set_local $i (i32.add (get_local $i) (i32.const 4)))
