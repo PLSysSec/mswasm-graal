@@ -322,7 +322,7 @@
 	  ;; load at 112
 	  (set_local $scratch (i32.xor (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 112))) 
 	                               (get_local $scratch)))
-	  (i32.segment_store (get_local $addr) (get_local $scratch))
+	  (i32.segment_store (handle.set_offset (get_local $addr) (i32.const 112)) (get_local $scratch))
 	  ;; x[13] = XOR(x[13],ROTATE(PLUS(x[12],x[15]), 9));
 	  ;; load at 112, 124
           (set_local $scratch (i32.add (i32.segment_load (handle.set_offset (get_local $addr) (i32.const 112))) 
