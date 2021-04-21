@@ -90,6 +90,9 @@ public class MSWasmSuite extends WasmSuiteBase {
                                         parseWasmFile(folderPath + "mswasm_handle_dup.wasm"), null, opts),
                         WasmCase.create("MSWASM_SALSA", WasmCase.expected(2050581199),
                                         parseWasmFile(folderPath + "mswasm_salsa20.wasm"), null, opts),
+                        WasmCase.create("MSWASM_VARIOUS_MATH", WasmCase.expected(-138411552),
+                                        parseWasmFile(folderPath + "mswasm_various_math.wasm"), null, opts),
+
 
                         // new year, new tests
                         WasmCase.create("MSWASM_LOOP", WasmCase.expected(12000),
