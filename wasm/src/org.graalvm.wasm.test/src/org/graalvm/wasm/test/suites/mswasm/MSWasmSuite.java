@@ -97,7 +97,8 @@ public class MSWasmSuite extends WasmSuiteBase {
                         // new year, new tests
                         WasmCase.create("MSWASM_LOOP", WasmCase.expected(12000),
                                         parseWasmFile(folderPath + "mswasm_loop.wasm"), null, opts),
-
+                        WasmCase.create("MSWASM_LINEAR", WasmCase.expected(3),
+                                parseWasmFile(folderPath + "mswasm_linear_search.wasm"), null, opts)
         };
 
         private byte[] parseWasmFile(String fileName) {
