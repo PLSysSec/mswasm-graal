@@ -20,7 +20,8 @@
 
 
         (set_local $addr (i32.add (get_local $addr) (i32.const 1)))
-        (br_if 1 (i32.eq (get_local $addr) (i32.const 6))) ;; should not break at this point (addr == 6 means something is logically wrong)
+        ;; should not break at this point (addr == 6 means something is logically wrong)
+        (br_if 1 (i32.eq (get_local $addr) (i32.const 6))) 
         (br 0)
       )
     )
