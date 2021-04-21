@@ -1,6 +1,6 @@
 (module (memory 1)
   (func $loop (result i32)
-    (local $x i64) (local $y i32) (local $i i32) (local $addr i32)
+    (local $x i32) (local $y i32) (local $i i32) (local $addr i32)
 
     (set_local $x (i32.const 5))
     (set_local $y (i32.const 13))
@@ -9,12 +9,12 @@
 
     (block
       (loop
-        (i64.store (get_local $addr) (i64.xor (get_local $y) (get_local $x)))
+        (i32.store (get_local $addr) (i32.xor (get_local $y) (get_local $x)))
         (set_local $y (i32.add (get_local $i) (get_local $y)))
-        (set_local $x (i64.add (i64.load (get_local $addr)) (get_local $x)))
+        (set_local $x (i32.add (i32.load (get_local $addr)) (get_local $x)))
 
         (set_local $i (i32.add (get_local $i) (i32.const 1)))
-        (br_if 1 (i32.eq (get_local $i) (i32.const 10000)))
+        (br_if 1 (i32.eq (get_local $i) (i32.const 100)))
         (br 0)
       )
     )

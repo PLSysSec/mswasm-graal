@@ -41,7 +41,7 @@ public class WasmComparisonSuite extends WasmSuiteBase {
                     parseWasmFile(FOLDER_PATH + "wasm_loop.wasm"), null, opts),
             WasmCase.create("WASM_SALSA", WasmCase.expected(2050581199),
                     parseWasmFile(FOLDER_PATH + "salsa20.wasm"), null, opts),
-            WasmCase.create("WASM_VARIOUS_MATH", WasmCase.expected(1879046936),
+            WasmCase.create("WASM_VARIOUS_MATH", WasmCase.expected(-138411552),
                     parseWasmFile(FOLDER_PATH + "wasm_various_math.wasm"), null, opts), };
 
     private byte[] parseWasmFile(String fileName) {
