@@ -889,20 +889,20 @@ public class BinaryParser extends BinaryStreamParser {
                     state.push();
                     break;
                 // MSWasm instructions
-                case Instructions.I32_SEGMENT_S:
-                case Instructions.I64_SEGMENT_S:
-                case Instructions.F32_SEGMENT_S:
-                case Instructions.F64_SEGMENT_S:
-                case Instructions.I32_SEGMENT_S8_S:
-                case Instructions.I32_SEGMENT_S8_U:
-                case Instructions.I32_SEGMENT_S16_S:
-                case Instructions.I32_SEGMENT_S16_U:
-                case Instructions.I64_SEGMENT_S8_S:
-                case Instructions.I64_SEGMENT_S8_U:
-                case Instructions.I64_SEGMENT_S16_S:
-                case Instructions.I64_SEGMENT_S16_U:
-                case Instructions.I64_SEGMENT_S32_S:
-                case Instructions.I64_SEGMENT_S32_U:
+                case Instructions.I32_SEGMENT_STORE:
+                case Instructions.I64_SEGMENT_STORE:
+                case Instructions.F32_SEGMENT_STORE:
+                case Instructions.F64_SEGMENT_STORE:
+                case Instructions.I32_SEGMENT_STORE8_S:
+                case Instructions.I32_SEGMENT_STORE8_U:
+                case Instructions.I32_SEGMENT_STORE16_S:
+                case Instructions.I32_SEGMENT_STORE16_U:
+                case Instructions.I64_SEGMENT_STORE8_S:
+                case Instructions.I64_SEGMENT_STORE8_U:
+                case Instructions.I64_SEGMENT_STORE16_S:
+                case Instructions.I64_SEGMENT_STORE16_U:
+                case Instructions.I64_SEGMENT_STORE32_S:
+                case Instructions.I64_SEGMENT_STORE32_U:
                 case Instructions.HANDLE_SEGMENT_STORE:
                     state.pop();
                     state.pop();
