@@ -628,57 +628,57 @@ public class BinaryParser extends BinaryStreamParser {
                     state.pop();
                     break;
                 }
-                case Instructions.I32_LOAD:
-                case Instructions.I64_LOAD:
-                case Instructions.F32_LOAD:
-                case Instructions.F64_LOAD:
-                case Instructions.I32_LOAD8_S:
-                case Instructions.I32_LOAD8_U:
-                case Instructions.I32_LOAD16_S:
-                case Instructions.I32_LOAD16_U:
-                case Instructions.I64_LOAD8_S:
-                case Instructions.I64_LOAD8_U:
-                case Instructions.I64_LOAD16_S:
-                case Instructions.I64_LOAD16_U:
-                case Instructions.I64_LOAD32_S:
-                case Instructions.I64_LOAD32_U: {
-                    // We don't store the `align` literal, as our implementation does not make use
-                    // of it, but we need to store its byte length, so that we can skip it
-                    // during execution.
-                    if (mustPoolLeb128()) {
-                        state.useByteConstant(peekLeb128Length(data, offset));
-                    }
-                    readUnsignedInt32(); // align
-                    readUnsignedInt32(state); // load offset
-                    Assert.assertIntGreater(state.stackSize(), 0, String
-                            .format("load instruction 0x%02X requires at least one element in the stack", opcode));
-                    state.pop(); // Base address.
-                    state.push(); // Loaded value.
-                    break;
-                }
-                case Instructions.I32_STORE:
-                case Instructions.I64_STORE:
-                case Instructions.F32_STORE:
-                case Instructions.F64_STORE:
-                case Instructions.I32_STORE_8:
-                case Instructions.I32_STORE_16:
-                case Instructions.I64_STORE_8:
-                case Instructions.I64_STORE_16:
-                case Instructions.I64_STORE_32: {
-                    // We don't store the `align` literal, as our implementation does not make use
-                    // of it, but we need to store its byte length, so that we can skip it
-                    // during the execution.
-                    if (mustPoolLeb128()) {
-                        state.useByteConstant(peekLeb128Length(data, offset));
-                    }
-                    readUnsignedInt32(); // align
-                    readUnsignedInt32(state); // store offset
-                    Assert.assertIntGreater(state.stackSize(), 1, String
-                            .format("store instruction 0x%02X requires at least two elements in the stack", opcode));
-                    state.pop(); // Value to store.
-                    state.pop(); // Base address.
-                    break;
-                }
+                // case Instructions.I32_LOAD:
+                // case Instructions.I64_LOAD:
+                // case Instructions.F32_LOAD:
+                // case Instructions.F64_LOAD:
+                // case Instructions.I32_LOAD8_S:
+                // case Instructions.I32_LOAD8_U:
+                // case Instructions.I32_LOAD16_S:
+                // case Instructions.I32_LOAD16_U:
+                // case Instructions.I64_LOAD8_S:
+                // case Instructions.I64_LOAD8_U:
+                // case Instructions.I64_LOAD16_S:
+                // case Instructions.I64_LOAD16_U:
+                // case Instructions.I64_LOAD32_S:
+                // case Instructions.I64_LOAD32_U: {
+                //     // We don't store the `align` literal, as our implementation does not make use
+                //     // of it, but we need to store its byte length, so that we can skip it
+                //     // during execution.
+                //     if (mustPoolLeb128()) {
+                //         state.useByteConstant(peekLeb128Length(data, offset));
+                //     }
+                //     readUnsignedInt32(); // align
+                //     readUnsignedInt32(state); // load offset
+                //     Assert.assertIntGreater(state.stackSize(), 0, String
+                //             .format("load instruction 0x%02X requires at least one element in the stack", opcode));
+                //     state.pop(); // Base address.
+                //     state.push(); // Loaded value.
+                //     break;
+                // }
+                // case Instructions.I32_STORE:
+                // case Instructions.I64_STORE:
+                // case Instructions.F32_STORE:
+                // case Instructions.F64_STORE:
+                // case Instructions.I32_STORE_8:
+                // case Instructions.I32_STORE_16:
+                // case Instructions.I64_STORE_8:
+                // case Instructions.I64_STORE_16:
+                // case Instructions.I64_STORE_32: {
+                //     // We don't store the `align` literal, as our implementation does not make use
+                //     // of it, but we need to store its byte length, so that we can skip it
+                //     // during the execution.
+                //     if (mustPoolLeb128()) {
+                //         state.useByteConstant(peekLeb128Length(data, offset));
+                //     }
+                //     readUnsignedInt32(); // align
+                //     readUnsignedInt32(state); // store offset
+                //     Assert.assertIntGreater(state.stackSize(), 1, String
+                //             .format("store instruction 0x%02X requires at least two elements in the stack", opcode));
+                //     state.pop(); // Value to store.
+                //     state.pop(); // Base address.
+                //     break;
+                // }
                 case Instructions.MEMORY_SIZE: {
                     // Skip the constant 0x00.
                     read1();
@@ -889,14 +889,38 @@ public class BinaryParser extends BinaryStreamParser {
                     state.push();
                     break;
                 // MSWasm instructions
-                case Instructions.I32_SEGMENT_STORE:
-                case Instructions.I64_SEGMENT_STORE:
+                case Instructions.I32_SEGMENT_S:
+                case Instructions.I64_SEGMENT_S:
+                case Instructions.F32_SEGMENT_S:
+                case Instructions.F64_SEGMENT_S:
+                case Instructions.I32_SEGMENT_S8_S:
+                case Instructions.I32_SEGMENT_S8_U:
+                case Instructions.I32_SEGMENT_S16_S:
+                case Instructions.I32_SEGMENT_S16_U:
+                case Instructions.I64_SEGMENT_S8_S:
+                case Instructions.I64_SEGMENT_S8_U:
+                case Instructions.I64_SEGMENT_S16_S:
+                case Instructions.I64_SEGMENT_S16_U:
+                case Instructions.I64_SEGMENT_S32_S:
+                case Instructions.I64_SEGMENT_S32_U:
                 case Instructions.HANDLE_SEGMENT_STORE:
                     state.pop();
                     state.pop();
                     break;
                 case Instructions.I32_SEGMENT_LOAD:
                 case Instructions.I64_SEGMENT_LOAD:
+                case Instructions.F32_SEGMENT_LOAD:
+                case Instructions.F64_SEGMENT_LOAD:
+                case Instructions.I32_SEGMENT_LOAD8_S:
+                case Instructions.I32_SEGMENT_LOAD8_U:
+                case Instructions.I32_SEGMENT_LOAD16_S:
+                case Instructions.I32_SEGMENT_LOAD16_U:
+                case Instructions.I64_SEGMENT_LOAD8_S:
+                case Instructions.I64_SEGMENT_LOAD8_U:
+                case Instructions.I64_SEGMENT_LOAD16_S:
+                case Instructions.I64_SEGMENT_LOAD16_U:
+                case Instructions.I64_SEGMENT_LOAD32_S:
+                case Instructions.I64_SEGMENT_LOAD32_U:
                 case Instructions.HANDLE_SEGMENT_LOAD:
                 case Instructions.NEW_SEGMENT:
                     state.pop();
