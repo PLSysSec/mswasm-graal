@@ -8,8 +8,8 @@
     (set_local $addr (new_segment (i32.const 12)))
     (set_local $checki32 (i32.const 0))
 
-    (i64.segment_store (get_local $addr) (i64.const 3544952212054688056))
-    (i32.segment_store (handle.add (i32.const 8) (get_local $addr)) (i32.const 956301312))
+    (i64.segment_store (get_local $addr) (i64.const 4053592888132710961))
+    (i32.segment_store (handle.add (i32.const 8) (get_local $addr)) (i32.const 57))
 
     (block
       (loop
@@ -18,10 +18,10 @@
 
         (br_if 1 (i32.eq (get_local $checki32) (i32.const 1094795585))) ;; should break once addr == 3
 
-
         (set_local $addr (handle.add (i32.const 1) (get_local $addr)))
+
         ;; should not break at this point (addr == 6 means something is logically wrong)
-        (br_if 1 (i32.eq (get_local $addr) (i32.const 6))) 
+        (br_if 1 (i32.eq (handle.get_offset (get_local $addr)) (i32.const 6))) 
         (br 0)
       )
     )
