@@ -125,11 +125,11 @@ import static org.graalvm.wasm.constants.Instructions.I32_GT_S;
 import static org.graalvm.wasm.constants.Instructions.I32_GT_U;
 import static org.graalvm.wasm.constants.Instructions.I32_LE_S;
 import static org.graalvm.wasm.constants.Instructions.I32_LE_U;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_S;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_U;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_S;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_U;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_S;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_U;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_S;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I32_LT_S;
 import static org.graalvm.wasm.constants.Instructions.I32_LT_U;
 import static org.graalvm.wasm.constants.Instructions.I32_MUL;
@@ -144,9 +144,9 @@ import static org.graalvm.wasm.constants.Instructions.I32_ROTR;
 import static org.graalvm.wasm.constants.Instructions.I32_SHL;
 import static org.graalvm.wasm.constants.Instructions.I32_SHR_S;
 import static org.graalvm.wasm.constants.Instructions.I32_SHR_U;
-import static org.graalvm.wasm.constants.Instructions.I32_STORE;
-import static org.graalvm.wasm.constants.Instructions.I32_STORE_16;
-import static org.graalvm.wasm.constants.Instructions.I32_STORE_8;
+// import static org.graalvm.wasm.constants.Instructions.I32_STORE;
+// import static org.graalvm.wasm.constants.Instructions.I32_STORE_16;
+// import static org.graalvm.wasm.constants.Instructions.I32_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.I32_SUB;
 import static org.graalvm.wasm.constants.Instructions.I32_TRUNC_F32_S;
 import static org.graalvm.wasm.constants.Instructions.I32_TRUNC_F32_U;
@@ -171,13 +171,13 @@ import static org.graalvm.wasm.constants.Instructions.I64_GT_S;
 import static org.graalvm.wasm.constants.Instructions.I64_GT_U;
 import static org.graalvm.wasm.constants.Instructions.I64_LE_S;
 import static org.graalvm.wasm.constants.Instructions.I64_LE_U;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_S;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_U;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_S;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_U;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_S;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_U;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_S;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_U;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_S;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_U;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_S;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I64_LT_S;
 import static org.graalvm.wasm.constants.Instructions.I64_LT_U;
 import static org.graalvm.wasm.constants.Instructions.I64_MUL;
@@ -192,10 +192,10 @@ import static org.graalvm.wasm.constants.Instructions.I64_ROTR;
 import static org.graalvm.wasm.constants.Instructions.I64_SHL;
 import static org.graalvm.wasm.constants.Instructions.I64_SHR_S;
 import static org.graalvm.wasm.constants.Instructions.I64_SHR_U;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE_16;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE_32;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE_8;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE_16;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE_32;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.I64_SUB;
 import static org.graalvm.wasm.constants.Instructions.I64_TRUNC_F32_S;
 import static org.graalvm.wasm.constants.Instructions.I64_TRUNC_F32_U;
@@ -214,9 +214,24 @@ import static org.graalvm.wasm.constants.Instructions.RETURN;
 import static org.graalvm.wasm.constants.Instructions.SELECT;
 import static org.graalvm.wasm.constants.Instructions.UNREACHABLE;
 import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD16_S;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD16_U;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD8_S;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD16_S;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD16_U;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD32_S;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD32_U;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD8_S;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_STORE;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_STORE_16;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE_16;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE_32;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.NEW_SEGMENT;
 import static org.graalvm.wasm.constants.Instructions.FREE_SEGMENT;
 import static org.graalvm.wasm.constants.Instructions.SEGMENT_SLICE;
@@ -1022,20 +1037,20 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     }
                     break;
                 }
-                case I32_LOAD:
-                case I64_LOAD:
+                // case I32_LOAD:
+                // case I64_LOAD:
+                // case I32_LOAD8_S:
+                // case I32_LOAD8_U:
+                // case I32_LOAD16_S:
+                // case I32_LOAD16_U:
+                // case I64_LOAD8_S:
+                // case I64_LOAD8_U:
+                // case I64_LOAD16_S:
+                // case I64_LOAD16_U:
+                // case I64_LOAD32_S:
+                // case I64_LOAD32_U:
                 case F32_LOAD:
-                case F64_LOAD:
-                case I32_LOAD8_S:
-                case I32_LOAD8_U:
-                case I32_LOAD16_S:
-                case I32_LOAD16_U:
-                case I64_LOAD8_S:
-                case I64_LOAD8_U:
-                case I64_LOAD16_S:
-                case I64_LOAD16_U:
-                case I64_LOAD32_S:
-                case I64_LOAD32_U: {
+                case F64_LOAD: {
                     /* The memAlign hint is not currently used or taken into account. */
                     int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
                     byteConstantOffset += byteConstantDelta(offset);
@@ -1056,16 +1071,16 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     try {
                         switch (opcode) {
-                            case I32_LOAD: {
-                                int value = memory.load_i32(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD: {
-                                long value = memory.load_i64(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
+                            // case I32_LOAD: {
+                            //     int value = memory.load_i32(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD: {
+                            //     long value = memory.load_i64(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
                             case F32_LOAD: {
                                 float value = memory.load_f32(this, address);
                                 pushFloat(frame, stackPointer, value);
@@ -1076,56 +1091,56 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                                 pushDouble(frame, stackPointer, value);
                                 break;
                             }
-                            case I32_LOAD8_S: {
-                                int value = memory.load_i32_8s(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I32_LOAD8_U: {
-                                int value = memory.load_i32_8u(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I32_LOAD16_S: {
-                                int value = memory.load_i32_16s(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I32_LOAD16_U: {
-                                int value = memory.load_i32_16u(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD8_S: {
-                                long value = memory.load_i64_8s(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD8_U: {
-                                long value = memory.load_i64_8u(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD16_S: {
-                                long value = memory.load_i64_16s(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD16_U: {
-                                long value = memory.load_i64_16u(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD32_S: {
-                                long value = memory.load_i64_32s(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD32_U: {
-                                long value = memory.load_i64_32u(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
+                            // case I32_LOAD8_S: {
+                            //     int value = memory.load_i32_8s(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I32_LOAD8_U: {
+                            //     int value = memory.load_i32_8u(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I32_LOAD16_S: {
+                            //     int value = memory.load_i32_16s(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I32_LOAD16_U: {
+                            //     int value = memory.load_i32_16u(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD8_S: {
+                            //     long value = memory.load_i64_8s(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD8_U: {
+                            //     long value = memory.load_i64_8u(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD16_S: {
+                            //     long value = memory.load_i64_16s(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD16_U: {
+                            //     long value = memory.load_i64_16u(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD32_S: {
+                            //     long value = memory.load_i64_32s(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD32_U: {
+                            //     long value = memory.load_i64_32u(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
                             default: {
                                 throw new WasmTrap(this, "Unknown load opcode: " + opcode);
                             }
@@ -1136,15 +1151,15 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer++;
                     break;
                 }
-                case I32_STORE:
-                case I64_STORE:
+                // case I32_STORE:
+                // case I64_STORE:
+                // case I32_STORE_8:
+                // case I32_STORE_16:
+                // case I64_STORE_8:
+                // case I64_STORE_16:
+                // case I64_STORE_32:
                 case F32_STORE:
-                case F64_STORE:
-                case I32_STORE_8:
-                case I32_STORE_16:
-                case I64_STORE_8:
-                case I64_STORE_16:
-                case I64_STORE_32: {
+                case F64_STORE: {
                     /* The memAlign hint is not currently used or taken into account. */
                     int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
                     byteConstantOffset += byteConstantDelta(offset);
@@ -1162,24 +1177,24 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     try {
                         switch (opcode) {
-                            case I32_STORE: {
-                                stackPointer--;
-                                int value = popInt(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i32(this, address, value);
-                                break;
-                            }
-                            case I64_STORE: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64(this, address, value);
-                                break;
-                            }
+                            // case I32_STORE: {
+                            //     stackPointer--;
+                            //     int value = popInt(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i32(this, address, value);
+                            //     break;
+                            // }
+                            // case I64_STORE: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64(this, address, value);
+                            //     break;
+                            // }
                             case F32_STORE: {
                                 stackPointer--;
                                 float value = popAsFloat(frame, stackPointer);
@@ -1198,51 +1213,51 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                                 memory.store_f64(this, address, value);
                                 break;
                             }
-                            case I32_STORE_8: {
-                                stackPointer--;
-                                int value = popInt(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i32_8(this, address, (byte) value);
-                                break;
-                            }
-                            case I32_STORE_16: {
-                                stackPointer--;
-                                int value = popInt(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i32_16(this, address, (short) value);
-                                break;
-                            }
-                            case I64_STORE_8: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64_8(this, address, (byte) value);
-                                break;
-                            }
-                            case I64_STORE_16: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64_16(this, address, (short) value);
-                                break;
-                            }
-                            case I64_STORE_32: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64_32(this, address, (int) value);
-                                break;
-                            }
+                            // case I32_STORE_8: {
+                            //     stackPointer--;
+                            //     int value = popInt(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i32_8(this, address, (byte) value);
+                            //     break;
+                            // }
+                            // case I32_STORE_16: {
+                            //     stackPointer--;
+                            //     int value = popInt(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i32_16(this, address, (short) value);
+                            //     break;
+                            // }
+                            // case I64_STORE_8: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64_8(this, address, (byte) value);
+                            //     break;
+                            // }
+                            // // case I64_STORE_16: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64_16(this, address, (short) value);
+                            //     break;
+                            // }
+                            // case I64_STORE_32: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64_32(this, address, (int) value);
+                            //     break;
+                            // }
                             default: {
                                 throw new WasmTrap(this, "Unknown store opcode: " + opcode);
                             }
@@ -2472,57 +2487,176 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 }
 
                 // MSWasm - instruction execution implementations follow
-                case I32_SEGMENT_LOAD: {
+                case I32_SEGMENT_LOAD:
+                case I32_SEGMENT_LOAD8_S:
+                case I32_SEGMENT_LOAD8_U:
+                case I32_SEGMENT_LOAD16_S:
+                case I32_SEGMENT_LOAD16_U: {
                     // MSWasm
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
-                    int result = x.load_i32(this);
+                    int result = 0;
+
+                    String specific_load = "";
+                    switch(opcode) {
+                        case I32_SEGMENT_LOAD: {
+                            result = x.load_i32(this);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD8_S: {
+                            result = x.load_i32_8s(this);
+                            specific_load = "8s";
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD8_U: {
+                            result = x.load_i32_8u(this);
+                            specific_load = "8u";
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD16_S: {
+                            result = x.load_i32_16s(this);
+                            specific_load = "16s";
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD16_U: {
+                            result = x.load_i32_16u(this);
+                            specific_load = "16u";
+                            break;
+                        }
+                        default: {
+                            throw new WasmTrap(this, "Unrecognized i32 segment_load opcode");
+                        }
+                    }
 
                     pushInt(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push i32.segment_load " + x + " --> %d [i32]", result);
+                    trace("push i32.segment_load" + specific_load + " " + x + " --> %d [i32]", result);
 
                     // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
 
                     break;
                 }
-                case I64_SEGMENT_LOAD: {
+                case I64_SEGMENT_LOAD:
+                case I64_SEGMENT_LOAD8_S:
+                case I64_SEGMENT_LOAD8_U:
+                case I64_SEGMENT_LOAD16_S:
+                case I64_SEGMENT_LOAD16_U: 
+                case I64_SEGMENT_LOAD32_S:
+                case I64_SEGMENT_LOAD32_U: {
                     // MSWasm
                     stackPointer--;
                     Handle x = popHandle(frame, stackPointer);
-                    long result = x.load_i64(this);
+                    long result = 0;
+                    String specific_load = "";
+                    switch(opcode) {
+                        case I64_SEGMENT_LOAD: {
+                            result = x.load_i64(this);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD8_S: {
+                            result = x.load_i64_8s(this);
+                            specific_load = "8s";
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD8_U: {
+                            result = x.load_i64_8u(this);
+                            specific_load = "8u";
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD16_S: {
+                            result = x.load_i64_16s(this);
+                            specific_load = "16s";
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD16_U: {
+                            result = x.load_i64_16u(this);
+                            specific_load = "16u";
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD32_S: {
+                            result = x.load_i64_32s(this);
+                            specific_load = "32s";
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD32_U: {
+                            result = x.load_i64_32u(this);
+                            specific_load = "32u";
+                            break;
+                        }
+                        default: {
+                            throw new WasmTrap(this, "Unrecognized i64 segment_load opcode");
+                        }
+                    }
 
                     push(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push i64.segment_load " + x + " --> %d [i64]", result);
+                    trace("push i64.segment_load" + specific_load + " " + x + " --> %d [i64]", result);
 
                     // mswasmErr += "i64.segment_load " + x + " --> " + result + "\n";
 
                     break;
                 }
+                case I32_SEGMENT_STORE_8:
+                case I32_SEGMENT_STORE_16:
                 case I32_SEGMENT_STORE: {
                     // MSWasm
                     stackPointer--;
                     int value = popInt(frame, stackPointer);
-                    stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
-                    // String init = "i32.segment_store " + value + ", " + key;
-
-                    key.store_i32(this, value);
+                    
+                    switch(opcode){
+                        case I32_SEGMENT_STORE: {
+                            key.store_i32(this, value);
+                            break;
+                        }
+                        case I32_SEGMENT_STORE_8: {
+                            key.store_i32_8(this, (byte) value);
+                            break;
+                        }
+                        case I32_SEGMENT_STORE_16: {
+                            key.store_i32_16(this, (short) value);
+                            break;
+                        }
+                        default: {
+                            throw new WasmTrap(this, "Unrecognized i32 segment_store opcode");
+                        }
+                    }
 
                     // mswasmErr += "i32.segment_store " + value + " to " + key + " --> " + success
                     // + "\n";
 
                     break;
                 }
+                case I64_SEGMENT_STORE_8:
+                case I64_SEGMENT_STORE_16:
+                case I64_SEGMENT_STORE_32:
                 case I64_SEGMENT_STORE: {
                     // MSWasm
                     stackPointer--;
                     long value = pop(frame, stackPointer);
-                    stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
                     
-                    key.store_i64(this, value);
+                    switch(opcode) {
+                        case I64_SEGMENT_STORE: {
+                            key.store_i64(this, value);
+                            break;
+                        }
+                        case I64_SEGMENT_STORE_8: {
+                            key.store_i64_8(this, (byte) value);
+                            break;
+                        }
+                        case I64_SEGMENT_STORE_16: {
+                            key.store_i64_16(this, (short) value);
+                            break;
+                        }
+                        case I64_SEGMENT_STORE_32: {
+                            key.store_i64_32(this, (int) value);
+                            break;
+                        }
+                        default: {
+                            throw new WasmTrap(this, "Unrecognized i32 segment_store opcode");
+                        }
+                    }
 
                     // mswasmErr += "i64.segment_store " + value + " to " + key + " --> " + success
                     // + "\n";
