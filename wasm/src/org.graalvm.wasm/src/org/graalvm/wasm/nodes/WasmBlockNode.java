@@ -2602,6 +2602,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // MSWasm
                     stackPointer--;
                     int value = popInt(frame, stackPointer);
+                    stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
                     
                     switch(opcode){
@@ -2634,6 +2635,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // MSWasm
                     stackPointer--;
                     long value = pop(frame, stackPointer);
+                    stackPointer--;
                     Handle key = popHandle(frame, stackPointer);
                     
                     switch(opcode) {
