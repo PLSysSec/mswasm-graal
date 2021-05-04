@@ -30,8 +30,6 @@ public class MSWasmSuite extends WasmSuiteBase {
         private WasmBinaryCase[] testCases = {
                         WasmCase.create("STORE_AND_LOAD_1", WasmCase.expected(10),
                                         parseWasmFile(folderPath + "mswasm_store-load_1.wasm"), null, opts),
-                        WasmCase.create("STORE_AND_THAT'S_IT", WasmCase.expected(10),
-                                        parseWasmFile(folderPath + "mswasm_store-load_but_just_store.wasm"), null, opts),
                         WasmCase.create("STORE_AND_LOAD_2", WasmCase.expected(0xfedc6543),
                                         parseWasmFile(folderPath + "mswasm_store-load_2.wasm"), null, opts),
                         WasmCase.create("ADD_1", WasmCase.expected(11), parseWasmFile(folderPath + "mswasm_add_1.wasm"),
@@ -97,7 +95,7 @@ public class MSWasmSuite extends WasmSuiteBase {
 
 
                         // new year, new tests
-                        WasmCase.create("MSWASM_LOOP", WasmCase.expected(12000),
+                        WasmCase.create("MSWASM_LOOP", WasmCase.expected(120000),
                                         parseWasmFile(folderPath + "mswasm_loop.wasm"), null, opts),
                         WasmCase.create("MSWASM_LINEAR", WasmCase.expected(3),
                                 parseWasmFile(folderPath + "mswasm_linear_search.wasm"), null, opts)
