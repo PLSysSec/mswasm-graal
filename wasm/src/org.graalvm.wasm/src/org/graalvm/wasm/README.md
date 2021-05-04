@@ -42,17 +42,39 @@ load i64s, etc, so this works
 
 ## Our segment implementation:
 
-We are not using underlying memory at all, this is a basic efficient
-proof of concept: the runtime allocates a Java hashmap and we use that
+Updated 5/4/2021
 
-[*mswasm/SegmentMemory.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/mswasm/SegmentMemory.java)
+New segments are allocated from the underlying Java memory (Java.Sun.Unsafe)
+with each call to `new_segment`. This is the same memory used to allocate
+Wasm linear memory; the Java memory manager ensures that neither linear memory
+nor any existing segments are doubly allocated into a new segment.
 
-Added
-[*Handle.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/mswasm/Handle.java)
-as a key to the hashmap and other info
+`free_segment` calls the Java memory manager to free that segment's allocated
+memory, and marks the internal represenatation of the segment as freed. The
+second step is necessary so that duplicate handles and slices into that segment
+are also treated as freed.
 
-Added opcodes at
+Handles access memory at (`base` + `offset`), where `base` is the absolute
+address of the segment, and `offset` is a relative address within the segment.
+Handles can be moved around freely within a segment with `handle.add` (increase
+the relative memory offset), `handle.sub` (decrease the offset), and
+`handle.set_offset` (set the offset to a specified value).
+
+Slices are special handles produced by `slice_segment` that point into an
+existing segment, with narrower bounds. A slice produced from a given segment
+can have a higher base address, lower bound, or both. Slices can access only the
+memory within their narrowed bounds. Memory that falls within the original
+segment, but not within the sliced bounds, is inaccessible.
+
+[*mswasm/Segment.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/mswasm/Segment.java)
+represents a segment. Used to track whether a shared segment of memory has been freed.
+
+[*mswasm/Handle.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/mswasm/Handle.java)
+represents handles and also manages segment memory allocation, reads, and writes.
+
 [*constants/Instructions.java*](https://github.com/aemichael/mswasm-graal/blob/mswasm/dev/wasm/src/org.graalvm.wasm/src/org/graalvm/wasm/constants/Instructions.java)
+contains opcodes. All Wasm load and store opcodes have been converted into MSWasm
+segment loads and stores. New MSWasm opcodes have been added.
 
 ### stores & loads
 
@@ -123,10 +145,25 @@ weren't able to find an easy way to go from WasmText to bytecode.
 
 Instruction           |Opcode      |Type                             |Explanation
 ----------------------|------------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------
-I32_SEGMENT_LOAD      |0xF0        |\[handle\] → \[i32\]             |Pushes the i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
-I64_SEGMENT_LOAD      |0xF1        |\[handle\] → \[i64\]             |Pushes the i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
-I32_SEGMENT_STORE     |0xF2        |\[handle i32\] → \[\]            |Stores the provided int in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
-I64_SEGMENT_STORE     |0xF3        |\[handle i64\] → \[\]            |Stores the provided long in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_LOAD      |0x28        |\[handle\] → \[i32\]             |Pushes the i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD      |0x29        |\[handle\] → \[i64\]             |Pushes the i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_LOAD_8S   |0x2C        |\[handle\] → \[i32\]             |Pushes the signed 8-byte i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_LOAD_8U   |0x2D        |\[handle\] → \[i32\]             |Pushes the unsigned 8-byte i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_LOAD_16S  |0x2E        |\[handle\] → \[i32\]             |Pushes the signed 16-byte i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_LOAD_16U  |0x2F        |\[handle\] → \[i32\]             |Pushes the unsigned 16-byte i32 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD_8S   |0x30        |\[handle\] → \[i32\]             |Pushes the signed 8-byte i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD_8U   |0x31        |\[handle\] → \[i32\]             |Pushes the unsigned 8-byte i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD_16S  |0x32        |\[handle\] → \[i32\]             |Pushes the signed 16-byte i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD_16U  |0x33        |\[handle\] → \[i32\]             |Pushes the unsigned 16-byte i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD_32S  |0x34        |\[handle\] → \[i32\]             |Pushes the signed 32-byte i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_LOAD_32U  |0x35        |\[handle\] → \[i32\]             |Pushes the unsigned 32-byte i64 at the referenced segment onto the stack. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_STORE     |0x36        |\[handle i32\] → \[\]            |Stores the provided int in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_STORE     |0x37        |\[handle i64\] → \[\]            |Stores the provided long in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_STORE_8   |0x3A        |\[handle\] → \[i32\]             |Stores the provided 8-byte int in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I32_SEGMENT_STORE_16  |0x3B        |\[handle\] → \[i32\]             |Stores the provided 16-byte int in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_STORE_8   |0x3C        |\[handle\] → \[i32\]             |Stores the provided 8-byte long in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_STORE_16  |0x3D        |\[handle\] → \[i32\]             |Stores the provided 16-byte long in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
+I64_SEGMENT_STORE_32  |0x3E        |\[handle\] → \[i32\]             |Stores the provided 32-byte long in the segment referenced by the handle. Traps if the handle is invalid or the segment isn't allocated.
 NEW_SEGMENT           |0xF4        |\[i32\] → \[handle\]             |Allocates segment of provided byte size, returns handle that points to it.
 FREE_SEGMENT          |0xF5        |\[handle\] → \[\]                |Deallocates segment pointed to by handle.
 SEGMENT_SLICE         |0xF6        |\[handle i32 i32\] → \[handle\]  |Takes handle to be sliced, offset of new base from old base, offset of new bound from old base.
