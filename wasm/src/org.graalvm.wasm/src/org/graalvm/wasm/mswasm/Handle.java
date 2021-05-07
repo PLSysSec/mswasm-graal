@@ -107,10 +107,6 @@ public class Handle {
      */
     public void setOffset(Node node, int offset) {
         this.offset = offset;
-        if (this.startAddress() > this.bound) {
-            // New offset is out of bounds, trap
-            trapInvalidOffset(node, offset);
-        }
     }
 
     
