@@ -212,17 +212,15 @@
 	  (br 0)
 	)
       )
-    )
-  (func $read (param i32) (result i32)
-    (i32.load (get_local 0))
+
+	;; return result
+	(i32.load (i32.const 64))
+
     )
 
   (export "salsa20" (func $salsa20))
-  (export "read" (func $read))
 
    (func (export "_main") (result i32)
       (call $salsa20)
-	  (i32.const 64)
-      (call $read)
    )
 )

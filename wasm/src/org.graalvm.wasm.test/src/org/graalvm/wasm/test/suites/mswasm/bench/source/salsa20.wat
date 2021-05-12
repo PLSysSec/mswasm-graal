@@ -213,8 +213,8 @@
 	)
       )
 
-      ;; return result
-	  (i32.load (i32.const 64))
+	;; return result
+	(i32.load (i32.const 64))
 
     )
 
