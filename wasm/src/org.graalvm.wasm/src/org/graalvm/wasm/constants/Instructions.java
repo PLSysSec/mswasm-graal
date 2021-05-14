@@ -74,8 +74,8 @@ public final class Instructions {
 
     public static final int I32_SEGMENT_LOAD = 0x28;
     public static final int I64_SEGMENT_LOAD = 0x29;
-    public static final int F32_LOAD = 0x2A;
-    public static final int F64_LOAD = 0x2B;
+    public static final int F32_SEGMENT_LOAD = 0x2A;
+    public static final int F64_SEGMENT_LOAD = 0x2B;
     public static final int I32_SEGMENT_LOAD8_S = 0x2C;
     public static final int I32_SEGMENT_LOAD8_U = 0x2D;
     public static final int I32_SEGMENT_LOAD16_S = 0x2E;
@@ -88,8 +88,8 @@ public final class Instructions {
     public static final int I64_SEGMENT_LOAD32_U = 0x35;
     public static final int I32_SEGMENT_STORE = 0x36;
     public static final int I64_SEGMENT_STORE = 0x37;
-    public static final int F32_STORE = 0x38;
-    public static final int F64_STORE = 0x39;
+    public static final int F32_SEGMENT_STORE = 0x38;
+    public static final int F64_SEGMENT_STORE = 0x39;
     public static final int I32_SEGMENT_STORE_8 = 0x3A;
     public static final int I32_SEGMENT_STORE_16 = 0x3B;
     public static final int I64_SEGMENT_STORE_8 = 0x3C;
