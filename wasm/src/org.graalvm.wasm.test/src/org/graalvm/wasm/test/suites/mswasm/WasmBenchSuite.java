@@ -23,9 +23,7 @@ import org.graalvm.wasm.utils.SystemProperties;
 public class WasmBenchSuite extends WasmSuiteBase {
         private String folderPath = "./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/bench/runnable/";
 
-        private static Properties opts = SystemProperties.createFromOptions(
-                        "zero-memory = false\n" + "interpreter-iterations = 0\n" + "sync-noinline-iterations = 10\n"
-                                        + "sync-inline-iterations = 10\n" + "async-iterations = 10\n");
+        private static Properties opts = BenchOpts.opts;
 
         private WasmBinaryCase[] testCases = {
                         WasmCase.create("WASM_LOOP", WasmCase.expected(120000),

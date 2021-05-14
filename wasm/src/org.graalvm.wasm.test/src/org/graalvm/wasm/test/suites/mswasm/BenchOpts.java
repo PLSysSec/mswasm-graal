@@ -1,5 +1,6 @@
 package org.graalvm.wasm.test.suites.mswasm;
 import org.graalvm.wasm.utils.SystemProperties;
+import java.util.Properties;
 
 public class BenchOpts {
     /*
