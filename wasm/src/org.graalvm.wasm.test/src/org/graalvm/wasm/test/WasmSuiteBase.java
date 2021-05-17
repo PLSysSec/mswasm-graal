@@ -92,6 +92,7 @@ public abstract class WasmSuiteBase extends WasmTestBase {
     private static Context getInterpretedNoInline(Context.Builder contextBuilder) {
         contextBuilder.option("engine.Compilation", "false");
         contextBuilder.option("engine.Inlining", "false");
+        contextBuilder.option("engine.TraceCompilationDetails", "true");
         return contextBuilder.build();
     }
 
@@ -100,6 +101,7 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.BackgroundCompilation", "false");
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "false");
+        contextBuilder.option("engine.TraceCompilationDetails", "true");
         return contextBuilder.build();
     }
 
@@ -108,6 +110,7 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.BackgroundCompilation", "false");
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "true");
+        contextBuilder.option("engine.TraceCompilationDetails", "true");
         return contextBuilder.build();
     }
 
@@ -117,6 +120,7 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.CompileImmediately", "false");
         contextBuilder.option("engine.Inlining", "false");
         contextBuilder.option("engine.CompilationThreshold", "100");
+        contextBuilder.option("engine.TraceCompilationDetails", "true");
         return contextBuilder.build();
     }
 

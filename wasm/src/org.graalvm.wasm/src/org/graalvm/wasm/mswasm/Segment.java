@@ -1,9 +1,11 @@
 package org.graalvm.wasm.mswasm;
 
+import com.oracle.truffle.api.interop.TruffleObject;
+
 /**
  * Models a segment of memory
  */
-public class Segment {
+public class Segment implements TruffleObject {
     private boolean isFree;
 
     public Segment() {

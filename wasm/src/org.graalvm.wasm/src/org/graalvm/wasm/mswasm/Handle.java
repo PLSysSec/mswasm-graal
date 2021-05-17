@@ -4,12 +4,13 @@ import java.lang.reflect.Field;
 import java.util.HashMap;
 
 import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.interop.TruffleObject;
 import sun.misc.Unsafe;
 import com.oracle.truffle.api.nodes.Node;
 import org.graalvm.wasm.exception.WasmTrap;
 import org.graalvm.wasm.WasmTracing;
 
-public class Handle {
+public class Handle implements TruffleObject {
     private final Unsafe unsafe;
     
     // segment model used to check if memory is free
