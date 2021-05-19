@@ -11,7 +11,16 @@ import org.graalvm.wasm.exception.WasmTrap;
 import org.graalvm.wasm.WasmTracing;
 
 public class Handle implements TruffleObject {
-    private final Unsafe unsafe;
+    private static final Unsafe unsafe;
+    static {
+        try {
+            Field f = Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            unsafe = (Unsafe) f.get(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
     
     // segment model used to check if memory is free
     private Segment segment;
@@ -29,9 +38,8 @@ public class Handle implements TruffleObject {
     private final boolean isSlice;
 
     // Manual constructor used to generate slices
-    private Handle(Unsafe unsafe, Segment segment, long base, long bound, long offset, 
+    private Handle(Segment segment, long base, long bound, long offset, 
                    boolean isCorrupted, boolean isSlice) {
-        this.unsafe = unsafe;
         this.segment = segment;
 
         this.base = base;
@@ -46,23 +54,14 @@ public class Handle implements TruffleObject {
      * Allocate new segment
      */
     public Handle(int byteSize) {
-        // Get unsafe
-        try {
-            Field f = Unsafe.class.getDeclaredField("theUnsafe");
-            f.setAccessible(true);
-            this.unsafe = (Unsafe) f.get(null);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-
         // define new segment
         this.segment = new Segment();
 
         // allocate memory
-        this.base = this.unsafe.allocateMemory(byteSize); // start of allocation
+        this.base = unsafe.allocateMemory(byteSize); // start of allocation
         this.offset = 0; // where we begin looking at memory
         this.bound = this.base + byteSize;
-        this.unsafe.setMemory(startAddress(), byteSize, (byte) 0);
+        // unsafe.setMemory(startAddress(), byteSize, (byte) 0);
 
         // set flags
         this.isCorrupted = false;
@@ -71,7 +70,6 @@ public class Handle implements TruffleObject {
 
     // Duplicate handle
     public Handle(Handle other) {
-        this.unsafe = other.unsafe;
         this.segment = other.segment;
 
         this.base = other.base;
@@ -197,7 +195,7 @@ public class Handle implements TruffleObject {
 
         long resultBase = this.base + baseOffset;
         long resultBound = this.base + boundOffset;
-        Handle result = new Handle(this.unsafe, this.segment, resultBase, resultBound, 0, false, true);
+        Handle result = new Handle(this.segment, resultBase, resultBound, 0, false, true);
 
         return result;
     }
@@ -233,7 +231,7 @@ public class Handle implements TruffleObject {
     public int load_i32(Node node) {
         WasmTracing.trace("load.i32 address = %d", startAddress());
         validateHandleAccess(node, 4);
-        int value = this.unsafe.getInt(startAddress());
+        int value = unsafe.getInt(startAddress());
         WasmTracing.trace("load.i32 value = 0x%08X (%d)", value, value);
         return value;
     }
@@ -242,7 +240,7 @@ public class Handle implements TruffleObject {
     public long load_i64(Node node) {
         WasmTracing.trace("load.i64 address = %d", startAddress());
         validateHandleAccess(node, 8);
-        long value = this.unsafe.getLong(startAddress());
+        long value = unsafe.getLong(startAddress());
         WasmTracing.trace("load.i64 value = 0x%08X (%d)", value, value);
         return value;
     }
@@ -251,7 +249,7 @@ public class Handle implements TruffleObject {
     public float load_f32(Node node) {
         WasmTracing.trace("load.f32 address = %d", startAddress());
         validateHandleAccess(node, 4);
-        float value = this.unsafe.getFloat(startAddress());
+        float value = unsafe.getFloat(startAddress());
         WasmTracing.trace("load.f32 address = %d, value = 0x%08X (%f)", startAddress(), Float.floatToRawIntBits(value), value);
         return value;
     }
@@ -269,7 +267,7 @@ public class Handle implements TruffleObject {
     public int load_i32_8s(Node node) {
         WasmTracing.trace("load.i32_8s address = %d", startAddress());
         validateHandleAccess(node, 1);
-        int value = this.unsafe.getByte(startAddress());
+        int value = unsafe.getByte(startAddress());
         WasmTracing.trace("load.i32_8s value = 0x%02X (%d)", value, value);
         return value;
     }
@@ -278,7 +276,7 @@ public class Handle implements TruffleObject {
     public int load_i32_8u(Node node) {
         WasmTracing.trace("load.i32_8u address = %d", startAddress());
         validateHandleAccess(node, 1);
-        int value = 0x0000_00ff & this.unsafe.getByte(startAddress());
+        int value = 0x0000_00ff & unsafe.getByte(startAddress());
         WasmTracing.trace("load.i32_8u value = 0x%02X (%d)", value, value);
         return value;
     }
@@ -287,7 +285,7 @@ public class Handle implements TruffleObject {
     public int load_i32_16s(Node node) {
         WasmTracing.trace("load.i32_16s address = %d", startAddress());
         validateHandleAccess(node, 2);
-        int value = this.unsafe.getShort(startAddress());
+        int value = unsafe.getShort(startAddress());
         WasmTracing.trace("load.i32_16s value = 0x%04X (%d)", value, value);
         return value;
     }
@@ -296,7 +294,7 @@ public class Handle implements TruffleObject {
     public int load_i32_16u(Node node) {
         WasmTracing.trace("load.i32_16u address = %d", startAddress() );
         validateHandleAccess(node, 2);
-        int value = 0x0000_ffff & this.unsafe.getShort(startAddress());
+        int value = 0x0000_ffff & unsafe.getShort(startAddress());
         WasmTracing.trace("load.i32_16u value = 0x%04X (%d)", value, value);
         return value;
     }
@@ -305,7 +303,7 @@ public class Handle implements TruffleObject {
     public long load_i64_8s(Node node) {
         WasmTracing.trace("load.i64_8s address = %d", startAddress());
         validateHandleAccess(node, 1);
-        long value = this.unsafe.getByte(startAddress());
+        long value = unsafe.getByte(startAddress());
         WasmTracing.trace("load.i64_8s value = 0x%02X (%d)", value, value);
         return value;
     }
@@ -314,7 +312,7 @@ public class Handle implements TruffleObject {
     public long load_i64_8u(Node node) {
         WasmTracing.trace("load.i64_8u address = %d", startAddress());
         validateHandleAccess(node, 1);
-        long value = 0x0000_0000_0000_00ffL & this.unsafe.getByte(startAddress());
+        long value = 0x0000_0000_0000_00ffL & unsafe.getByte(startAddress());
         WasmTracing.trace("load.i64_8u value = 0x%02X (%d)", value, value);
         return value;
     }
@@ -323,7 +321,7 @@ public class Handle implements TruffleObject {
     public long load_i64_16s(Node node) {
         WasmTracing.trace("load.i64_16s address = %d", startAddress());
         validateHandleAccess(node, 2);
-        long value = this.unsafe.getShort(startAddress());
+        long value = unsafe.getShort(startAddress());
         WasmTracing.trace("load.i64_16s value = 0x%04X (%d)", value, value);
         return value;
     }
@@ -332,7 +330,7 @@ public class Handle implements TruffleObject {
     public long load_i64_16u(Node node) {
         WasmTracing.trace("load.i64_16u address = %d", startAddress());
         validateHandleAccess(node, 2);
-        long value = 0x0000_0000_0000_ffffL & this.unsafe.getShort(startAddress());
+        long value = 0x0000_0000_0000_ffffL & unsafe.getShort(startAddress());
         WasmTracing.trace("load.i64_16u value = 0x%04X (%d)", value, value);
         return value;
     }
@@ -341,7 +339,7 @@ public class Handle implements TruffleObject {
     public long load_i64_32s(Node node) {
         WasmTracing.trace("load.i64_32s address = %d", startAddress());
         validateHandleAccess(node, 4);
-        long value = this.unsafe.getInt(startAddress());
+        long value = unsafe.getInt(startAddress());
         WasmTracing.trace("load.i64_32s value = 0x%08X (%d)", value, value);
         return value;
     }
@@ -350,7 +348,7 @@ public class Handle implements TruffleObject {
     public long load_i64_32u(Node node) {
         WasmTracing.trace("load.i64_32u address = %d", startAddress());
         validateHandleAccess(node, 4);
-        long value = 0x0000_0000_ffff_ffffL & this.unsafe.getInt(startAddress());
+        long value = 0x0000_0000_ffff_ffffL & unsafe.getInt(startAddress());
         WasmTracing.trace("load.i64_32u value = 0x%08X (%d)", value, value);
         return value;
     }
@@ -364,7 +362,7 @@ public class Handle implements TruffleObject {
         validateHandleAccess(node, 4);
 
         // load key at address
-        int key = this.unsafe.getInt(startAddress());
+        int key = unsafe.getInt(startAddress());
         WasmTracing.trace("load.handle key = 0x%08X (%d)", key, key);
 
         // validate key
