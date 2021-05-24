@@ -5,7 +5,7 @@ import com.oracle.truffle.api.interop.TruffleObject;
 /**
  * Models a segment of memory
  */
-public class Segment implements TruffleObject {
+public class Segment {
     private boolean isFree;
 
     public Segment() {

@@ -10,7 +10,7 @@ import com.oracle.truffle.api.nodes.Node;
 import org.graalvm.wasm.exception.WasmTrap;
 import org.graalvm.wasm.WasmTracing;
 
-public class Handle implements TruffleObject {
+public class Handle {
     private static final Unsafe unsafe;
     static {
         try {
@@ -83,6 +83,7 @@ public class Handle implements TruffleObject {
      * Generate random key for the given handle. Returns key in
      *      (Integer.MIN_VALUE, Integer.MAX_VALUE)
      */
+    @CompilerDirectives.TruffleBoundary
     public static int generateKey(Handle handle) {
         double rand = Math.random();
         double signRand = Math.random();
@@ -122,15 +123,7 @@ public class Handle implements TruffleObject {
 
     
 
-    @CompilerDirectives.TruffleBoundary
-    private void trapInvalidOffset(Node node, int offset) {
-        // String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds (memory size %d bytes).",
-        //                 accessSize, startAddress(), startAddress(), byteSize());
-        String message = "Offset " + offset + " is out of bounds";
-        throw new WasmTrap(node, message);
-    }
-
-    @CompilerDirectives.TruffleBoundary
+    // @CompilerDirectives.TruffleBoundary
     private void trapOutOfBounds(Node node, long accessSize) {
         // String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds (memory size %d bytes).",
         //                 accessSize, startAddress(), startAddress(), byteSize());
@@ -138,7 +131,7 @@ public class Handle implements TruffleObject {
         throw new WasmTrap(node, message);
     }
 
-    @CompilerDirectives.TruffleBoundary
+    // @CompilerDirectives.TruffleBoundary
     private void trapCorrupted(Node node) {
         // String message = String.format("Segment memory access at address 0x%016X (%d) is corrupted.",
         //                 startAddress(), startAddress());
@@ -146,7 +139,7 @@ public class Handle implements TruffleObject {
         throw new WasmTrap(node, message);
     }
 
-    @CompilerDirectives.TruffleBoundary
+    // @CompilerDirectives.TruffleBoundary
     private void trapFreed(Node node) {
         // String message = String.format("Segment memory at address 0x%016X (%d) is not allocated.",
         //                 startAddress(), startAddress());
