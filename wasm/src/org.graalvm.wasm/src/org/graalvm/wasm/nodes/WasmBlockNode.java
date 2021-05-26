@@ -793,7 +793,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                             // mswasmErr += "local.get handle " + value + "\n";
 
-                            trace("local.get %d, value = " + value, index);
+                            // trace("local.get %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -848,7 +848,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                             // mswasmErr += "local.set handle " + value + "\n";
 
-                            trace("local.set %d, value = " + value, index);
+                            // trace("local.set %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -910,7 +910,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
                             setHandle(frame, index, value);
-                            trace("local.tee %d, value = " + value, index);
+                            // trace("local.tee %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -968,7 +968,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = context.globals().loadAsHandle(address);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
-                            trace("global.get %d, value = " + value, index);
+                            // trace("global.get %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -1028,7 +1028,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer--;
                             Handle value = popHandle(frame, stackPointer);
                             int address = module().symbolTable().globalAddress(index);
-                            trace("global.set %d, value = " + value, index);
+                            // trace("global.set %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -2530,7 +2530,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     pushInt(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push i32.segment_load" + specific_load + " " + x + " --> %d [i32]", result);
+                    // trace("push i32.segment_load" + specific_load + " " + x + " --> %d [i32]", result);
 
                     // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
 
@@ -2590,7 +2590,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     push(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push i64.segment_load" + specific_load + " " + x + " --> %d [i64]", result);
+                    // trace("push i64.segment_load" + specific_load + " " + x + " --> %d [i64]", result);
 
                     // mswasmErr += "i64.segment_load " + x + " --> " + result + "\n";
 
@@ -2604,7 +2604,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     pushFloat(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push f32.segment_load " + x + " --> %d [f32]", result);
+                    // trace("push f32.segment_load " + x + " --> %d [f32]", result);
 
                     // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
 
@@ -2618,7 +2618,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     pushDouble(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push f64.segment_load " + x + " --> %d [f64]", result);
+                    // trace("push f64.segment_load " + x + " --> %d [f64]", result);
 
                     // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
 
@@ -2726,7 +2726,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // mswasmErr += "newSegment " + segSize + " --> " + result + "\n";
 
                     stackPointer++;
-                    trace("push new_segment " + segSize + " --> " + result);
+                    // trace("push new_segment " + segSize + " --> " + result);
                     break;
                 }
                 case FREE_SEGMENT: {
@@ -2755,7 +2755,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     pushHandle(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, base, bound);
+                    // trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, base, bound);
                     break;
                 }
                 case HANDLE_SEGMENT_LOAD: {
@@ -2771,7 +2771,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
 
                     stackPointer++;
-                    trace("push handle.segment_load " + x + " --> " + result);
+                    // trace("push handle.segment_load " + x + " --> " + result);
                     break;
                 }
                 case HANDLE_SEGMENT_STORE: {
@@ -2804,7 +2804,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // mswasmErr += "handle.add " + handle + " + shift " + shift + " --> " + result;
 
                     stackPointer++;
-                    trace("push handle.add %d [i32] ; " + handle + " --> " + result, add_offset);
+                    // trace("push handle.add %d [i32] ; " + handle + " --> " + result, add_offset);
                     break;
                 }
                 case HANDLE_SUB: {
@@ -2821,7 +2821,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // mswasmErr += "handle.sub " + handle + " - shift " + shift + " --> " + result;
 
                     stackPointer++;
-                    trace("push handle.sub %d [i32] ; " + handle + " --> " + result, sub_offset);
+                    // trace("push handle.sub %d [i32] ; " + handle + " --> " + result, sub_offset);
                     break;
                 }
                 case HANDLE_GET_OFFSET: {
@@ -2833,7 +2833,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     pushInt(frame, stackPointer, h_offset);
 
                     stackPointer++;
-                    trace("push handle.get_offset " + handle + " --> %d [i32]", h_offset);
+                    // trace("push handle.get_offset " + handle + " --> %d [i32]", h_offset);
                     break;
                 }
                 case HANDLE_SET_OFFSET: {
@@ -2848,7 +2848,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     pushHandle(frame, stackPointer, result);
 
                     stackPointer++;
-                    trace("push handle.set_o fset%d [i32] ; " + handle + " --> " + result, h_offset);
+                    // trace("push handle.set_o fset%d [i32] ; " + handle + " --> " + result, h_offset);
                     break;
                 }
                 default:

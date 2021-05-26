@@ -103,6 +103,8 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.Inlining", "false");
         contextBuilder.option("engine.TraceCompilationDetails", "true");
         contextBuilder.option("engine.TraceCompilationAST", "true");
+        //contextBuilder.option("engine.InstrumentBoundaries", "true");
+        contextBuilder.option("engine.PrintExpansionHistogram", "true");
         return contextBuilder.build();
     }
 
@@ -113,6 +115,8 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.Inlining", "true");
         contextBuilder.option("engine.TraceCompilationDetails", "true");
         contextBuilder.option("engine.TraceCompilationAST", "true");
+        //contextBuilder.option("engine.InstrumentBoundaries", "true");
+        contextBuilder.option("engine.PrintExpansionHistogram", "true");
         return contextBuilder.build();
     }
 
@@ -124,6 +128,8 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.CompilationThreshold", "100");
         contextBuilder.option("engine.TraceCompilationDetails", "true");
         contextBuilder.option("engine.TraceCompilationAST", "true");
+        //contextBuilder.option("engine.InstrumentBoundaries", "true");
+        contextBuilder.option("engine.PrintExpansionHistogram", "true");
         return contextBuilder.build();
     }
 
