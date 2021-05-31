@@ -28,11 +28,11 @@ public class DemoSuite extends WasmSuiteBase {
                                         + "sync-inline-iterations = 0\n" + "async-iterations = 0\n");
 
         private WasmBinaryCase[] testCases = {
-                        WasmCase.create("ORIG_WASM", WasmCase.expected(120000),
+                        WasmCase.create("ORIG_WASM", WasmCase.expected(123456789), // gets secret key!
                                         parseWasmFile(folderPath + "demo_wasm.wasm"), null, opts),
-                        WasmCase.create("MSWASM_FAIL", WasmCase.expected(120000),
+                        WasmCase.create("MSWASM_FAIL", WasmCase.expected(123456789), // fails to access secret key
                                         parseWasmFile(folderPath + "demo_mswasm_fail.wasm"), null, opts),
-                        WasmCase.create("MSWASM_PASS", WasmCase.expected(555555555),
+                        WasmCase.create("MSWASM_PASS", WasmCase.expected(555555555), // gets public key only as intended
                                         parseWasmFile(folderPath + "demo_mswasm_pass.wasm"), null, opts),
 
         };
