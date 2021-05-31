@@ -4,8 +4,8 @@
     (local $pub_addr i32) (local $secret_addr i32)
     (local $public i64) (local $secret i64)
 
-    (set_local $public (i64.const 5555555555))
-    (set_local $secret (i64.const 1234567890))
+    (set_local $public (i64.const 555555555))
+    (set_local $secret (i64.const 123456789))
 
     (set_local $secret_addr (i32.const 128))
     (i64.store (get_local $addr) (get_local $secret))
