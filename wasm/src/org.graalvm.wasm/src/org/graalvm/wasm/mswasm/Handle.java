@@ -46,7 +46,7 @@ public class Handle {
         this.bound = bound;
         this.offset = offset;
 
-        this.isCorrupted = isCorrupted;
+        // this.isCorrupted = isCorrupted;
         this.isSlice = isSlice;
     }
 
@@ -64,7 +64,7 @@ public class Handle {
         // unsafe.setMemory(this.base + this.offset, byteSize, (byte) 0);
 
         // set flags
-        this.isCorrupted = false;
+        // this.isCorrupted = false;
         this.isSlice = false;
     }
 
@@ -75,7 +75,7 @@ public class Handle {
         this.base = other.base;
         this.offset = other.offset;
         this.bound = other.bound;
-        this.isCorrupted = other.isCorrupted;
+        // this.isCorrupted = other.isCorrupted;
         this.isSlice = other.isSlice;
     }
 
@@ -112,9 +112,10 @@ public class Handle {
     
     public void validateHandleAccess(Node node, long accessSize) {
         // WasmTracing.trace("validating handle at 0x%016X (%d)", this.base + this.offset, this.base + this.offset);
-        if (this.isCorrupted) {
-            trapCorrupted(node);
-        } else if (this.segment.isFree()) {
+        // if (this.isCorrupted) {
+        //     trapCorrupted(node);
+        // } else
+        if (this.segment.isFree()) {
             trapFreed(node);
         } else if (this.offset < 0 || this.base + this.offset + accessSize > this.bound) {
             trapOutOfBounds(node, accessSize);
