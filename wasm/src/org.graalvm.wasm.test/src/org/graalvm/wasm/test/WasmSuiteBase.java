@@ -89,10 +89,15 @@ public abstract class WasmSuiteBase extends WasmTestBase {
     private static final int INITIAL_STATE_CHECK_ITERATIONS = 10;
     private static final int STATE_CHECK_PERIODICITY = 2000;
 
+    // TURN ON WHEN WE WANT HISTOGRAM, OFF WHEN MEASURING RUNTIME
+    private static final boolean TRACING = false;
+
     private static Context getInterpretedNoInline(Context.Builder contextBuilder) {
         contextBuilder.option("engine.Compilation", "false");
         contextBuilder.option("engine.Inlining", "false");
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
+	if(TRACING) {
+		contextBuilder.option("engine.TraceCompilationDetails", "true");
+	}
         return contextBuilder.build();
     }
 
@@ -101,10 +106,11 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.BackgroundCompilation", "false");
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "false");
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        //contextBuilder.option("engine.InstrumentBoundaries", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+	if(TRACING) {
+		contextBuilder.option("engine.TraceCompilationDetails", "true");
+		contextBuilder.option("engine.TraceCompilationAST", "true");
+		contextBuilder.option("engine.PrintExpansionHistogram", "true");
+	}
         return contextBuilder.build();
     }
 
@@ -113,10 +119,11 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.BackgroundCompilation", "false");
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "true");
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        //contextBuilder.option("engine.InstrumentBoundaries", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+	if(TRACING){
+		contextBuilder.option("engine.TraceCompilationDetails", "true");
+		contextBuilder.option("engine.TraceCompilationAST", "true");
+		contextBuilder.option("engine.PrintExpansionHistogram", "true");
+	}
         return contextBuilder.build();
     }
 
@@ -126,10 +133,11 @@ public abstract class WasmSuiteBase extends WasmTestBase {
         contextBuilder.option("engine.CompileImmediately", "false");
         contextBuilder.option("engine.Inlining", "false");
         contextBuilder.option("engine.CompilationThreshold", "100");
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        //contextBuilder.option("engine.InstrumentBoundaries", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+	if(TRACING) {
+		contextBuilder.option("engine.TraceCompilationDetails", "true");
+		contextBuilder.option("engine.TraceCompilationAST", "true");
+		contextBuilder.option("engine.PrintExpansionHistogram", "true");
+	}
         return contextBuilder.build();
     }
 
