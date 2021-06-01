@@ -76,11 +76,12 @@ public class MSWasmSuite extends WasmSuiteBase {
                                         parseWasmFile(folderPath + "mswasm_handle_get_offset.wasm"), null, opts),
                         WasmCase.create("HANDLE_SET_OFFSET", WasmCase.expected(4),
                                         parseWasmFile(folderPath + "mswasm_handle_set_offset.wasm"), null, opts),
-                        WasmCase.create("HANDLE_SET_OFFSET_TRAP",
-                                        WasmCase.expectedThrows(
-                                                        "Offset 16 is out of bounds",
-                                                        WasmCaseData.ErrorType.Validation),
-                                        parseWasmFile(folderPath + "mswasm_handle_set_offset_trap.wasm"), null, opts),
+			//  HANDLE_SET_OFFSET_TRAP is now outdated: should only throw trap at dereference
+                       //  WasmCase.create("HANDLE_SET_OFFSET_TRAP",
+                       //                  WasmCase.expectedThrows(
+                       //                                  "Offset 16 is out of bounds",
+                       //                                  WasmCaseData.ErrorType.Validation),
+                       //                  parseWasmFile(folderPath + "mswasm_handle_set_offset_trap.wasm"), null, opts),
                         WasmCase.create("HANDLE_REFERENCE", WasmCase.expected(0),
                                         parseWasmFile(folderPath + "mswasm_handle_reference.wasm"), null, opts),
                         WasmCase.create("HANDLE_DUP",
