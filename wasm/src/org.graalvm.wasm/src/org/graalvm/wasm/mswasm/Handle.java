@@ -79,6 +79,13 @@ public class Handle {
         this.isSlice = other.isSlice;
     }
 
+
+    public static Handle nullHandle() {
+        // isCorrupted bit set, can never be dereferenced
+        return new Handle(new Segment(), 0, 0, 0, true, false);
+    }
+
+
     /**
      * Generate random key for the given handle. Returns key in
      *      (Integer.MIN_VALUE, Integer.MAX_VALUE)
@@ -160,7 +167,10 @@ public class Handle {
      * if this handle is a slice.
      */
     public void free(Node node) {
-        if (this.isSlice) {
+        if (this.isCorrupted) {
+            String message = "Corrupted handle can't be freed";
+            throw new WasmTrap(node, message);
+        } else if (this.isSlice) {
             String message = "Slices of handles can't be freed";
             throw new WasmTrap(node, message);
         } else if (this.segment.isFree()) {
@@ -362,8 +372,13 @@ public class Handle {
         if ( ! keysToHandles.containsKey(key)) {
             // invalid key; throw a trap
             // TODO do we want to return a corrupted handle instead?
-            String message = "Corrupted key does not reference a valid handle";
-            throw new WasmTrap(node, message);
+
+            // ideally, invalid key references a Handle that is corrupted
+            // now that the key is corrupted, we don't know what Handle it refers to
+            // when a handle is stored and modified, programmer expects that the modified Handle can be loaded
+            // our representation - you modified that handle, it's actually a KEY, not the handle itself, can't reference
+            // we want to postpone this trap until we dereference this handle
+            return nullHandle();
         }
 
         // return valid handle
