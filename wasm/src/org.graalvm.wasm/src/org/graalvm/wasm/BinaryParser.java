@@ -936,6 +936,9 @@ public class BinaryParser extends BinaryStreamParser {
                     state.pop();
                     state.push();
                     break;
+                case Instructions.NULL_HANDLE:
+                    state.push();
+                    break;
                 case Instructions.HANDLE_GET_OFFSET:
                     state.pop();
                     state.push();
@@ -1170,6 +1173,11 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.GLOBAL_GET:
                     existingIndex = readGlobalIndex();
                     isInitialized = false;
+                    break;
+                case (byte)Instructions.NULL_HANDLE:
+                    // TODO placeholder
+                    value = 0;
+                    isInitialized = true;
                     break;
                 default:
                     throw Assert

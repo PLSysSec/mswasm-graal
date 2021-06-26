@@ -239,6 +239,7 @@ import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_LOAD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_STORE;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_ADD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SUB;
+import static org.graalvm.wasm.constants.Instructions.NULL_HANDLE;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_GET_OFFSET;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SET_OFFSET;
 
@@ -2822,6 +2823,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     stackPointer++;
                     // trace("push handle.sub %d [i32] ; " + handle + " --> " + result, sub_offset);
+                    break;
+                }
+                case NULL_HANDLE: {
+                    pushHandle(frame, stackPointer, Handle.nullHandle());
+                    stackPointer++;
                     break;
                 }
                 case HANDLE_GET_OFFSET: {

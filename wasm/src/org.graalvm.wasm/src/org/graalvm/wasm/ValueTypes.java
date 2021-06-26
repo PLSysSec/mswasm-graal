@@ -49,7 +49,7 @@ public class ValueTypes {
     public static final byte I64_TYPE = 0x7E;
     public static final byte F32_TYPE = 0x7D;
     public static final byte F64_TYPE = 0x7C;
-    public static final byte HANDLE_TYPE = 0x7B;
+    public static final byte HANDLE_TYPE = 0x6E;
 
     public static String asString(int valueType) {
         switch (valueType) {
