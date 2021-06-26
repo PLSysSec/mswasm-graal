@@ -69,7 +69,7 @@ import com.oracle.truffle.api.Truffle;
 
 import static junit.framework.TestCase.fail;
 
-public abstract class WasmSuiteBase extends WasmTestBase {
+public abstract class CompWasmSuiteBase extends WasmTestBase {
 
     private static final String MOVE_LEFT = "\u001b[1D";
     private static final String TEST_PASSED_ICON = "\uD83D\uDE0D";
@@ -165,7 +165,7 @@ public abstract class WasmSuiteBase extends WasmTestBase {
             // Execute the main function (exported as "_main").
             // Then, optionally save memory and globals, and compare them.
             // Execute a special function, which resets memory and globals to their default values.
-            Value mainFunction = context.getBindings("wasm").getMember("_main");
+            Value mainFunction = context.getBindings("wasm").getMember("_start");
             Value resetContext = context.getBindings("wasm").getMember(TestutilModule.Names.RESET_CONTEXT);
             Value customInitialize = context.getBindings("wasm").getMember(TestutilModule.Names.RUN_CUSTOM_INITIALIZATION);
             Value saveContext = context.getBindings("wasm").getMember(TestutilModule.Names.SAVE_CONTEXT);

@@ -7,11 +7,11 @@
     (set_local $public (i32.const 555555555))
     (set_local $secret (i32.const 123456789))
 
-    (set_local $secret_addr (new_segment (i32.const 8)))
+    (set_local $secret_addr (new_segment (i32.const 4)))
     (i32.segment_store (get_local $secret_addr) (get_local $secret))
 
     ;; public address = entirely new handle
-    (set_local $pub_addr (new_segment (i32.const 8)))
+    (set_local $pub_addr (new_segment (i32.const 4)))
     (i32.segment_store (get_local $pub_addr) (get_local $public))
 
     (get_local $pub_addr) ;; return the public key's address
@@ -21,7 +21,7 @@
   ;; attempts to retrieve the PRIVATE key, but fails!
   (func $untrusted (param $addr handle) (result i32)
     ;; attempt to increment handle into secret space
-    (handle.add (i32.const 8) (get_local $addr))
+    (handle.add (i32.const 4) (get_local $addr))
     (i32.segment_load) ;; attempt to load private key -- traps!
   )
 
