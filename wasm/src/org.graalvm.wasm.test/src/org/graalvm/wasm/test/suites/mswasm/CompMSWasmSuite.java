@@ -21,7 +21,7 @@ import java.util.Properties;
 import org.graalvm.wasm.utils.SystemProperties;
 
 public class CompMSWasmSuite extends CompWasmSuiteBase {
-        private String folderPath = "./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/mswasmTests/";
+        private String folderPath = "./src/org.graalvm.wasm.test/src/org/graalvm/wasm/test/suites/mswasm/craig/";
 
         private static Properties opts = SystemProperties.createFromOptions(
                         "zero-memory = false\n" + "interpreter-iterations = 0\n" + "sync-noinline-iterations = 10\n"
@@ -29,7 +29,13 @@ public class CompMSWasmSuite extends CompWasmSuiteBase {
 
         private WasmBinaryCase[] testCases = {
                         WasmCase.create("HACL_CHACHA20_CORE", WasmCase.expected(0),
-                                        parseWasmFile(folderPath + "Hacl_Chacha20_core.wasm"), null, opts)
+                                        parseWasmFile(folderPath + "Hacl_Chacha20_core.wasm"), null, opts),
+                        WasmCase.create("CRAIG_1", WasmCase.expected(0),
+                                         parseWasmFile(folderPath + "test1.wasm"), null, opts),
+                        WasmCase.create("CRAIG_2", WasmCase.expected(0),
+                                         parseWasmFile(folderPath + "test2.wasm"), null, opts),
+                        WasmCase.create("CRAIG_4", WasmCase.expected(0),
+                                         parseWasmFile(folderPath + "test4.wasm"), null, opts)
         };
 
         private byte[] parseWasmFile(String fileName) {
