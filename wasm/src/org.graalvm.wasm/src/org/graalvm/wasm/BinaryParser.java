@@ -903,6 +903,16 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.I64_SEGMENT_STORE_16:
                 case Instructions.I64_SEGMENT_STORE_32:
                 case Instructions.HANDLE_SEGMENT_STORE:
+                    // We don't store the `align` literal, as our implementation does not make use
+                    // of it, but we need to store its byte length, so that we can skip it
+                    // during the execution.
+                    if (mustPoolLeb128()) {
+                        state.useByteConstant(peekLeb128Length(data, offset));
+                    }
+                    readUnsignedInt32(); // align
+                    readUnsignedInt32(state); // store offset
+                    Assert.assertIntGreater(state.stackSize(), 1, String
+                            .format("store instruction 0x%02X requires at least two elements in the stack", opcode));
                     state.pop();
                     state.pop();
                     break;
@@ -921,6 +931,19 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.I64_SEGMENT_LOAD32_S:
                 case Instructions.I64_SEGMENT_LOAD32_U:
                 case Instructions.HANDLE_SEGMENT_LOAD:
+                    // We don't store the `align` literal, as our implementation does not make use
+                    // of it, but we need to store its byte length, so that we can skip it
+                    // during execution.
+                    if (mustPoolLeb128()) {
+                        state.useByteConstant(peekLeb128Length(data, offset));
+                    }
+                    readUnsignedInt32(); // align
+                    readUnsignedInt32(state); // load offset
+                    Assert.assertIntGreater(state.stackSize(), 0, String
+                            .format("load instruction 0x%02X requires at least one element in the stack", opcode));
+                    state.pop();
+                    state.push();
+                    break;
                 case Instructions.NEW_SEGMENT:
                     state.pop();
                     state.push();

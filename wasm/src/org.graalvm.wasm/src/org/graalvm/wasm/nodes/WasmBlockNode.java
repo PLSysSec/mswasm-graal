@@ -2492,228 +2492,219 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I32_SEGMENT_LOAD8_S:
                 case I32_SEGMENT_LOAD8_U:
                 case I32_SEGMENT_LOAD16_S:
-                case I32_SEGMENT_LOAD16_U: {
-                    // MSWasm
-                    stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
-                    int result = 0;
-
-                    String specific_load = "";
-                    switch(opcode) {
-                        case I32_SEGMENT_LOAD: {
-                            result = x.load_i32(this);
-                            break;
-                        }
-                        case I32_SEGMENT_LOAD8_S: {
-                            result = x.load_i32_8s(this);
-                            specific_load = "8s";
-                            break;
-                        }
-                        case I32_SEGMENT_LOAD8_U: {
-                            result = x.load_i32_8u(this);
-                            specific_load = "8u";
-                            break;
-                        }
-                        case I32_SEGMENT_LOAD16_S: {
-                            result = x.load_i32_16s(this);
-                            specific_load = "16s";
-                            break;
-                        }
-                        case I32_SEGMENT_LOAD16_U: {
-                            result = x.load_i32_16u(this);
-                            specific_load = "16u";
-                            break;
-                        }
-                        default: {
-                            throw new WasmTrap(this, "Unrecognized i32 segment_load opcode");
-                        }
-                    }
-
-                    pushInt(frame, stackPointer, result);
-                    stackPointer++;
-                    // trace("push i32.segment_load" + specific_load + " " + x + " --> %d [i32]", result);
-
-                    // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
-
-                    break;
-                }
+                case I32_SEGMENT_LOAD16_U:
                 case I64_SEGMENT_LOAD:
                 case I64_SEGMENT_LOAD8_S:
                 case I64_SEGMENT_LOAD8_U:
                 case I64_SEGMENT_LOAD16_S:
                 case I64_SEGMENT_LOAD16_U: 
                 case I64_SEGMENT_LOAD32_S:
-                case I64_SEGMENT_LOAD32_U: {
-                    // MSWasm
+                case I64_SEGMENT_LOAD32_U:
+                case F32_SEGMENT_LOAD:
+                case F64_SEGMENT_LOAD: {
+                    /* The memAlign hint is not currently used or taken into account. */
+                    int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += memAlignOffsetDelta;
+    
+                    // region Load LEB128 Unsigned32 -> memOffset
+                    int memOffset = unsignedIntConstant(offset, intConstantOffset);
+                    int offsetDelta = offsetDelta(offset, byteConstantOffset);
+                    intConstantOffset += intConstantDelta(offset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += offsetDelta;
+                    // endregion
+    
                     stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
-                    long result = 0;
-                    String specific_load = "";
+                    Handle address = popHandle(frame, stackPointer);
+                    address.add(memOffset);
+
                     switch(opcode) {
+                        case I32_SEGMENT_LOAD: {
+                            int result = address.load_i32(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD8_S: {
+                            int result = address.load_i32_8s(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD8_U: {
+                            int result = address.load_i32_8u(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD16_S: {
+                            int result = address.load_i32_16s(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD16_U: {
+                            int result = address.load_i32_16u(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
                         case I64_SEGMENT_LOAD: {
-                            result = x.load_i64(this);
+                            long result = address.load_i64(this);
+                            push(frame, stackPointer, result);
                             break;
                         }
                         case I64_SEGMENT_LOAD8_S: {
-                            result = x.load_i64_8s(this);
-                            specific_load = "8s";
+                            long result = address.load_i64_8s(this);
+                            push(frame, stackPointer, result);
                             break;
                         }
                         case I64_SEGMENT_LOAD8_U: {
-                            result = x.load_i64_8u(this);
-                            specific_load = "8u";
+                            long result = address.load_i64_8u(this);
+                            push(frame, stackPointer, result);
                             break;
                         }
                         case I64_SEGMENT_LOAD16_S: {
-                            result = x.load_i64_16s(this);
-                            specific_load = "16s";
+                            long result = address.load_i64_16s(this);
+                            push(frame, stackPointer, result);
                             break;
                         }
                         case I64_SEGMENT_LOAD16_U: {
-                            result = x.load_i64_16u(this);
-                            specific_load = "16u";
+                            long result = address.load_i64_16u(this);
+                            push(frame, stackPointer, result);
                             break;
                         }
                         case I64_SEGMENT_LOAD32_S: {
-                            result = x.load_i64_32s(this);
-                            specific_load = "32s";
+                            long result = address.load_i64_32s(this);
+                            push(frame, stackPointer, result);
                             break;
                         }
                         case I64_SEGMENT_LOAD32_U: {
-                            result = x.load_i64_32u(this);
-                            specific_load = "32u";
+                            long result = address.load_i64_32u(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case F32_SEGMENT_LOAD: {
+                            float result = address.load_f32(this);
+                            pushFloat(frame, stackPointer, result);
+                            break;
+                        }
+                        case F64_SEGMENT_LOAD: {
+                            double result = address.load_f64(this);
+                            pushDouble(frame, stackPointer, result);
                             break;
                         }
                         default: {
-                            throw new WasmTrap(this, "Unrecognized i64 segment_load opcode");
+                            throw new WasmTrap(this, "Unrecognized segment load opcode");
                         }
                     }
-
-                    push(frame, stackPointer, result);
                     stackPointer++;
-                    // trace("push i64.segment_load" + specific_load + " " + x + " --> %d [i64]", result);
-
-                    // mswasmErr += "i64.segment_load " + x + " --> " + result + "\n";
-
-                    break;
-                }
-                case F32_SEGMENT_LOAD: {
-                    // MSWasm
-                    stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
-                    float result = x.load_f32(this);
-
-                    pushFloat(frame, stackPointer, result);
-                    stackPointer++;
-                    // trace("push f32.segment_load " + x + " --> %d [f32]", result);
-
-                    // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
-
-                    break;
-                }
-                case F64_SEGMENT_LOAD: {
-                    // MSWasm
-                    stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
-                    double result = x.load_f64(this);
-
-                    pushDouble(frame, stackPointer, result);
-                    stackPointer++;
-                    // trace("push f64.segment_load " + x + " --> %d [f64]", result);
-
-                    // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
-
                     break;
                 }
                 case I32_SEGMENT_STORE_8:
                 case I32_SEGMENT_STORE_16:
-                case I32_SEGMENT_STORE: {
-                    // MSWasm
-                    stackPointer--;
-                    int value = popInt(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
+                case I32_SEGMENT_STORE:
+                case I64_SEGMENT_STORE_8:
+                case I64_SEGMENT_STORE_16:
+                case I64_SEGMENT_STORE_32:
+                case I64_SEGMENT_STORE: 
+                case F32_SEGMENT_STORE:
+                case F64_SEGMENT_STORE: {
+                    /* The memAlign hint is not currently used or taken into account. */
+                    int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += memAlignOffsetDelta;
+    
+                    // region Load LEB128 Unsigned32 -> memOffset
+                    int memOffset = unsignedIntConstant(offset, intConstantOffset);
+                    int offsetDelta = offsetDelta(offset, byteConstantOffset);
+                    intConstantOffset += intConstantDelta(offset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += offsetDelta;
+                    // endregion
                     
                     switch(opcode){
                         case I32_SEGMENT_STORE: {
+                            stackPointer--;
+                            int value = popInt(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
                             key.store_i32(this, value);
                             break;
                         }
                         case I32_SEGMENT_STORE_8: {
+                            stackPointer--;
+                            int value = popInt(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
                             key.store_i32_8(this, (byte) value);
                             break;
                         }
                         case I32_SEGMENT_STORE_16: {
+                            stackPointer--;
+                            int value = popInt(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
                             key.store_i32_16(this, (short) value);
                             break;
                         }
-                        default: {
-                            throw new WasmTrap(this, "Unrecognized i32 segment_store opcode");
-                        }
-                    }
-
-                    // mswasmErr += "i32.segment_store " + value + " to " + key + " --> " + success
-                    // + "\n";
-
-                    break;
-                }
-                case I64_SEGMENT_STORE_8:
-                case I64_SEGMENT_STORE_16:
-                case I64_SEGMENT_STORE_32:
-                case I64_SEGMENT_STORE: {
-                    // MSWasm
-                    stackPointer--;
-                    long value = pop(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
-                    
-                    switch(opcode) {
                         case I64_SEGMENT_STORE: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
                             key.store_i64(this, value);
                             break;
                         }
                         case I64_SEGMENT_STORE_8: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
                             key.store_i64_8(this, (byte) value);
                             break;
                         }
                         case I64_SEGMENT_STORE_16: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
                             key.store_i64_16(this, (short) value);
                             break;
                         }
                         case I64_SEGMENT_STORE_32: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
                             key.store_i64_32(this, (int) value);
                             break;
                         }
+                        case F32_SEGMENT_STORE: {
+                            stackPointer--;
+                            float value = popAsFloat(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_f32(this, value);
+                            break;
+                        }
+                        case F64_SEGMENT_STORE: {
+                            stackPointer--;
+                            double value = popAsDouble(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_f64(this, value);
+                            break;
+                        }
                         default: {
-                            throw new WasmTrap(this, "Unrecognized i32 segment_store opcode");
+                            throw new WasmTrap(this, "Unrecognized segment store opcode");
                         }
                     }
-
-                    // mswasmErr += "i64.segment_store " + value + " to " + key + " --> " + success
-                    // + "\n";
-
-                    break;
-                }
-                case F32_SEGMENT_STORE: {
-                    // MSWasm
-                    stackPointer--;
-                    float value = popAsFloat(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
-
-                    key.store_f32(this, value);
-
-                    break;
-                }
-                case F64_SEGMENT_STORE: {
-                    // MSWasm
-                    stackPointer--;
-                    double value = popAsDouble(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
-
-                    key.store_f64(this, value);
-
                     break;
                 }
                 case NEW_SEGMENT: {
