@@ -1,0 +1,4 @@
+mx --dy /truffle,/compiler benchmark wasm:WASM_BENCHMARKCASES -- --jvm=server -Dwasmbench.benchmarkName=mswasm_loop -- MSWasmBenchmarkSuite > ~/logs/mswasm_loop_benchmark.txt
+mx --dy /truffle,/compiler benchmark wasm:WASM_BENCHMARKCASES -- --jvm=server -Dwasmbench.benchmarkName=mswasm_loop2 -- MSWasmBenchmarkSuite > ~/logs/mswasm_loop2_benchmark.txt
+mx --dy /truffle,/compiler benchmark wasm:WASM_BENCHMARKCASES -- --jvm=server -Dwasmbench.benchmarkName=mswasm_salsa20 -- MSWasmBenchmarkSuite > ~/logs/mswasm_salsa20_benchmark.txt
+mx --dy /truffle,/compiler benchmark wasm:WASM_BENCHMARKCASES -- --jvm=server -Dwasmbench.benchmarkName=mswasm_store-load_1 -- MSWasmBenchmarkSuite > ~/logs/mswasm_store_load_1_benchmark.txt
