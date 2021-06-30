@@ -58,6 +58,11 @@ public class CompMSWasmSuite extends CompWasmSuiteBase {
         }
 
         @Override
+        protected String includedExternalModules() {
+            return super.includedExternalModules() + ",wasi_snapshot_preview1";
+        }
+
+        @Override
         @Test
         public void test() throws IOException {
                 // This is here just to make mx aware of the test suite class.
