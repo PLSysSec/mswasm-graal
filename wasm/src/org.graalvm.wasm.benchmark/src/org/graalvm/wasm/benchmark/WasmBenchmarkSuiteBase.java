@@ -90,11 +90,11 @@ public abstract class WasmBenchmarkSuiteBase {
             benchmarkCase.getSources().forEach(context::eval);
 
             Value wasmBindings = context.getBindings("wasm");
-            Value benchmarkSetupOnce = wasmBindings.getMember("_benchmarkSetupOnce");
-            benchmarkSetupEach = wasmBindings.getMember("_benchmarkSetupEach");
-            benchmarkTeardownEach = wasmBindings.getMember("_benchmarkTeardownEach");
-            benchmarkRun = wasmBindings.getMember("_benchmarkRun");
-            Assert.assertNotNull(String.format("No benchmarkRun method in %s.", benchmarkCase.name()), benchmarkRun);
+            // Value benchmarkSetupOnce = wasmBindings.getMember("_benchmarkSetupOnce");
+            // benchmarkSetupEach = wasmBindings.getMember("_benchmarkSetupEach");
+            // benchmarkTeardownEach = wasmBindings.getMember("_benchmarkTeardownEach");
+            benchmarkRun = wasmBindings.getMember("_main");
+            Assert.assertNotNull(String.format("No main method in %s.", benchmarkCase.name()), benchmarkRun);
 
             // Initialization is done only once, and before the module starts.
             // It is the benchmark's job to ensure that it executes meaningful workloads
@@ -105,9 +105,9 @@ public abstract class WasmBenchmarkSuiteBase {
                 customInitializer.execute(benchmarkCase.initialization());
             }
 
-            if (benchmarkSetupOnce != null) {
-                benchmarkSetupOnce.execute();
-            }
+            // if (benchmarkSetupOnce != null) {
+            //     benchmarkSetupOnce.execute();
+            // }
         }
 
         @TearDown(Level.Trial)
@@ -134,12 +134,12 @@ public abstract class WasmBenchmarkSuiteBase {
             // is that they can handle VM-state side-effects.
             // We may support benchmark-specific teardown actions in the future (at the invocation
             // level).
-            benchmarkSetupEach.execute();
+            // benchmarkSetupEach.execute();
         }
 
         @TearDown(Level.Invocation)
         public void teardownInvocation() {
-            benchmarkTeardownEach.execute();
+            // benchmarkTeardownEach.execute();
         }
 
         public void run() {
