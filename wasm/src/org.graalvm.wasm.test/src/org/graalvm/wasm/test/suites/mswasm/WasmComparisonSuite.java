@@ -44,7 +44,18 @@ public class WasmComparisonSuite extends WasmSuiteBase {
             WasmCase.create("WASM_VARIOUS_MATH", WasmCase.expected(-138411552),
                     parseWasmFile(FOLDER_PATH + "wasm_various_math.wasm"), null, opts),
             WasmCase.create("WASM_LINEAR", WasmCase.expected(3),
-                    parseWasmFile(FOLDER_PATH + "wasm_linear_search.wasm"), null, opts) };
+                    parseWasmFile(FOLDER_PATH + "wasm_linear_search.wasm"), null, opts),
+
+            // tests to make sure benchmarks are correct
+            WasmCase.create("WASM_LOAD_ONLY", WasmCase.expected(0),
+                    parseWasmFile(FOLDER_PATH + "wasm_load_only.wasm"), null, opts),
+            WasmCase.create("WASM_STORE_ONLY", WasmCase.expected(null),
+                    parseWasmFile(FOLDER_PATH + "wasm_store_only.wasm"), null, opts)
+            
+                    
+                    
+                    
+        };
 
     private byte[] parseWasmFile(String fileName) {
         try {
