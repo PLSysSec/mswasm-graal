@@ -237,7 +237,6 @@ public abstract class BinaryStreamParser {
             case ValueTypes.VOID_TYPE:
                 return ValueTypes.VOID_TYPE;
             default:
-                System.out.println("[CRAIG_DEBUG] peeking block type...");
                 return peekValueType(data, offset);
         }
     }
@@ -264,7 +263,6 @@ public abstract class BinaryStreamParser {
     }
 
     protected byte readValueType() {
-        System.out.println("[CRAIG-DEBUG] reading value type...");
         byte b = peekValueType(data, offset);
         offset++;
         return b;

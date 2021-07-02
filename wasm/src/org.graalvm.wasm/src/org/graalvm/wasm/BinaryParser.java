@@ -215,7 +215,7 @@ public class BinaryParser extends BinaryStreamParser {
                     break;
                 }
                 case ImportIdentifier.GLOBAL: {
-                    System.out.println("[CRAIG-DEBUG] reading import section...");
+                    // System.out.println("[CRAIG-DEBUG] reading import section...");
                     byte type = readValueType();
                     byte mutability = readMutability();
                     int index = module.symbolTable().maxGlobalIndex() + 1;
@@ -344,7 +344,7 @@ public class BinaryParser extends BinaryStreamParser {
         int numLocalsGroups = readVectorLength();
         ByteArrayList localTypes = new ByteArrayList();
         for (int localGroup = 0; localGroup < numLocalsGroups; localGroup++) {
-            System.out.println("[CRAIG-DEBUG] reading code entry locals...");
+            // System.out.println("[CRAIG-DEBUG] reading code entry locals...");
             int groupLength = readVectorLength();
             byte t = readValueType();
             for (int i = 0; i != groupLength; ++i) {
@@ -374,13 +374,13 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private WasmBlockNode readBlock(WasmCodeEntry codeEntry, ExecutionState state) {
-        System.out.println("[CRAIG-DEBUG] reading block...");
+        // System.out.println("[CRAIG-DEBUG] reading block...");
         byte blockTypeId = readBlockType();
         return readBlockBody(codeEntry, state, blockTypeId, blockTypeId);
     }
 
     private LoopNode readLoop(WasmCodeEntry codeEntry, ExecutionState state) {
-        System.out.println("[CRAIG-DEBUG] reading loop...");
+        // System.out.println("[CRAIG-DEBUG] reading loop...");
         byte blockTypeId = readBlockType();
         return readLoop(codeEntry, state, blockTypeId);
     }
@@ -1022,7 +1022,7 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private WasmIfNode readIf(WasmCodeEntry codeEntry, ExecutionState state) {
-        System.out.println("[CRAIG-DEBUG] reading if...");
+        // System.out.println("[CRAIG-DEBUG] reading if...");
         byte blockTypeId = readBlockType();
         // Note: the condition value was already popped at this point.
         int stackSizeAfterCondition = state.stackSize();
@@ -1168,11 +1168,11 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private void readGlobalSection() {
+        // System.out.println("[CRAIG-DEBUG] reading global section...");
         final GlobalRegistry globals = context.globals();
         int numGlobals = readVectorLength();
         int startingGlobalIndex = module.symbolTable().maxGlobalIndex() + 1;
         for (int globalIndex = startingGlobalIndex; globalIndex != startingGlobalIndex + numGlobals; globalIndex++) {
-            System.out.println("[CRAIG-DEBUG] reading global section...");
             byte type = readValueType();
             // 0x00 means const, 0x01 means var
             byte mutability = readMutability();
@@ -1204,8 +1204,7 @@ public class BinaryParser extends BinaryStreamParser {
                     isInitialized = false;
                     break;
                 case (byte)Instructions.NULL_HANDLE:
-                    // TODO placeholder
-                    value = 0;
+                    value = globals.allocateHandle(globalIndex);
                     isInitialized = true;
                     break;
                 default:
@@ -1311,7 +1310,7 @@ public class BinaryParser extends BinaryStreamParser {
 
     private void readParameterList(int funcTypeIdx, int numParams) {
         for (int paramIdx = 0; paramIdx != numParams; ++paramIdx) {
-            System.out.println("[CRAIG-DEBUG] reading parameter list...");
+            // System.out.println("[CRAIG-DEBUG] reading parameter list...");
             byte type = readValueType();
             module.symbolTable().registerFunctionTypeParameterType(funcTypeIdx, paramIdx, type);
         }
@@ -1333,7 +1332,7 @@ public class BinaryParser extends BinaryStreamParser {
             case 0x00: // empty vector
                 break;
             case 0x01: // vector with one element (produced by the Wasm binary compiler)
-                System.out.println("[CRAIG-DEBUG] reading result list...");
+                // System.out.println("[CRAIG-DEBUG] reading result list...");
                 byte type = readValueType();
                 module.symbolTable().registerFunctionTypeReturnType(funcTypeIdx, 0, type);
                 break;
@@ -1547,7 +1546,7 @@ public class BinaryParser extends BinaryStreamParser {
                         break;
                     }
                     case ImportIdentifier.GLOBAL: {
-                        System.out.println("[CRAIG-DEBUG] resetting global state...");
+                        // System.out.println("[CRAIG-DEBUG] resetting global state...");
                         readValueType();
                         byte mutability = readMutability();
                         if (mutability == GlobalModifier.MUTABLE) {
@@ -1568,7 +1567,7 @@ public class BinaryParser extends BinaryStreamParser {
             int numGlobals = readVectorLength();
             int startingGlobalIndex = globalIndex;
             for (; globalIndex != startingGlobalIndex + numGlobals; globalIndex++) {
-                System.out.println("[CRAIG-DEBUG] jumping to global section...");
+                // System.out.println("[CRAIG-DEBUG] jumping to global section...");
                 readValueType();
                 // Read mutability;
                 read1();
