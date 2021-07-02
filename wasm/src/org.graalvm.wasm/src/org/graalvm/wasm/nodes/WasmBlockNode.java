@@ -2785,9 +2785,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case HANDLE_ADD: {
                     // MSWasm
                     stackPointer--;
-                    Handle handle = popHandle(frame, stackPointer);
-                    stackPointer--;
                     int add_offset = popInt(frame, stackPointer);
+                    stackPointer--;
+                    Handle handle = popHandle(frame, stackPointer);
 
                     Handle result = new Handle(handle);
                     result.add(add_offset);
@@ -2802,9 +2802,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case HANDLE_SUB: {
                     // MSWasm
                     stackPointer--;
-                    Handle handle = popHandle(frame, stackPointer);
-                    stackPointer--;
                     int sub_offset = popInt(frame, stackPointer);
+                    stackPointer--;
+                    Handle handle = popHandle(frame, stackPointer);
 
                     Handle result = new Handle(handle);
                     result.sub(sub_offset);
