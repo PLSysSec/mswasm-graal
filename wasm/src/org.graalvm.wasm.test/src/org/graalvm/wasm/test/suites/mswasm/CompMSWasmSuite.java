@@ -59,7 +59,7 @@ public class CompMSWasmSuite extends CompWasmSuiteBase {
 
         @Override
         protected String includedExternalModules() {
-            return super.includedExternalModules() + ",wasi_snapshot_preview1";
+            return super.includedExternalModules() + ",memory,wasi,wasi_snapshot_preview1";
         }
 
         @Override

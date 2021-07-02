@@ -58,6 +58,7 @@ import org.graalvm.wasm.predefined.emscripten.EmscriptenModule;
 import org.graalvm.wasm.predefined.memory.MemoryModule;
 import org.graalvm.wasm.predefined.testutil.TestutilModule;
 import org.graalvm.wasm.predefined.wasi.WasiModule;
+import org.graalvm.wasm.predefined.wasi.WasiSnapshotPreview1Module;
 
 public abstract class BuiltinModule {
     private static final Map<String, BuiltinModule> predefinedModules = new HashMap<>();
@@ -67,6 +68,7 @@ public abstract class BuiltinModule {
         pm.put("emscripten", new EmscriptenModule());
         pm.put("testutil", new TestutilModule());
         pm.put("wasi", new WasiModule());
+        pm.put("wasi_snapshot_preview1", new WasiSnapshotPreview1Module());
         pm.put("memory", new MemoryModule());
     }
 
