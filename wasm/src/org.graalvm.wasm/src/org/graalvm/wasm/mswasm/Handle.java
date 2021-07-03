@@ -99,8 +99,8 @@ public class Handle {
     }    
     
     public String toString() {
-        return "test"; //"Handle: (" + this.base + ", " + this.offset + ", " + this.bound + ", "
-                //+ this.isCorrupted + ", " + this.isSlice + ")";
+        return "Handle: (" + this.base + ", " + this.offset + ", " + this.bound + ", "
+               + this.isCorrupted + ", " + this.isSlice + ")";
     }
 
     public int getOffset() {
@@ -135,7 +135,9 @@ public class Handle {
     private void trapOutOfBounds(Node node, long accessSize) {
         // String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds (memory size %d bytes).",
         //                 accessSize, this.base + this.offset, this.base + this.offset, byteSize());
-        String message = "Segment memory access is out-of-bounds";
+        System.out.println("trapOutOfBounds");
+        String message = "Segment memory access of size " + accessSize + " is out-of-bounds";
+        message = message + "\n\ton handle " + this;
         throw new WasmTrap(node, message);
     }
 

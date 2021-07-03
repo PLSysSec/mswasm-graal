@@ -968,7 +968,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             int address = module().symbolTable().globalAddress(index);
                             Handle value = context.globals().loadAsHandle(address);
                             pushHandle(frame, stackPointer, value);
+                            System.out.println("[DEBUG] global.get " + value);
                             stackPointer++;
+                            // throw new WasmTrap(this, "global_get: " + address + " --> " + value);
                             // trace("global.get %d, value = " + value, index);
                             break;
                         }
@@ -1029,7 +1031,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer--;
                             Handle value = popHandle(frame, stackPointer);
                             int address = module().symbolTable().globalAddress(index);
+                            context.globals().storeHandle(address, value);
                             // trace("global.set %d, value = " + value, index);
+                            // throw new WasmTrap(this, "global_set: " + address + ", " + value);
                             break;
                         }
                         default: {
@@ -2519,6 +2523,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Handle address = popHandle(frame, stackPointer);
                     address.add(memOffset);
 
+                    System.out.println("[DEBUG] segment store " + opcode + ", offset " + memOffset + ", addr " + address);
+
                     switch(opcode) {
                         case I32_SEGMENT_LOAD: {
                             int result = address.load_i32(this);
@@ -2618,6 +2624,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     byteConstantOffset += byteConstantDelta(offset);
                     offset += offsetDelta;
                     // endregion
+
+                    System.out.println("[DEBUG] segment store " + opcode + ", offset " + memOffset);
                     
                     switch(opcode){
                         case I32_SEGMENT_STORE: {
@@ -2797,6 +2805,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     stackPointer++;
                     // trace("push handle.add %d [i32] ; " + handle + " --> " + result, add_offset);
+                    
+                    // throw new WasmTrap(this, "handle_add: " + add_offset + ", " + handle + " --> " + result);
                     break;
                 }
                 case HANDLE_SUB: {
