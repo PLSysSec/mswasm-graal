@@ -908,7 +908,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             // MSWasm
                             stackPointer--;
                             Handle value = popHandle(frame, stackPointer);
-                            pushHandle(frame, stackPointer, value);
+                            pushHandle(frame, stackPointer, new Handle(value));
                             stackPointer++;
                             setHandle(frame, index, value);
                             // trace("local.tee %d, value = " + value, index);
