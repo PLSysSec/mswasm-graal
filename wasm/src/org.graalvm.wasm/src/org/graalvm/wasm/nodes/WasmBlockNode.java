@@ -732,8 +732,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 }
                 case DROP: {
                     stackPointer--;
-                    long x = pop(frame, stackPointer);
-                    trace("drop (raw long value = 0x%016X)", x);
+                    try {
+                        long x = pop(frame, stackPointer);
+                        trace("drop (raw long value = 0x%016X)", x);
+                    } catch (RuntimeException e) {
+                        Handle x = popHandle(frame, stackPointer);
+                        trace("drop " + x);
+                    }
                     break;
                 }
                 case SELECT: {
@@ -968,7 +973,6 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             int address = module().symbolTable().globalAddress(index);
                             Handle value = context.globals().loadAsHandle(address);
                             pushHandle(frame, stackPointer, value);
-                            System.out.println("[DEBUG] global.get " + value);
                             stackPointer++;
                             // throw new WasmTrap(this, "global_get: " + address + " --> " + value);
                             // trace("global.get %d, value = " + value, index);
@@ -2505,7 +2509,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I64_SEGMENT_LOAD32_S:
                 case I64_SEGMENT_LOAD32_U:
                 case F32_SEGMENT_LOAD:
-                case F64_SEGMENT_LOAD: {
+                case F64_SEGMENT_LOAD:
+                case HANDLE_SEGMENT_LOAD: {
                     /* The memAlign hint is not currently used or taken into account. */
                     int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
                     byteConstantOffset += byteConstantDelta(offset);
@@ -2522,8 +2527,6 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     stackPointer--;
                     Handle address = popHandle(frame, stackPointer);
                     address.add(memOffset);
-
-                    System.out.println("[DEBUG] segment store " + opcode + ", offset " + memOffset + ", addr " + address);
 
                     switch(opcode) {
                         case I32_SEGMENT_LOAD: {
@@ -2596,6 +2599,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             pushDouble(frame, stackPointer, result);
                             break;
                         }
+                        case HANDLE_SEGMENT_LOAD: {
+                            Handle result = address.load_handle(this);
+                            pushHandle(frame, stackPointer, result);
+                            break;
+                        }
                         default: {
                             throw new WasmTrap(this, "Unrecognized segment load opcode");
                         }
@@ -2611,7 +2619,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I64_SEGMENT_STORE_32:
                 case I64_SEGMENT_STORE: 
                 case F32_SEGMENT_STORE:
-                case F64_SEGMENT_STORE: {
+                case F64_SEGMENT_STORE:
+                case HANDLE_SEGMENT_STORE: {
                     /* The memAlign hint is not currently used or taken into account. */
                     int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
                     byteConstantOffset += byteConstantDelta(offset);
@@ -2624,9 +2633,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     byteConstantOffset += byteConstantDelta(offset);
                     offset += offsetDelta;
                     // endregion
-
-                    System.out.println("[DEBUG] segment store " + opcode + ", offset " + memOffset);
-                    
+  
                     switch(opcode){
                         case I32_SEGMENT_STORE: {
                             stackPointer--;
@@ -2709,6 +2716,15 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             key.store_f64(this, value);
                             break;
                         }
+                        case HANDLE_SEGMENT_STORE: {
+                            stackPointer--;
+                            Handle value = popHandle(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_handle(this, value);
+                            break;
+                        }
                         default: {
                             throw new WasmTrap(this, "Unrecognized segment store opcode");
                         }
@@ -2758,38 +2774,38 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, base, bound);
                     break;
                 }
-                case HANDLE_SEGMENT_LOAD: {
-                    // MSWasm
-                    // TODO
-                    stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
+                // case HANDLE_SEGMENT_LOAD: {
+                //     // MSWasm
+                //     // TODO
+                //     stackPointer--;
+                //     Handle x = popHandle(frame, stackPointer);
                     
-                    // placeholder method
-                    Handle result = x.load_handle(this);
-                    pushHandle(frame, stackPointer, result);
+                //     // placeholder method
+                //     Handle result = x.load_handle(this);
+                //     pushHandle(frame, stackPointer, result);
 
-                    // mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
+                //     // mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
 
-                    stackPointer++;
-                    // trace("push handle.segment_load " + x + " --> " + result);
-                    break;
-                }
-                case HANDLE_SEGMENT_STORE: {
-                    // MSWasm
-                    // TODO
-                    stackPointer--;
-                    Handle value = popHandle(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
+                //     stackPointer++;
+                //     // trace("push handle.segment_load " + x + " --> " + result);
+                //     break;
+                // }
+                // case HANDLE_SEGMENT_STORE: {
+                //     // MSWasm
+                //     // TODO
+                //     stackPointer--;
+                //     Handle value = popHandle(frame, stackPointer);
+                //     stackPointer--;
+                //     Handle key = popHandle(frame, stackPointer);
 
-                    // placeholder
-                    key.store_handle(this, value);
+                //     // placeholder
+                //     key.store_handle(this, value);
 
-                    // mswasmErr += "handle.segment_store " + value + " to " + key + " --> " +
-                    // success + "\n";
+                //     // mswasmErr += "handle.segment_store " + value + " to " + key + " --> " +
+                //     // success + "\n";
 
-                    break;
-                }
+                //     break;
+                // }
                 case HANDLE_ADD: {
                     // MSWasm
                     stackPointer--;

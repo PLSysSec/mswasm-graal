@@ -72,7 +72,7 @@ public class SaveContextNode extends WasmBuiltinRootNode {
     @CompilerDirectives.TruffleBoundary
     private ContextState saveModuleState() {
         final WasmContext context = contextReference().get();
-        Assert.assertIntLessOrEqual(context.memories().count(), 1, "Currently, only 0 or 1 memories can be saved.");
+        // Assert.assertIntLessOrEqual(context.memories().count(), 1, "Currently, only 0 or 1 memories can be saved.");
         final WasmMemory currentMemory = context.memories().count() == 1 ? context.memories().memory(0).duplicate() : null;
         final GlobalRegistry globals = context.globals().duplicate();
         final ContextState state = new ContextState(currentMemory, globals);
