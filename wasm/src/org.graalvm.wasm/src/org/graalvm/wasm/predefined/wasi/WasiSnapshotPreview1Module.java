@@ -38,33 +38,25 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-package org.graalvm.wasm;
+package org.graalvm.wasm.predefined.wasi;
 
-import org.graalvm.wasm.exception.WasmValidationException;
+import org.graalvm.wasm.WasmContext;
+import org.graalvm.wasm.WasmLanguage;
+import org.graalvm.wasm.WasmModule;
+import org.graalvm.wasm.WasmOptions;
+import org.graalvm.wasm.predefined.BuiltinModule;
 
-public class ValueTypes {
-    public static final byte VOID_TYPE = 0x40;
+import static org.graalvm.wasm.ValueTypes.I32_TYPE;
 
-    public static final byte I32_TYPE = 0x7F;
-    public static final byte I64_TYPE = 0x7E;
-    public static final byte F32_TYPE = 0x7D;
-    public static final byte F64_TYPE = 0x7C;
-    public static final byte HANDLE_TYPE = 0x6E;
-
-    public static String asString(int valueType) {
-        switch (valueType) {
-            case I32_TYPE:
-                return "i32";
-            case I64_TYPE:
-                return "i64";
-            case F32_TYPE:
-                return "f32";
-            case F64_TYPE:
-                return "f64";
-            case HANDLE_TYPE:
-                return "handle";
-            default:
-                throw new WasmValidationException("Unknown value type: 0x" + Integer.toHexString(valueType));
-        }
+public class WasiSnapshotPreview1Module extends BuiltinModule {
+    @Override
+    protected WasmModule createModule(WasmLanguage language, WasmContext context, String name) {
+        final WasmOptions.StoreConstantsPolicyEnum storeConstantsPolicy = WasmOptions.StoreConstantsPolicy.getValue(context.environment().getOptions());
+        WasmModule module = new WasmModule(name, null, storeConstantsPolicy);
+        importMemory(context, module, "memory", "memory", 16, 4096);
+        defineFunction(context, module, "args_sizes_get", types(I32_TYPE, I32_TYPE), types(), new WasiArgsSizesGetNode(language, module));
+        defineFunction(context, module, "args_get", types(I32_TYPE, I32_TYPE), types(), new WasiArgsGetNode(language, module));
+        defineFunction(context, module, "proc_exit", types(I32_TYPE), types(), new WasiProcExitNode(language, module));
+        return module;
     }
 }

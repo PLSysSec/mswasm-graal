@@ -1,5 +1,7 @@
 package org.graalvm.wasm.mswasm;
 
+import com.oracle.truffle.api.interop.TruffleObject;
+
 /**
  * Models a segment of memory
  */

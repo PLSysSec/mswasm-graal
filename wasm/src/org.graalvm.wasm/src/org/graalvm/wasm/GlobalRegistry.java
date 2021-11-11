@@ -69,6 +69,10 @@ public class GlobalRegistry {
         return numGlobals;
     }
 
+    public int numHandles() {
+        return handles.size();
+    }
+
     private void ensureCapacity() {
         if (numGlobals == globals.length) {
             final long[] nglobals = new long[globals.length * 2];
@@ -132,9 +136,14 @@ public class GlobalRegistry {
     }
 
     // MSWasm - store global handle
-    public void storeHandle(int address, Handle value) {
+    public int allocateHandle(int address) {
         globals[address] = handles.size();
-        handles.add(new Handle(value));
+        handles.add(Handle.nullHandle());
+        return (int) globals[address];
+    }
+
+    public void storeHandle(int address, Handle value) {
+        handles.set((int) globals[address], new Handle(value));
     }
 
     public GlobalRegistry duplicate() {

@@ -66,7 +66,7 @@ import static org.graalvm.wasm.constants.Instructions.F32_FLOOR;
 import static org.graalvm.wasm.constants.Instructions.F32_GE;
 import static org.graalvm.wasm.constants.Instructions.F32_GT;
 import static org.graalvm.wasm.constants.Instructions.F32_LE;
-import static org.graalvm.wasm.constants.Instructions.F32_LOAD;
+import static org.graalvm.wasm.constants.Instructions.F32_SEGMENT_LOAD;
 import static org.graalvm.wasm.constants.Instructions.F32_LT;
 import static org.graalvm.wasm.constants.Instructions.F32_MAX;
 import static org.graalvm.wasm.constants.Instructions.F32_MIN;
@@ -76,7 +76,7 @@ import static org.graalvm.wasm.constants.Instructions.F32_NEAREST;
 import static org.graalvm.wasm.constants.Instructions.F32_NEG;
 import static org.graalvm.wasm.constants.Instructions.F32_REINTERPRET_I32;
 import static org.graalvm.wasm.constants.Instructions.F32_SQRT;
-import static org.graalvm.wasm.constants.Instructions.F32_STORE;
+import static org.graalvm.wasm.constants.Instructions.F32_SEGMENT_STORE;
 import static org.graalvm.wasm.constants.Instructions.F32_SUB;
 import static org.graalvm.wasm.constants.Instructions.F32_TRUNC;
 import static org.graalvm.wasm.constants.Instructions.F64_ABS;
@@ -94,7 +94,7 @@ import static org.graalvm.wasm.constants.Instructions.F64_FLOOR;
 import static org.graalvm.wasm.constants.Instructions.F64_GE;
 import static org.graalvm.wasm.constants.Instructions.F64_GT;
 import static org.graalvm.wasm.constants.Instructions.F64_LE;
-import static org.graalvm.wasm.constants.Instructions.F64_LOAD;
+import static org.graalvm.wasm.constants.Instructions.F64_SEGMENT_LOAD;
 import static org.graalvm.wasm.constants.Instructions.F64_LT;
 import static org.graalvm.wasm.constants.Instructions.F64_MAX;
 import static org.graalvm.wasm.constants.Instructions.F64_MIN;
@@ -105,7 +105,7 @@ import static org.graalvm.wasm.constants.Instructions.F64_NEG;
 import static org.graalvm.wasm.constants.Instructions.F64_PROMOTE_F32;
 import static org.graalvm.wasm.constants.Instructions.F64_REINTERPRET_I64;
 import static org.graalvm.wasm.constants.Instructions.F64_SQRT;
-import static org.graalvm.wasm.constants.Instructions.F64_STORE;
+import static org.graalvm.wasm.constants.Instructions.F64_SEGMENT_STORE;
 import static org.graalvm.wasm.constants.Instructions.F64_SUB;
 import static org.graalvm.wasm.constants.Instructions.F64_TRUNC;
 import static org.graalvm.wasm.constants.Instructions.GLOBAL_GET;
@@ -125,11 +125,11 @@ import static org.graalvm.wasm.constants.Instructions.I32_GT_S;
 import static org.graalvm.wasm.constants.Instructions.I32_GT_U;
 import static org.graalvm.wasm.constants.Instructions.I32_LE_S;
 import static org.graalvm.wasm.constants.Instructions.I32_LE_U;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_S;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_U;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_S;
-import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_U;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_S;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD16_U;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_S;
+// import static org.graalvm.wasm.constants.Instructions.I32_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I32_LT_S;
 import static org.graalvm.wasm.constants.Instructions.I32_LT_U;
 import static org.graalvm.wasm.constants.Instructions.I32_MUL;
@@ -144,9 +144,9 @@ import static org.graalvm.wasm.constants.Instructions.I32_ROTR;
 import static org.graalvm.wasm.constants.Instructions.I32_SHL;
 import static org.graalvm.wasm.constants.Instructions.I32_SHR_S;
 import static org.graalvm.wasm.constants.Instructions.I32_SHR_U;
-import static org.graalvm.wasm.constants.Instructions.I32_STORE;
-import static org.graalvm.wasm.constants.Instructions.I32_STORE_16;
-import static org.graalvm.wasm.constants.Instructions.I32_STORE_8;
+// import static org.graalvm.wasm.constants.Instructions.I32_STORE;
+// import static org.graalvm.wasm.constants.Instructions.I32_STORE_16;
+// import static org.graalvm.wasm.constants.Instructions.I32_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.I32_SUB;
 import static org.graalvm.wasm.constants.Instructions.I32_TRUNC_F32_S;
 import static org.graalvm.wasm.constants.Instructions.I32_TRUNC_F32_U;
@@ -171,13 +171,13 @@ import static org.graalvm.wasm.constants.Instructions.I64_GT_S;
 import static org.graalvm.wasm.constants.Instructions.I64_GT_U;
 import static org.graalvm.wasm.constants.Instructions.I64_LE_S;
 import static org.graalvm.wasm.constants.Instructions.I64_LE_U;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_S;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_U;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_S;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_U;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_S;
-import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_U;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_S;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD16_U;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_S;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD32_U;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_S;
+// import static org.graalvm.wasm.constants.Instructions.I64_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I64_LT_S;
 import static org.graalvm.wasm.constants.Instructions.I64_LT_U;
 import static org.graalvm.wasm.constants.Instructions.I64_MUL;
@@ -192,10 +192,10 @@ import static org.graalvm.wasm.constants.Instructions.I64_ROTR;
 import static org.graalvm.wasm.constants.Instructions.I64_SHL;
 import static org.graalvm.wasm.constants.Instructions.I64_SHR_S;
 import static org.graalvm.wasm.constants.Instructions.I64_SHR_U;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE_16;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE_32;
-import static org.graalvm.wasm.constants.Instructions.I64_STORE_8;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE_16;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE_32;
+// import static org.graalvm.wasm.constants.Instructions.I64_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.I64_SUB;
 import static org.graalvm.wasm.constants.Instructions.I64_TRUNC_F32_S;
 import static org.graalvm.wasm.constants.Instructions.I64_TRUNC_F32_U;
@@ -214,9 +214,24 @@ import static org.graalvm.wasm.constants.Instructions.RETURN;
 import static org.graalvm.wasm.constants.Instructions.SELECT;
 import static org.graalvm.wasm.constants.Instructions.UNREACHABLE;
 import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD16_S;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD16_U;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD8_S;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD16_S;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD16_U;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD32_S;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD32_U;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD8_S;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_LOAD8_U;
 import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_STORE;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_STORE_16;
+import static org.graalvm.wasm.constants.Instructions.I32_SEGMENT_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE_16;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE_32;
+import static org.graalvm.wasm.constants.Instructions.I64_SEGMENT_STORE_8;
 import static org.graalvm.wasm.constants.Instructions.NEW_SEGMENT;
 import static org.graalvm.wasm.constants.Instructions.FREE_SEGMENT;
 import static org.graalvm.wasm.constants.Instructions.SEGMENT_SLICE;
@@ -224,6 +239,7 @@ import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_LOAD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SEGMENT_STORE;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_ADD;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SUB;
+import static org.graalvm.wasm.constants.Instructions.NULL_HANDLE;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_GET_OFFSET;
 import static org.graalvm.wasm.constants.Instructions.HANDLE_SET_OFFSET;
 
@@ -716,8 +732,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 }
                 case DROP: {
                     stackPointer--;
-                    long x = pop(frame, stackPointer);
-                    trace("drop (raw long value = 0x%016X)", x);
+                    try {
+                        long x = pop(frame, stackPointer);
+                        trace("drop (raw long value = 0x%016X)", x);
+                    } catch (RuntimeException e) {
+                        Handle x = popHandle(frame, stackPointer);
+                        trace("drop " + x);
+                    }
                     break;
                 }
                 case SELECT: {
@@ -778,7 +799,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                             // mswasmErr += "local.get handle " + value + "\n";
 
-                            trace("local.get %d, value = " + value, index);
+                            // trace("local.get %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -833,7 +854,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                             // mswasmErr += "local.set handle " + value + "\n";
 
-                            trace("local.set %d, value = " + value, index);
+                            // trace("local.set %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -892,10 +913,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             // MSWasm
                             stackPointer--;
                             Handle value = popHandle(frame, stackPointer);
-                            pushHandle(frame, stackPointer, value);
+                            pushHandle(frame, stackPointer, new Handle(value));
                             stackPointer++;
                             setHandle(frame, index, value);
-                            trace("local.tee %d, value = " + value, index);
+                            // trace("local.tee %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -953,7 +974,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             Handle value = context.globals().loadAsHandle(address);
                             pushHandle(frame, stackPointer, value);
                             stackPointer++;
-                            trace("global.get %d, value = " + value, index);
+                            // throw new WasmTrap(this, "global_get: " + address + " --> " + value);
+                            // trace("global.get %d, value = " + value, index);
                             break;
                         }
                         default: {
@@ -1013,7 +1035,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer--;
                             Handle value = popHandle(frame, stackPointer);
                             int address = module().symbolTable().globalAddress(index);
-                            trace("global.set %d, value = " + value, index);
+                            context.globals().storeHandle(address, value);
+                            // trace("global.set %d, value = " + value, index);
+                            // throw new WasmTrap(this, "global_set: " + address + ", " + value);
                             break;
                         }
                         default: {
@@ -1022,237 +1046,237 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     }
                     break;
                 }
-                case I32_LOAD:
-                case I64_LOAD:
-                case F32_LOAD:
-                case F64_LOAD:
-                case I32_LOAD8_S:
-                case I32_LOAD8_U:
-                case I32_LOAD16_S:
-                case I32_LOAD16_U:
-                case I64_LOAD8_S:
-                case I64_LOAD8_U:
-                case I64_LOAD16_S:
-                case I64_LOAD16_U:
-                case I64_LOAD32_S:
-                case I64_LOAD32_U: {
-                    /* The memAlign hint is not currently used or taken into account. */
-                    int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
-                    byteConstantOffset += byteConstantDelta(offset);
-                    offset += memAlignOffsetDelta;
+                // case I32_LOAD:
+                // case I64_LOAD:
+                // case I32_LOAD8_S:
+                // case I32_LOAD8_U:
+                // case I32_LOAD16_S:
+                // case I32_LOAD16_U:
+                // case I64_LOAD8_S:
+                // case I64_LOAD8_U:
+                // case I64_LOAD16_S:
+                // case I64_LOAD16_U:
+                // case I64_LOAD32_S:
+                // case I64_LOAD32_U:
+                // case F32_LOAD:
+                // case F64_LOAD: {
+                //     /* The memAlign hint is not currently used or taken into account. */
+                //     int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
+                //     byteConstantOffset += byteConstantDelta(offset);
+                //     offset += memAlignOffsetDelta;
 
-                    // region Load LEB128 Unsigned32 -> memOffset
-                    int memOffset = unsignedIntConstant(offset, intConstantOffset);
-                    int offsetDelta = offsetDelta(offset, byteConstantOffset);
-                    intConstantOffset += intConstantDelta(offset);
-                    byteConstantOffset += byteConstantDelta(offset);
-                    offset += offsetDelta;
-                    // endregion
+                //     // region Load LEB128 Unsigned32 -> memOffset
+                //     int memOffset = unsignedIntConstant(offset, intConstantOffset);
+                //     int offsetDelta = offsetDelta(offset, byteConstantOffset);
+                //     intConstantOffset += intConstantDelta(offset);
+                //     byteConstantOffset += byteConstantDelta(offset);
+                //     offset += offsetDelta;
+                //     // endregion
 
-                    stackPointer--;
-                    int baseAddress = popInt(frame, stackPointer);
-                    int address = baseAddress + memOffset;
-                    WasmMemory memory = module().symbolTable().memory();
+                //     stackPointer--;
+                //     int baseAddress = popInt(frame, stackPointer);
+                //     int address = baseAddress + memOffset;
+                //     WasmMemory memory = module().symbolTable().memory();
 
-                    try {
-                        switch (opcode) {
-                            case I32_LOAD: {
-                                int value = memory.load_i32(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD: {
-                                long value = memory.load_i64(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case F32_LOAD: {
-                                float value = memory.load_f32(this, address);
-                                pushFloat(frame, stackPointer, value);
-                                break;
-                            }
-                            case F64_LOAD: {
-                                double value = memory.load_f64(this, address);
-                                pushDouble(frame, stackPointer, value);
-                                break;
-                            }
-                            case I32_LOAD8_S: {
-                                int value = memory.load_i32_8s(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I32_LOAD8_U: {
-                                int value = memory.load_i32_8u(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I32_LOAD16_S: {
-                                int value = memory.load_i32_16s(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I32_LOAD16_U: {
-                                int value = memory.load_i32_16u(this, address);
-                                pushInt(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD8_S: {
-                                long value = memory.load_i64_8s(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD8_U: {
-                                long value = memory.load_i64_8u(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD16_S: {
-                                long value = memory.load_i64_16s(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD16_U: {
-                                long value = memory.load_i64_16u(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD32_S: {
-                                long value = memory.load_i64_32s(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            case I64_LOAD32_U: {
-                                long value = memory.load_i64_32u(this, address);
-                                push(frame, stackPointer, value);
-                                break;
-                            }
-                            default: {
-                                throw new WasmTrap(this, "Unknown load opcode: " + opcode);
-                            }
-                        }
-                    } catch (WasmMemoryException e) {
-                        throw new WasmTrap(this, "memory address out-of-bounds");
-                    }
-                    stackPointer++;
-                    break;
-                }
-                case I32_STORE:
-                case I64_STORE:
-                case F32_STORE:
-                case F64_STORE:
-                case I32_STORE_8:
-                case I32_STORE_16:
-                case I64_STORE_8:
-                case I64_STORE_16:
-                case I64_STORE_32: {
-                    /* The memAlign hint is not currently used or taken into account. */
-                    int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
-                    byteConstantOffset += byteConstantDelta(offset);
-                    offset += memAlignOffsetDelta;
+                //     try {
+                //         switch (opcode) {
+                            // case I32_LOAD: {
+                            //     int value = memory.load_i32(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD: {
+                            //     long value = memory.load_i64(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case F32_LOAD: {
+                            //     float value = memory.load_f32(this, address);
+                            //     pushFloat(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case F64_LOAD: {
+                            //     double value = memory.load_f64(this, address);
+                            //     pushDouble(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I32_LOAD8_S: {
+                            //     int value = memory.load_i32_8s(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I32_LOAD8_U: {
+                            //     int value = memory.load_i32_8u(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I32_LOAD16_S: {
+                            //     int value = memory.load_i32_16s(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I32_LOAD16_U: {
+                            //     int value = memory.load_i32_16u(this, address);
+                            //     pushInt(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD8_S: {
+                            //     long value = memory.load_i64_8s(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD8_U: {
+                            //     long value = memory.load_i64_8u(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD16_S: {
+                            //     long value = memory.load_i64_16s(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD16_U: {
+                            //     long value = memory.load_i64_16u(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD32_S: {
+                            //     long value = memory.load_i64_32s(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                            // case I64_LOAD32_U: {
+                            //     long value = memory.load_i64_32u(this, address);
+                            //     push(frame, stackPointer, value);
+                            //     break;
+                            // }
+                //             default: {
+                //                 throw new WasmTrap(this, "Unknown load opcode: " + opcode);
+                //             }
+                //         }
+                //     } catch (WasmMemoryException e) {
+                //         throw new WasmTrap(this, "memory address out-of-bounds");
+                //     }
+                //     stackPointer++;
+                //     break;
+                // }
+                // case I32_STORE:
+                // case I64_STORE:
+                // case I32_STORE_8:
+                // case I32_STORE_16:
+                // case I64_STORE_8:
+                // case I64_STORE_16:
+                // case I64_STORE_32:
+                // case F32_STORE:
+                // case F64_STORE: {
+                //     /* The memAlign hint is not currently used or taken into account. */
+                //     int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
+                //     byteConstantOffset += byteConstantDelta(offset);
+                //     offset += memAlignOffsetDelta;
 
-                    // region Load LEB128 Unsigned32 -> memOffset
-                    int memOffset = unsignedIntConstant(offset, intConstantOffset);
-                    int offsetDelta = offsetDelta(offset, byteConstantOffset);
-                    intConstantOffset += intConstantDelta(offset);
-                    byteConstantOffset += byteConstantDelta(offset);
-                    offset += offsetDelta;
-                    // endregion
+                //     // region Load LEB128 Unsigned32 -> memOffset
+                //     int memOffset = unsignedIntConstant(offset, intConstantOffset);
+                //     int offsetDelta = offsetDelta(offset, byteConstantOffset);
+                //     intConstantOffset += intConstantDelta(offset);
+                //     byteConstantOffset += byteConstantDelta(offset);
+                //     offset += offsetDelta;
+                //     // endregion
 
-                    WasmMemory memory = module().symbolTable().memory();
+                //     WasmMemory memory = module().symbolTable().memory();
 
-                    try {
-                        switch (opcode) {
-                            case I32_STORE: {
-                                stackPointer--;
-                                int value = popInt(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i32(this, address, value);
-                                break;
-                            }
-                            case I64_STORE: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64(this, address, value);
-                                break;
-                            }
-                            case F32_STORE: {
-                                stackPointer--;
-                                float value = popAsFloat(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_f32(this, address, value);
-                                break;
-                            }
-                            case F64_STORE: {
-                                stackPointer--;
-                                double value = popAsDouble(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_f64(this, address, value);
-                                break;
-                            }
-                            case I32_STORE_8: {
-                                stackPointer--;
-                                int value = popInt(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i32_8(this, address, (byte) value);
-                                break;
-                            }
-                            case I32_STORE_16: {
-                                stackPointer--;
-                                int value = popInt(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i32_16(this, address, (short) value);
-                                break;
-                            }
-                            case I64_STORE_8: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64_8(this, address, (byte) value);
-                                break;
-                            }
-                            case I64_STORE_16: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64_16(this, address, (short) value);
-                                break;
-                            }
-                            case I64_STORE_32: {
-                                stackPointer--;
-                                long value = pop(frame, stackPointer);
-                                stackPointer--;
-                                int baseAddress = popInt(frame, stackPointer);
-                                int address = baseAddress + memOffset;
-                                memory.store_i64_32(this, address, (int) value);
-                                break;
-                            }
-                            default: {
-                                throw new WasmTrap(this, "Unknown store opcode: " + opcode);
-                            }
-                        }
-                    } catch (WasmMemoryException e) {
-                        throw new WasmTrap(this, "memory address out-of-bounds");
-                    }
+                //     try {
+                //         switch (opcode) {
+                            // case I32_STORE: {
+                            //     stackPointer--;
+                            //     int value = popInt(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i32(this, address, value);
+                            //     break;
+                            // }
+                            // case I64_STORE: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64(this, address, value);
+                            //     break;
+                            // }
+                            // case F32_STORE: {
+                            //     stackPointer--;
+                            //     float value = popAsFloat(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_f32(this, address, value);
+                            //     break;
+                            // }
+                            // case F64_STORE: {
+                            //     stackPointer--;
+                            //     double value = popAsDouble(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_f64(this, address, value);
+                            //     break;
+                            // }
+                            // case I32_STORE_8: {
+                            //     stackPointer--;
+                            //     int value = popInt(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i32_8(this, address, (byte) value);
+                            //     break;
+                            // }
+                            // case I32_STORE_16: {
+                            //     stackPointer--;
+                            //     int value = popInt(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i32_16(this, address, (short) value);
+                            //     break;
+                            // }
+                            // case I64_STORE_8: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64_8(this, address, (byte) value);
+                            //     break;
+                            // }
+                            // // case I64_STORE_16: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64_16(this, address, (short) value);
+                            //     break;
+                            // }
+                            // case I64_STORE_32: {
+                            //     stackPointer--;
+                            //     long value = pop(frame, stackPointer);
+                            //     stackPointer--;
+                            //     int baseAddress = popInt(frame, stackPointer);
+                            //     int address = baseAddress + memOffset;
+                            //     memory.store_i64_32(this, address, (int) value);
+                            //     break;
+                            // }
+                //             default: {
+                //                 throw new WasmTrap(this, "Unknown store opcode: " + opcode);
+                //             }
+                //         }
+                //     } catch (WasmMemoryException e) {
+                //         throw new WasmTrap(this, "memory address out-of-bounds");
+                //     }
 
-                    break;
-                }
+                //     break;
+                // }
                 case MEMORY_SIZE: {
                     // Skip the 0x00 constant.
                     offset++;
@@ -2472,61 +2496,239 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 }
 
                 // MSWasm - instruction execution implementations follow
-                case I32_SEGMENT_LOAD: {
-                    // MSWasm
+                case I32_SEGMENT_LOAD:
+                case I32_SEGMENT_LOAD8_S:
+                case I32_SEGMENT_LOAD8_U:
+                case I32_SEGMENT_LOAD16_S:
+                case I32_SEGMENT_LOAD16_U:
+                case I64_SEGMENT_LOAD:
+                case I64_SEGMENT_LOAD8_S:
+                case I64_SEGMENT_LOAD8_U:
+                case I64_SEGMENT_LOAD16_S:
+                case I64_SEGMENT_LOAD16_U: 
+                case I64_SEGMENT_LOAD32_S:
+                case I64_SEGMENT_LOAD32_U:
+                case F32_SEGMENT_LOAD:
+                case F64_SEGMENT_LOAD:
+                case HANDLE_SEGMENT_LOAD: {
+                    /* The memAlign hint is not currently used or taken into account. */
+                    int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += memAlignOffsetDelta;
+    
+                    // region Load LEB128 Unsigned32 -> memOffset
+                    int memOffset = unsignedIntConstant(offset, intConstantOffset);
+                    int offsetDelta = offsetDelta(offset, byteConstantOffset);
+                    intConstantOffset += intConstantDelta(offset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += offsetDelta;
+                    // endregion
+    
                     stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
-                    int result = x.load_i32(this);
+                    Handle address = popHandle(frame, stackPointer);
+                    address.add(memOffset);
 
-                    pushInt(frame, stackPointer, result);
+                    switch(opcode) {
+                        case I32_SEGMENT_LOAD: {
+                            int result = address.load_i32(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD8_S: {
+                            int result = address.load_i32_8s(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD8_U: {
+                            int result = address.load_i32_8u(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD16_S: {
+                            int result = address.load_i32_16s(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I32_SEGMENT_LOAD16_U: {
+                            int result = address.load_i32_16u(this);
+                            pushInt(frame, stackPointer, result);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD: {
+                            long result = address.load_i64(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD8_S: {
+                            long result = address.load_i64_8s(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD8_U: {
+                            long result = address.load_i64_8u(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD16_S: {
+                            long result = address.load_i64_16s(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD16_U: {
+                            long result = address.load_i64_16u(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD32_S: {
+                            long result = address.load_i64_32s(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case I64_SEGMENT_LOAD32_U: {
+                            long result = address.load_i64_32u(this);
+                            push(frame, stackPointer, result);
+                            break;
+                        }
+                        case F32_SEGMENT_LOAD: {
+                            float result = address.load_f32(this);
+                            pushFloat(frame, stackPointer, result);
+                            break;
+                        }
+                        case F64_SEGMENT_LOAD: {
+                            double result = address.load_f64(this);
+                            pushDouble(frame, stackPointer, result);
+                            break;
+                        }
+                        case HANDLE_SEGMENT_LOAD: {
+                            Handle result = address.load_handle(this);
+                            pushHandle(frame, stackPointer, result);
+                            break;
+                        }
+                        default: {
+                            throw new WasmTrap(this, "Unrecognized segment load opcode");
+                        }
+                    }
                     stackPointer++;
-                    trace("push i32.segment_load " + x + " --> %d [i32]", result);
-
-                    // mswasmErr += "i32.segment_load " + x + " --> " + result + "\n";
-
                     break;
                 }
-                case I64_SEGMENT_LOAD: {
-                    // MSWasm
-                    stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
-                    long result = x.load_i64(this);
-
-                    push(frame, stackPointer, result);
-                    stackPointer++;
-                    trace("push i64.segment_load " + x + " --> %d [i64]", result);
-
-                    // mswasmErr += "i64.segment_load " + x + " --> " + result + "\n";
-
-                    break;
-                }
-                case I32_SEGMENT_STORE: {
-                    // MSWasm
-                    stackPointer--;
-                    int value = popInt(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
-                    // String init = "i32.segment_store " + value + ", " + key;
-
-                    key.store_i32(this, value);
-
-                    // mswasmErr += "i32.segment_store " + value + " to " + key + " --> " + success
-                    // + "\n";
-
-                    break;
-                }
-                case I64_SEGMENT_STORE: {
-                    // MSWasm
-                    stackPointer--;
-                    long value = pop(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
-                    
-                    key.store_i64(this, value);
-
-                    // mswasmErr += "i64.segment_store " + value + " to " + key + " --> " + success
-                    // + "\n";
-
+                case I32_SEGMENT_STORE_8:
+                case I32_SEGMENT_STORE_16:
+                case I32_SEGMENT_STORE:
+                case I64_SEGMENT_STORE_8:
+                case I64_SEGMENT_STORE_16:
+                case I64_SEGMENT_STORE_32:
+                case I64_SEGMENT_STORE: 
+                case F32_SEGMENT_STORE:
+                case F64_SEGMENT_STORE:
+                case HANDLE_SEGMENT_STORE: {
+                    /* The memAlign hint is not currently used or taken into account. */
+                    int memAlignOffsetDelta = offsetDelta(offset, byteConstantOffset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += memAlignOffsetDelta;
+    
+                    // region Load LEB128 Unsigned32 -> memOffset
+                    int memOffset = unsignedIntConstant(offset, intConstantOffset);
+                    int offsetDelta = offsetDelta(offset, byteConstantOffset);
+                    intConstantOffset += intConstantDelta(offset);
+                    byteConstantOffset += byteConstantDelta(offset);
+                    offset += offsetDelta;
+                    // endregion
+  
+                    switch(opcode){
+                        case I32_SEGMENT_STORE: {
+                            stackPointer--;
+                            int value = popInt(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_i32(this, value);
+                            break;
+                        }
+                        case I32_SEGMENT_STORE_8: {
+                            stackPointer--;
+                            int value = popInt(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_i32_8(this, (byte) value);
+                            break;
+                        }
+                        case I32_SEGMENT_STORE_16: {
+                            stackPointer--;
+                            int value = popInt(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_i32_16(this, (short) value);
+                            break;
+                        }
+                        case I64_SEGMENT_STORE: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_i64(this, value);
+                            break;
+                        }
+                        case I64_SEGMENT_STORE_8: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_i64_8(this, (byte) value);
+                            break;
+                        }
+                        case I64_SEGMENT_STORE_16: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_i64_16(this, (short) value);
+                            break;
+                        }
+                        case I64_SEGMENT_STORE_32: {
+                            stackPointer--;
+                            long value = pop(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_i64_32(this, (int) value);
+                            break;
+                        }
+                        case F32_SEGMENT_STORE: {
+                            stackPointer--;
+                            float value = popAsFloat(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_f32(this, value);
+                            break;
+                        }
+                        case F64_SEGMENT_STORE: {
+                            stackPointer--;
+                            double value = popAsDouble(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_f64(this, value);
+                            break;
+                        }
+                        case HANDLE_SEGMENT_STORE: {
+                            stackPointer--;
+                            Handle value = popHandle(frame, stackPointer);
+                            stackPointer--;
+                            Handle key = popHandle(frame, stackPointer);
+                            key.add(memOffset);
+                            key.store_handle(this, value);
+                            break;
+                        }
+                        default: {
+                            throw new WasmTrap(this, "Unrecognized segment store opcode");
+                        }
+                    }
                     break;
                 }
                 case NEW_SEGMENT: {
@@ -2540,7 +2742,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // mswasmErr += "newSegment " + segSize + " --> " + result + "\n";
 
                     stackPointer++;
-                    trace("push new_segment " + segSize + " --> " + result);
+                    // trace("push new_segment " + segSize + " --> " + result);
                     break;
                 }
                 case FREE_SEGMENT: {
@@ -2569,47 +2771,47 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     pushHandle(frame, stackPointer, result);
                     stackPointer++;
-                    trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, base, bound);
+                    // trace("push segment_slice " + handle + " ; %d [i32] ; %d [i32] --> " + result, base, bound);
                     break;
                 }
-                case HANDLE_SEGMENT_LOAD: {
-                    // MSWasm
-                    // TODO
-                    stackPointer--;
-                    Handle x = popHandle(frame, stackPointer);
+                // case HANDLE_SEGMENT_LOAD: {
+                //     // MSWasm
+                //     // TODO
+                //     stackPointer--;
+                //     Handle x = popHandle(frame, stackPointer);
                     
-                    // placeholder method
-                    Handle result = x.load_handle(this);
-                    pushHandle(frame, stackPointer, result);
+                //     // placeholder method
+                //     Handle result = x.load_handle(this);
+                //     pushHandle(frame, stackPointer, result);
 
-                    // mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
+                //     // mswasmErr += "handle.segment_load " + x + " --> " + result + "\n";
 
-                    stackPointer++;
-                    trace("push handle.segment_load " + x + " --> " + result);
-                    break;
-                }
-                case HANDLE_SEGMENT_STORE: {
-                    // MSWasm
-                    // TODO
-                    stackPointer--;
-                    Handle value = popHandle(frame, stackPointer);
-                    stackPointer--;
-                    Handle key = popHandle(frame, stackPointer);
+                //     stackPointer++;
+                //     // trace("push handle.segment_load " + x + " --> " + result);
+                //     break;
+                // }
+                // case HANDLE_SEGMENT_STORE: {
+                //     // MSWasm
+                //     // TODO
+                //     stackPointer--;
+                //     Handle value = popHandle(frame, stackPointer);
+                //     stackPointer--;
+                //     Handle key = popHandle(frame, stackPointer);
 
-                    // placeholder
-                    key.store_handle(this, value);
+                //     // placeholder
+                //     key.store_handle(this, value);
 
-                    // mswasmErr += "handle.segment_store " + value + " to " + key + " --> " +
-                    // success + "\n";
+                //     // mswasmErr += "handle.segment_store " + value + " to " + key + " --> " +
+                //     // success + "\n";
 
-                    break;
-                }
+                //     break;
+                // }
                 case HANDLE_ADD: {
                     // MSWasm
                     stackPointer--;
-                    Handle handle = popHandle(frame, stackPointer);
-                    stackPointer--;
                     int add_offset = popInt(frame, stackPointer);
+                    stackPointer--;
+                    Handle handle = popHandle(frame, stackPointer);
 
                     Handle result = new Handle(handle);
                     result.add(add_offset);
@@ -2618,15 +2820,17 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // mswasmErr += "handle.add " + handle + " + shift " + shift + " --> " + result;
 
                     stackPointer++;
-                    trace("push handle.add %d [i32] ; " + handle + " --> " + result, add_offset);
+                    // trace("push handle.add %d [i32] ; " + handle + " --> " + result, add_offset);
+                    
+                    // throw new WasmTrap(this, "handle_add: " + add_offset + ", " + handle + " --> " + result);
                     break;
                 }
                 case HANDLE_SUB: {
                     // MSWasm
                     stackPointer--;
-                    Handle handle = popHandle(frame, stackPointer);
-                    stackPointer--;
                     int sub_offset = popInt(frame, stackPointer);
+                    stackPointer--;
+                    Handle handle = popHandle(frame, stackPointer);
 
                     Handle result = new Handle(handle);
                     result.sub(sub_offset);
@@ -2635,7 +2839,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     // mswasmErr += "handle.sub " + handle + " - shift " + shift + " --> " + result;
 
                     stackPointer++;
-                    trace("push handle.sub %d [i32] ; " + handle + " --> " + result, sub_offset);
+                    // trace("push handle.sub %d [i32] ; " + handle + " --> " + result, sub_offset);
+                    break;
+                }
+                case NULL_HANDLE: {
+                    pushHandle(frame, stackPointer, Handle.nullHandle());
+                    stackPointer++;
                     break;
                 }
                 case HANDLE_GET_OFFSET: {
@@ -2647,7 +2856,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     pushInt(frame, stackPointer, h_offset);
 
                     stackPointer++;
-                    trace("push handle.get_offset " + handle + " --> %d [i32]", h_offset);
+                    // trace("push handle.get_offset " + handle + " --> %d [i32]", h_offset);
                     break;
                 }
                 case HANDLE_SET_OFFSET: {
@@ -2662,7 +2871,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     pushHandle(frame, stackPointer, result);
 
                     stackPointer++;
-                    trace("push handle.set_o fset%d [i32] ; " + handle + " --> " + result, h_offset);
+                    // trace("push handle.set_o fset%d [i32] ; " + handle + " --> " + result, h_offset);
                     break;
                 }
                 default:

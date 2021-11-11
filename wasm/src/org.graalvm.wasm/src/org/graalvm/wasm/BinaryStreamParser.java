@@ -171,6 +171,7 @@ public abstract class BinaryStreamParser {
 
     protected byte read1() {
         byte value = peek1(data, offset);
+        //System.out.println("[read]" + Integer.toHexString(value));
         offset++;
         return value;
     }

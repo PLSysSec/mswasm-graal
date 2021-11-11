@@ -215,6 +215,7 @@ public class BinaryParser extends BinaryStreamParser {
                     break;
                 }
                 case ImportIdentifier.GLOBAL: {
+                    // System.out.println("[CRAIG-DEBUG] reading import section...");
                     byte type = readValueType();
                     byte mutability = readMutability();
                     int index = module.symbolTable().maxGlobalIndex() + 1;
@@ -343,6 +344,7 @@ public class BinaryParser extends BinaryStreamParser {
         int numLocalsGroups = readVectorLength();
         ByteArrayList localTypes = new ByteArrayList();
         for (int localGroup = 0; localGroup < numLocalsGroups; localGroup++) {
+            // System.out.println("[CRAIG-DEBUG] reading code entry locals...");
             int groupLength = readVectorLength();
             byte t = readValueType();
             for (int i = 0; i != groupLength; ++i) {
@@ -372,11 +374,13 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private WasmBlockNode readBlock(WasmCodeEntry codeEntry, ExecutionState state) {
+        // System.out.println("[CRAIG-DEBUG] reading block...");
         byte blockTypeId = readBlockType();
         return readBlockBody(codeEntry, state, blockTypeId, blockTypeId);
     }
 
     private LoopNode readLoop(WasmCodeEntry codeEntry, ExecutionState state) {
+        // System.out.println("[CRAIG-DEBUG] reading loop...");
         byte blockTypeId = readBlockType();
         return readLoop(codeEntry, state, blockTypeId);
     }
@@ -628,57 +632,57 @@ public class BinaryParser extends BinaryStreamParser {
                     state.pop();
                     break;
                 }
-                case Instructions.I32_LOAD:
-                case Instructions.I64_LOAD:
-                case Instructions.F32_LOAD:
-                case Instructions.F64_LOAD:
-                case Instructions.I32_LOAD8_S:
-                case Instructions.I32_LOAD8_U:
-                case Instructions.I32_LOAD16_S:
-                case Instructions.I32_LOAD16_U:
-                case Instructions.I64_LOAD8_S:
-                case Instructions.I64_LOAD8_U:
-                case Instructions.I64_LOAD16_S:
-                case Instructions.I64_LOAD16_U:
-                case Instructions.I64_LOAD32_S:
-                case Instructions.I64_LOAD32_U: {
-                    // We don't store the `align` literal, as our implementation does not make use
-                    // of it, but we need to store its byte length, so that we can skip it
-                    // during execution.
-                    if (mustPoolLeb128()) {
-                        state.useByteConstant(peekLeb128Length(data, offset));
-                    }
-                    readUnsignedInt32(); // align
-                    readUnsignedInt32(state); // load offset
-                    Assert.assertIntGreater(state.stackSize(), 0, String
-                            .format("load instruction 0x%02X requires at least one element in the stack", opcode));
-                    state.pop(); // Base address.
-                    state.push(); // Loaded value.
-                    break;
-                }
-                case Instructions.I32_STORE:
-                case Instructions.I64_STORE:
-                case Instructions.F32_STORE:
-                case Instructions.F64_STORE:
-                case Instructions.I32_STORE_8:
-                case Instructions.I32_STORE_16:
-                case Instructions.I64_STORE_8:
-                case Instructions.I64_STORE_16:
-                case Instructions.I64_STORE_32: {
-                    // We don't store the `align` literal, as our implementation does not make use
-                    // of it, but we need to store its byte length, so that we can skip it
-                    // during the execution.
-                    if (mustPoolLeb128()) {
-                        state.useByteConstant(peekLeb128Length(data, offset));
-                    }
-                    readUnsignedInt32(); // align
-                    readUnsignedInt32(state); // store offset
-                    Assert.assertIntGreater(state.stackSize(), 1, String
-                            .format("store instruction 0x%02X requires at least two elements in the stack", opcode));
-                    state.pop(); // Value to store.
-                    state.pop(); // Base address.
-                    break;
-                }
+                // case Instructions.I32_LOAD:
+                // case Instructions.I64_LOAD:
+                // case Instructions.I32_LOAD8_S:
+                // case Instructions.I32_LOAD8_U:
+                // case Instructions.I32_LOAD16_S:
+                // case Instructions.I32_LOAD16_U:
+                // case Instructions.I64_LOAD8_S:
+                // case Instructions.I64_LOAD8_U:
+                // case Instructions.I64_LOAD16_S:
+                // case Instructions.I64_LOAD16_U:
+                // case Instructions.I64_LOAD32_S:
+                // case Instructions.I64_LOAD32_U:
+                // case Instructions.F32_LOAD:
+                // case Instructions.F64_LOAD: {
+                //     // We don't store the `align` literal, as our implementation does not make use
+                //     // of it, but we need to store its byte length, so that we can skip it
+                //     // during execution.
+                //     if (mustPoolLeb128()) {
+                //         state.useByteConstant(peekLeb128Length(data, offset));
+                //     }
+                //     readUnsignedInt32(); // align
+                //     readUnsignedInt32(state); // load offset
+                //     Assert.assertIntGreater(state.stackSize(), 0, String
+                //             .format("load instruction 0x%02X requires at least one element in the stack", opcode));
+                //     state.pop(); // Base address.
+                //     state.push(); // Loaded value.
+                //     break;
+                // }
+                // case Instructions.I32_STORE:
+                // case Instructions.I64_STORE:
+                // case Instructions.I32_STORE_8:
+                // case Instructions.I32_STORE_16:
+                // case Instructions.I64_STORE_8:
+                // case Instructions.I64_STORE_16:
+                // case Instructions.I64_STORE_32:
+                // case Instructions.F32_STORE:
+                // case Instructions.F64_STORE: {
+                //     // We don't store the `align` literal, as our implementation does not make use
+                //     // of it, but we need to store its byte length, so that we can skip it
+                //     // during the execution.
+                //     if (mustPoolLeb128()) {
+                //         state.useByteConstant(peekLeb128Length(data, offset));
+                //     }
+                //     readUnsignedInt32(); // align
+                //     readUnsignedInt32(state); // store offset
+                //     Assert.assertIntGreater(state.stackSize(), 1, String
+                //             .format("store instruction 0x%02X requires at least two elements in the stack", opcode));
+                //     state.pop(); // Value to store.
+                //     state.pop(); // Base address.
+                //     break;
+                // }
                 case Instructions.MEMORY_SIZE: {
                     // Skip the constant 0x00.
                     read1();
@@ -891,13 +895,55 @@ public class BinaryParser extends BinaryStreamParser {
                 // MSWasm instructions
                 case Instructions.I32_SEGMENT_STORE:
                 case Instructions.I64_SEGMENT_STORE:
+                case Instructions.F32_SEGMENT_STORE:
+                case Instructions.F64_SEGMENT_STORE:
+                case Instructions.I32_SEGMENT_STORE_8:
+                case Instructions.I32_SEGMENT_STORE_16:
+                case Instructions.I64_SEGMENT_STORE_8:
+                case Instructions.I64_SEGMENT_STORE_16:
+                case Instructions.I64_SEGMENT_STORE_32:
                 case Instructions.HANDLE_SEGMENT_STORE:
+                    // We don't store the `align` literal, as our implementation does not make use
+                    // of it, but we need to store its byte length, so that we can skip it
+                    // during the execution.
+                    if (mustPoolLeb128()) {
+                        state.useByteConstant(peekLeb128Length(data, offset));
+                    }
+                    readUnsignedInt32(); // align
+                    readUnsignedInt32(state); // store offset
+                    Assert.assertIntGreater(state.stackSize(), 1, String
+                            .format("store instruction 0x%02X requires at least two elements in the stack", opcode));
                     state.pop();
                     state.pop();
                     break;
                 case Instructions.I32_SEGMENT_LOAD:
                 case Instructions.I64_SEGMENT_LOAD:
+                case Instructions.F32_SEGMENT_LOAD:
+                case Instructions.F64_SEGMENT_LOAD:
+                case Instructions.I32_SEGMENT_LOAD8_S:
+                case Instructions.I32_SEGMENT_LOAD8_U:
+                case Instructions.I32_SEGMENT_LOAD16_S:
+                case Instructions.I32_SEGMENT_LOAD16_U:
+                case Instructions.I64_SEGMENT_LOAD8_S:
+                case Instructions.I64_SEGMENT_LOAD8_U:
+                case Instructions.I64_SEGMENT_LOAD16_S:
+                case Instructions.I64_SEGMENT_LOAD16_U:
+                case Instructions.I64_SEGMENT_LOAD32_S:
+                case Instructions.I64_SEGMENT_LOAD32_U:
                 case Instructions.HANDLE_SEGMENT_LOAD:
+                    // We don't store the `align` literal, as our implementation does not make use
+                    // of it, but we need to store its byte length, so that we can skip it
+                    // during execution.
+                    if (mustPoolLeb128()) {
+                        state.useByteConstant(peekLeb128Length(data, offset));
+                    }
+                    readUnsignedInt32(); // align
+                    readUnsignedInt32(state); // load offset
+                    Assert.assertIntGreater(state.stackSize(), 0, String
+                            .format("load instruction 0x%02X requires at least one element in the stack", opcode));
+                    state.pop();
+                    state.push();
+                    break;
                 case Instructions.NEW_SEGMENT:
                     state.pop();
                     state.push();
@@ -915,6 +961,9 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.HANDLE_SUB:
                     state.pop();
                     state.pop();
+                    state.push();
+                    break;
+                case Instructions.NULL_HANDLE:
                     state.push();
                     break;
                 case Instructions.HANDLE_GET_OFFSET:
@@ -973,6 +1022,7 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private WasmIfNode readIf(WasmCodeEntry codeEntry, ExecutionState state) {
+        // System.out.println("[CRAIG-DEBUG] reading if...");
         byte blockTypeId = readBlockType();
         // Note: the condition value was already popped at this point.
         int stackSizeAfterCondition = state.stackSize();
@@ -1118,6 +1168,7 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private void readGlobalSection() {
+        // System.out.println("[CRAIG-DEBUG] reading global section...");
         final GlobalRegistry globals = context.globals();
         int numGlobals = readVectorLength();
         int startingGlobalIndex = module.symbolTable().maxGlobalIndex() + 1;
@@ -1151,6 +1202,10 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.GLOBAL_GET:
                     existingIndex = readGlobalIndex();
                     isInitialized = false;
+                    break;
+                case (byte)Instructions.NULL_HANDLE:
+                    value = globals.allocateHandle(globalIndex);
+                    isInitialized = true;
                     break;
                 default:
                     throw Assert
@@ -1255,6 +1310,7 @@ public class BinaryParser extends BinaryStreamParser {
 
     private void readParameterList(int funcTypeIdx, int numParams) {
         for (int paramIdx = 0; paramIdx != numParams; ++paramIdx) {
+            // System.out.println("[CRAIG-DEBUG] reading parameter list...");
             byte type = readValueType();
             module.symbolTable().registerFunctionTypeParameterType(funcTypeIdx, paramIdx, type);
         }
@@ -1276,6 +1332,7 @@ public class BinaryParser extends BinaryStreamParser {
             case 0x00: // empty vector
                 break;
             case 0x01: // vector with one element (produced by the Wasm binary compiler)
+                // System.out.println("[CRAIG-DEBUG] reading result list...");
                 byte type = readValueType();
                 module.symbolTable().registerFunctionTypeReturnType(funcTypeIdx, 0, type);
                 break;
@@ -1489,6 +1546,7 @@ public class BinaryParser extends BinaryStreamParser {
                         break;
                     }
                     case ImportIdentifier.GLOBAL: {
+                        // System.out.println("[CRAIG-DEBUG] resetting global state...");
                         readValueType();
                         byte mutability = readMutability();
                         if (mutability == GlobalModifier.MUTABLE) {
@@ -1509,6 +1567,7 @@ public class BinaryParser extends BinaryStreamParser {
             int numGlobals = readVectorLength();
             int startingGlobalIndex = globalIndex;
             for (; globalIndex != startingGlobalIndex + numGlobals; globalIndex++) {
+                // System.out.println("[CRAIG-DEBUG] jumping to global section...");
                 readValueType();
                 // Read mutability;
                 read1();
