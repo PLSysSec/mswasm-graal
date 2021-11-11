@@ -30,14 +30,16 @@ public class CompMSWasmSuite extends CompWasmSuiteBase {
                                     + "sync-inline-iterations = 10\n" + "async-iterations = 10\n");
 
     private WasmCase[] testCases = {
-        WasmCase.create("HACL_CHACHA20_CORE", WasmCase.expected(0),
-                        parseWasmFile(folderPath + "Hacl_Chacha20_core.wasm"), null, opts),
-        WasmCase.create("CRAIG_1", WasmCase.expected(0),
-                         parseWasmFile(folderPath + "test1.wasm"), null, opts),
-        WasmCase.create("CRAIG_2", WasmCase.expected(0),
-                         parseWasmFile(folderPath + "test2.wasm"), null, opts),
-        WasmCase.create("CRAIG_4", WasmCase.expected(0),
-                         parseWasmFile(folderPath + "test4.wasm"), null, opts)
+        // WasmCase.create("HACL_CHACHA20_CORE", WasmCase.expected(0),
+        //                 parseWasmFile(folderPath + "Hacl_Chacha20_core.wasm"), null, opts),
+        // WasmCase.create("CRAIG_1", WasmCase.expected(0),
+        //                  parseWasmFile(folderPath + "test1.wasm"), null, opts),
+        // WasmCase.create("CRAIG_2", WasmCase.expected(0),
+        //                  parseWasmFile(folderPath + "test2.wasm"), null, opts),
+        // WasmCase.create("CRAIG_4", WasmCase.expected(0),
+        //                  parseWasmFile(folderPath + "test4.wasm"), null, opts)
+        WasmCase.create("TEST3", WasmCase.expected(0),
+                         parseWasmFile(folderPath + "test3.wasm"), null, opts)
     };
 
     private byte[] parseWasmFile(String fileName) {
@@ -57,12 +59,12 @@ public class CompMSWasmSuite extends CompWasmSuiteBase {
     @Override
     protected Collection<? extends WasmCase> collectStringTestCases() {
         ArrayList<WasmCase> cases = new ArrayList<WasmCase>(Arrays.asList(testCases));
-        try {
-            cases.add(
-                WasmCase.collectFileCase("test", "mswasm", 
-                                         "wasi-libc/wasi-libc;wasi-libc-test")
-            );
-        } catch (IOException e) {}
+       // try {
+       //     cases.add(
+       //         WasmCase.collectFileCase("test", "mswasm", 
+       //                                  "wasi-libc/wasi-libc;wasi-libc-test")
+       //     );
+       // } catch (IOException e) {}
         return cases;
     }
 
