@@ -57,8 +57,7 @@ import org.graalvm.wasm.constants.ImportIdentifier;
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
 import org.graalvm.wasm.globals.WasmGlobal;
-import org.graalvm.wasm.memory.ByteArrayWasmMemory;
-import org.graalvm.wasm.memory.UnsafeWasmMemory;
+import org.graalvm.wasm.mswasm.SegmentMemory;
 import org.graalvm.wasm.memory.WasmMemory;
 
 import com.oracle.truffle.api.CompilerAsserts;
@@ -860,12 +859,7 @@ public abstract class SymbolTable {
         module().addLinkAction((context, instance) -> {
             final int maxAllowedSize = minUnsigned(declaredMaxSize, module().limits().memoryInstanceSizeLimit());
             module().limits().checkMemoryInstanceSize(declaredMinSize);
-            final WasmMemory wasmMemory;
-            if (context.environment().getOptions().get(WasmOptions.UseUnsafeMemory)) {
-                wasmMemory = new UnsafeWasmMemory(declaredMinSize, declaredMaxSize, maxAllowedSize);
-            } else {
-                wasmMemory = new ByteArrayWasmMemory(declaredMinSize, declaredMaxSize, maxAllowedSize);
-            }
+            final WasmMemory wasmMemory = new SegmentMemory();
             final int memoryIndex = context.memories().register(wasmMemory);
             final WasmMemory allocatedMemory = context.memories().memory(memoryIndex);
             instance.setMemory(allocatedMemory);

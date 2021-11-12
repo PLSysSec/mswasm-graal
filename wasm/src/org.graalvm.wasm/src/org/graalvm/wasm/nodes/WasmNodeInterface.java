@@ -67,7 +67,7 @@ public interface WasmNodeInterface {
 
     // MSWasm - push local handle
     default void pushHandle(VirtualFrame frame, int slot, Handle value) {
-        push(stack, slot, Handle.handleToRawLongBits(value));
+        push(stack, slot, value.getKey());
     }
 
     default long pop(long[] stack, int slot) {
@@ -92,7 +92,7 @@ public interface WasmNodeInterface {
     }
 
     default Handle popAsHandle(long[] stack, int slot) {
-        return Handle.longBitsToHandle(pop(stack, slot));
+        return SegmentMemory.getHandleForKey(pop(stack, slot));
     }
 
 }

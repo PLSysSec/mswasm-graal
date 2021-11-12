@@ -73,8 +73,7 @@ import org.graalvm.wasm.exception.WasmJsApiException;
 import org.graalvm.wasm.globals.DefaultWasmGlobal;
 import org.graalvm.wasm.globals.ExportedWasmGlobal;
 import org.graalvm.wasm.globals.WasmGlobal;
-import org.graalvm.wasm.memory.ByteArrayWasmMemory;
-import org.graalvm.wasm.memory.UnsafeWasmMemory;
+import org.graalvm.wasm.mswasm.SegmentMemory;
 import org.graalvm.wasm.memory.WasmMemory;
 
 import com.oracle.truffle.api.CompilerAsserts;
@@ -105,7 +104,7 @@ public class WebAssembly extends Dictionary {
         addMember("mem_alloc", new Executable(args -> memAlloc(args)));
         addMember("mem_grow", new Executable(args -> memGrow(args)));
         addMember("mem_set_grow_callback", new Executable(args -> memSetGrowCallback(args)));
-        addMember("mem_as_byte_buffer", new Executable(args -> memAsByteBuffer(args)));
+        // addMember("mem_as_byte_buffer", new Executable(args -> memAsByteBuffer(args)));
 
         addMember("global_alloc", new Executable(args -> globalAlloc(args)));
         addMember("global_read", new Executable(args -> globalRead(args)));
@@ -566,11 +565,7 @@ public class WebAssembly extends Dictionary {
             throw new WasmJsApiException(WasmJsApiException.Kind.RangeError, "Min memory size exceeds implementation limit");
         }
         final int maxAllowedSize = minUnsigned(maximum, JS_LIMITS.memoryInstanceSizeLimit());
-        if (WasmContext.get(null).environment().getOptions().get(WasmOptions.UseUnsafeMemory)) {
-            return new UnsafeWasmMemory(initial, maximum, maxAllowedSize);
-        } else {
-            return new ByteArrayWasmMemory(initial, maximum, maxAllowedSize);
-        }
+        return new SegmentMemory();
     }
 
     private static Object memGrow(Object[] args) {

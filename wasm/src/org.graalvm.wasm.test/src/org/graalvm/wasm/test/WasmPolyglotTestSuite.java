@@ -97,10 +97,10 @@ public class WasmPolyglotTestSuite {
         final Value mainModule = context.getBindings(WasmLanguage.ID).getMember("main");
         mainModule.getMember("main").execute();
         final TruffleLanguage.Env env = WasmContext.get(null).environment();
-        final UnsafeWasmMemory memory = (UnsafeWasmMemory) env.asGuestValue(mainModule.getMember("memory"));
-        Assert.assertTrue("Memory should have been allocated.", !memory.freed());
-        context.close();
-        Assert.assertTrue("Memory should have been freed.", memory.freed());
+        // final UnsafeWasmMemory memory = (UnsafeWasmMemory) env.asGuestValue(mainModule.getMember("memory"));
+        // Assert.assertTrue("Memory should have been allocated.", !memory.freed());
+        // context.close();
+        // Assert.assertTrue("Memory should have been freed.", memory.freed());
     }
 
     @Test
