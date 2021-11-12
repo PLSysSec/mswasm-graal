@@ -42,6 +42,7 @@ package org.graalvm.wasm.globals;
 
 import org.graalvm.wasm.GlobalRegistry;
 import org.graalvm.wasm.api.ValueType;
+import org.graalvm.wasm.mswasm.Handle;
 
 public class ExportedWasmGlobal extends WasmGlobal {
     private final GlobalRegistry globals;
@@ -80,6 +81,6 @@ public class ExportedWasmGlobal extends WasmGlobal {
 
     @Override
     public void storeHandle(Handle value) {
-        globals.storeHandle(value);
+        globals.storeHandle(address, value);
     }
 }

@@ -1201,7 +1201,8 @@ public class BinaryParser extends BinaryStreamParser {
                     isInitialized = false;
                     break;
                 case (byte)Instructions.NULL_HANDLE:
-                    value = globals.allocateHandle(globalIndex);
+                    assertByteEqual(type, HANDLE_TYPE, Failure.TYPE_MISMATCH);
+                    value = 0;
                     isInitialized = true;
                     break;
                 default:

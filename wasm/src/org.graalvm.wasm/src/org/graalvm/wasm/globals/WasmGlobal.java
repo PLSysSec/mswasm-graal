@@ -44,6 +44,7 @@ package org.graalvm.wasm.globals;
 import com.oracle.truffle.api.interop.TruffleObject;
 import org.graalvm.wasm.EmbedderDataHolder;
 import org.graalvm.wasm.api.ValueType;
+import org.graalvm.wasm.mswasm.Handle;
 
 public abstract class WasmGlobal extends EmbedderDataHolder implements TruffleObject {
 

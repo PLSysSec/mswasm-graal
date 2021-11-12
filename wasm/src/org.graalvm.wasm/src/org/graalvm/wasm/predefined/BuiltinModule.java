@@ -58,7 +58,6 @@ import org.graalvm.wasm.predefined.emscripten.EmscriptenModule;
 import org.graalvm.wasm.predefined.spectest.SpectestModule;
 import org.graalvm.wasm.predefined.testutil.TestutilModule;
 import org.graalvm.wasm.predefined.wasi.WasiModule;
-import org.graalvm.wasm.predefined.wasi.WasiSnapshotPreview1Module;
 
 import java.util.HashMap;
 import java.util.Map;

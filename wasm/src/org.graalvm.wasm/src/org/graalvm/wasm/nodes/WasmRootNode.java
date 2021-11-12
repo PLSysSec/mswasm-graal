@@ -157,10 +157,9 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
                 long returnValue = pop(stacklocals, numLocals);
                 return Double.longBitsToDouble(returnValue);
             }
-            case ValueTypes.HANDLE_TYPE: {
-                // MSWasm
-                Handle returnValue = popHandle(frame, 0);
-                return returnValue;
+            case WasmType.HANDLE_TYPE: {
+                long returnValue = pop(stacklocals, numLocals);
+                return Handle.longBitsToHandle(returnValue);
             }
             default:
                 throw WasmException.format(Failure.UNSPECIFIED_INTERNAL, this, "Unknown return type id: %d", returnTypeId);
@@ -218,9 +217,8 @@ public class WasmRootNode extends RootNode implements WasmNodeInterface {
                 case WasmType.F64_TYPE:
                     stacklocals[i] = Double.doubleToRawLongBits(0.0);
                     break;
-                case ValueTypes.HANDLE_TYPE:
-                    // MSWasm
-                    body.setHandle(frame, i, null);
+                case WasmType.HANDLE_TYPE:
+                    // Already set to 0 at allocation.
                     break;
             }
         }

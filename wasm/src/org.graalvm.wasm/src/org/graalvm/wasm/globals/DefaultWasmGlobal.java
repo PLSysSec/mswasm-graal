@@ -42,6 +42,7 @@
 package org.graalvm.wasm.globals;
 
 import org.graalvm.wasm.api.ValueType;
+import org.graalvm.wasm.mswasm.Handle;
 
 public class DefaultWasmGlobal extends WasmGlobal {
     private long globalValue;

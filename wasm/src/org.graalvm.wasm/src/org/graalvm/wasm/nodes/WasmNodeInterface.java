@@ -65,8 +65,7 @@ public interface WasmNodeInterface {
         push(stack, slot, Double.doubleToRawLongBits(value));
     }
 
-    // MSWasm - push local handle
-    default void pushHandle(VirtualFrame frame, int slot, Handle value) {
+    default void pushHandle(long[] stack, int slot, Handle value) {
         push(stack, slot, Handle.handleToRawLongBits(value));
     }
 

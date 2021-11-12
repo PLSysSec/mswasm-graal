@@ -3,12 +3,13 @@ package org.graalvm.wasm.mswasm;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 
+import org.graalvm.wasm.exception.Failure;
+import org.graalvm.wasm.exception.WasmException;
 import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.interop.TruffleObject;
 import sun.misc.Unsafe;
 import com.oracle.truffle.api.nodes.Node;
-import org.graalvm.wasm.exception.WasmTrap;
-import org.graalvm.wasm.WasmTracing;
 
 public class Handle {
     private static final Unsafe unsafe;
@@ -26,12 +27,12 @@ public class Handle {
     private Segment segment;
 
     // static mapping table for Handle keys
-    private static HashMap<Integer, Handle> keysToHandles = new HashMap<>();
+    private static HashMap<Long, Handle> keysToHandles = new HashMap<>();
 
     // memory access validation
     private final long base;
     private final long bound;
-    private final int key;
+    private final long key;
     private int offset;
 
     // flags
@@ -67,7 +68,7 @@ public class Handle {
         // unsafe.setMemory(this.base + this.offset, byteSize, (byte) 0);
 
         // set flags
-        // this.isCorrupted = false;
+        this.isCorrupted = false;
         this.isSlice = false;
         this.key = generateKey(this);
         keysToHandles.put(key, this);
@@ -93,11 +94,14 @@ public class Handle {
     }
 
     public static long handleToRawLongBits(Handle value) {
-        return ((long)value.offset << 32) | value.key;
+        return value.key;
     }
 
     public static Handle longBitsToHandle(long value) {
-        return keysToHandles.get((int)(value & 0xffffffffL));
+        if (!keysToHandles.containsKey(value)) {
+            return nullHandle();
+        }
+        return keysToHandles.get(value);
     }
 
     /**
@@ -105,11 +109,9 @@ public class Handle {
      *      (Integer.MIN_VALUE, Integer.MAX_VALUE)
      */
     @CompilerDirectives.TruffleBoundary
-    public static int generateKey(Handle handle) {
+    public static long generateKey(Handle handle) {
         double rand = Math.random();
-        double signRand = Math.random();
-        int unsKey = (int) (Integer.MAX_VALUE * rand);
-        return signRand >= 0.5 ? unsKey : -1 * unsKey;
+        return (long) (0xffffffff_ffffffffL * rand);
     }    
     
     public String toString() {
@@ -117,7 +119,7 @@ public class Handle {
                + this.isCorrupted + ", " + this.isSlice + ")";
     }
 
-    public int getKey() {
+    public long getKey() {
         return this.key;
     }
 
@@ -130,43 +132,47 @@ public class Handle {
     }
 
     public void validateHandleAccess(Node node, long accessSize) {
-        // WasmTracing.trace("validating handle at 0x%016X (%d)", this.base + this.offset, this.base + this.offset);
-        // if (this.isCorrupted) {
-        //     trapCorrupted(node);
-        // } else
+        if (this.isCorrupted) {
+            throw trapCorrupted(node);
+        } else
         if (this.segment.isFree()) {
-            trapFreed(node);
+            throw trapFreed(node);
         } else if (this.offset < 0 || this.base + this.offset + accessSize > this.bound) {
-            trapOutOfBounds(node, accessSize);
+            throw trapOutOfBounds(node, accessSize);
         }
     }
 
+
+    @TruffleBoundary
+    protected final WasmException trapCorrupted(Node node) {
+        long effectiveAddr = base + offset;
+        final String message = String.format("Handle with effective address 0x%016X (%d) is corrupted",
+                                    effectiveAddr, effectiveAddr);
+        return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
+
+    }
+
+    @TruffleBoundary
+    protected final WasmException trapFreed(Node node) {
+        long effectiveAddr = base + offset;
+        final String message = String.format("Handle with effective address 0x%016X (%d) has been freed",
+                                    effectiveAddr, effectiveAddr);
+        return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
+    }
+
+    @TruffleBoundary
+    protected final WasmException trapInvalidSlice(Node node) {
+        long effectiveAddr = base + offset;
+        final String message = String.format("Invalid use of slices with handle at 0x%016X (%d)",
+                                    effectiveAddr, effectiveAddr);
+        return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
+    }
     
-
-    // @CompilerDirectives.TruffleBoundary
-    private void trapOutOfBounds(Node node, long accessSize) {
-        // String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds (memory size %d bytes).",
-        //                 accessSize, this.base + this.offset, this.base + this.offset, byteSize());
-        System.out.println("trapOutOfBounds");
-        String message = "Segment memory access of size " + accessSize + " is out-of-bounds";
-        message = message + "\n\ton handle " + this;
-        throw new WasmTrap(node, message);
-    }
-
-    // @CompilerDirectives.TruffleBoundary
-    private void trapCorrupted(Node node) {
-        // String message = String.format("Segment memory access at address 0x%016X (%d) is corrupted.",
-        //                 this.base + this.offset, this.base + this.offset);
-        String message = "Segment memory pointer is corrupted";
-        throw new WasmTrap(node, message);
-    }
-
-    // @CompilerDirectives.TruffleBoundary
-    private void trapFreed(Node node) {
-        // String message = String.format("Segment memory at address 0x%016X (%d) is not allocated.",
-        //                 this.base + this.offset, this.base + this.offset);
-        String message = "Segment memory is not allocated";
-        throw new WasmTrap(node, message);
+    @TruffleBoundary
+    protected final WasmException trapOutOfBounds(Node node, long length) {
+        final String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds",
+                        length, base + offset, base + offset);
+        return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
     }
 
     public long startAddress() {
@@ -183,13 +189,11 @@ public class Handle {
      */
     public void free(Node node) {
         if (this.isCorrupted) {
-            String message = "Corrupted handle can't be freed";
-            throw new WasmTrap(node, message);
+            throw trapCorrupted(node);
         } else if (this.isSlice) {
-            String message = "Slices of handles can't be freed";
-            throw new WasmTrap(node, message);
+            throw trapInvalidSlice(node);
         } else if (this.segment.isFree()) {
-            trapFreed(node);
+            throw trapFreed(node);
         }
 
         unsafe.freeMemory(this.base);
@@ -207,8 +211,7 @@ public class Handle {
         // Validate slice offsets
         if (baseOffset < 0 || boundOffset < baseOffset ||
             this.base + baseOffset > this.bound) {
-            String message = "Slice base and/or bound offset is invalid";
-            throw new WasmTrap(node, message);
+            throw trapInvalidSlice(node);
         }
 
         long resultBase = this.base + baseOffset;
@@ -247,127 +250,99 @@ public class Handle {
 
     
     public int load_i32(Node node) {
-        WasmTracing.trace("load.i32 address = %d", this.base + this.offset);
         validateHandleAccess(node, 4);
         int value = unsafe.getInt(this.base + this.offset);
-        WasmTracing.trace("load.i32 value = 0x%08X (%d)", value, value);
         return value;
     }
 
     
     public long load_i64(Node node) {
-        WasmTracing.trace("load.i64 address = %d", this.base + this.offset);
         validateHandleAccess(node, 8);
         long value = unsafe.getLong(this.base + this.offset);
-        WasmTracing.trace("load.i64 value = 0x%08X (%d)", value, value);
         return value;
     }
 
     
     public float load_f32(Node node) {
-        WasmTracing.trace("load.f32 address = %d", this.base + this.offset);
         validateHandleAccess(node, 4);
         float value = unsafe.getFloat(this.base + this.offset);
-        WasmTracing.trace("load.f32 address = %d, value = 0x%08X (%f)", this.base + this.offset, Float.floatToRawIntBits(value), value);
         return value;
     }
 
     
     public double load_f64(Node node) {
-        WasmTracing.trace("load.f64 address = %d", this.base + this.offset);
         validateHandleAccess(node, 8);
         double value = unsafe.getDouble(this.base + this.offset);
-        WasmTracing.trace("load.f64 address = %d, value = 0x%016X (%f)", this.base + this.offset, Double.doubleToRawLongBits(value), value);
         return value;
     }
 
     
     public int load_i32_8s(Node node) {
-        WasmTracing.trace("load.i32_8s address = %d", this.base + this.offset);
         validateHandleAccess(node, 1);
         int value = unsafe.getByte(this.base + this.offset);
-        WasmTracing.trace("load.i32_8s value = 0x%02X (%d)", value, value);
         return value;
     }
 
     
     public int load_i32_8u(Node node) {
-        WasmTracing.trace("load.i32_8u address = %d", this.base + this.offset);
         validateHandleAccess(node, 1);
         int value = 0x0000_00ff & unsafe.getByte(this.base + this.offset);
-        WasmTracing.trace("load.i32_8u value = 0x%02X (%d)", value, value);
         return value;
     }
 
     
     public int load_i32_16s(Node node) {
-        WasmTracing.trace("load.i32_16s address = %d", this.base + this.offset);
         validateHandleAccess(node, 2);
         int value = unsafe.getShort(this.base + this.offset);
-        WasmTracing.trace("load.i32_16s value = 0x%04X (%d)", value, value);
         return value;
     }
 
     
     public int load_i32_16u(Node node) {
-        WasmTracing.trace("load.i32_16u address = %d", this.base + this.offset );
         validateHandleAccess(node, 2);
         int value = 0x0000_ffff & unsafe.getShort(this.base + this.offset);
-        WasmTracing.trace("load.i32_16u value = 0x%04X (%d)", value, value);
         return value;
     }
 
     
     public long load_i64_8s(Node node) {
-        WasmTracing.trace("load.i64_8s address = %d", this.base + this.offset);
         validateHandleAccess(node, 1);
         long value = unsafe.getByte(this.base + this.offset);
-        WasmTracing.trace("load.i64_8s value = 0x%02X (%d)", value, value);
         return value;
     }
 
     
     public long load_i64_8u(Node node) {
-        WasmTracing.trace("load.i64_8u address = %d", this.base + this.offset);
         validateHandleAccess(node, 1);
         long value = 0x0000_0000_0000_00ffL & unsafe.getByte(this.base + this.offset);
-        WasmTracing.trace("load.i64_8u value = 0x%02X (%d)", value, value);
         return value;
     }
 
     
     public long load_i64_16s(Node node) {
-        WasmTracing.trace("load.i64_16s address = %d", this.base + this.offset);
         validateHandleAccess(node, 2);
         long value = unsafe.getShort(this.base + this.offset);
-        WasmTracing.trace("load.i64_16s value = 0x%04X (%d)", value, value);
         return value;
     }
 
     
     public long load_i64_16u(Node node) {
-        WasmTracing.trace("load.i64_16u address = %d", this.base + this.offset);
         validateHandleAccess(node, 2);
         long value = 0x0000_0000_0000_ffffL & unsafe.getShort(this.base + this.offset);
-        WasmTracing.trace("load.i64_16u value = 0x%04X (%d)", value, value);
         return value;
     }
 
     
     public long load_i64_32s(Node node) {
-        WasmTracing.trace("load.i64_32s address = %d", this.base + this.offset);
         validateHandleAccess(node, 4);
         long value = unsafe.getInt(this.base + this.offset);
-        WasmTracing.trace("load.i64_32s value = 0x%08X (%d)", value, value);
         return value;
     }
 
     
     public long load_i64_32u(Node node) {
-        WasmTracing.trace("load.i64_32u address = %d", this.base + this.offset);
         validateHandleAccess(node, 4);
         long value = 0x0000_0000_ffff_ffffL & unsafe.getInt(this.base + this.offset);
-        WasmTracing.trace("load.i64_32u value = 0x%08X (%d)", value, value);
         return value;
     }
 
@@ -376,23 +351,13 @@ public class Handle {
      * handle is valid
      */
     public Handle load_handle(Node node) {
-        WasmTracing.trace("load.handle address = %d", this.base + this.offset);
         validateHandleAccess(node, 4);
 
         // load key at address
         int key = unsafe.getInt(this.base + this.offset);
-        WasmTracing.trace("load.handle key = 0x%08X (%d)", key, key);
 
         // validate key
         if ( ! keysToHandles.containsKey(key)) {
-            // invalid key; throw a trap
-            // TODO do we want to return a corrupted handle instead?
-
-            // ideally, invalid key references a Handle that is corrupted
-            // now that the key is corrupted, we don't know what Handle it refers to
-            // when a handle is stored and modified, programmer expects that the modified Handle can be loaded
-            // our representation - you modified that handle, it's actually a KEY, not the handle itself, can't reference
-            // we want to postpone this trap until we dereference this handle
             return nullHandle();
         }
 
@@ -403,71 +368,61 @@ public class Handle {
 
     
     public void store_i32(Node node, int value) {
-        WasmTracing.trace("store.i32 address = %d, value = 0x%08X (%d)", this.base + this.offset, value, value);
         validateHandleAccess(node, 4);
         unsafe.putInt(this.base + this.offset, value);
     }
 
     
     public void store_i64(Node node, long value) {
-        WasmTracing.trace("store.i64 address = %d, value = 0x%016X (%d)", this.base + this.offset, value, value);
         validateHandleAccess(node, 8);
         unsafe.putLong(this.base + this.offset, value);
     }
 
     
     public void store_f32(Node node, float value) {
-        WasmTracing.trace("store.f32 address = %d, value = 0x%08X (%f)", this.base + this.offset, Float.floatToRawIntBits(value), value);
         validateHandleAccess(node, 4);
         unsafe.putFloat(this.base + this.offset, value);
     }
 
     
     public void store_f64(Node node, double value) {
-        WasmTracing.trace("store.f64 address = %d, value = 0x%016X (%f)", this.base + this.offset, Double.doubleToRawLongBits(value), value);
         validateHandleAccess(node, 8);
         unsafe.putDouble(this.base + this.offset, value);
     }
 
     
     public void store_i32_8(Node node, byte value) {
-        WasmTracing.trace("store.i32_8 address = %d, value = 0x%02X (%d)", this.base + this.offset, value, value);
         validateHandleAccess(node, 1);
         unsafe.putByte(this.base + this.offset, value);
     }
 
     
     public void store_i32_16(Node node, short value) {
-        WasmTracing.trace("store.i32_16 address = %d, value = 0x%04X (%d)", this.base + this.offset, value, value);
         validateHandleAccess(node, 2);
         unsafe.putShort(this.base + this.offset, value);
     }
 
     
     public void store_i64_8(Node node, byte value) {
-        WasmTracing.trace("store.i64_8 address = %d, value = 0x%02X (%d)", this.base + this.offset, value, value);
         validateHandleAccess(node, 1);
         unsafe.putByte(this.base + this.offset, value);
     }
 
     
     public void store_i64_16(Node node, short value) {
-        WasmTracing.trace("store.i64_16 address = %d, value = 0x%04X (%d)", this.base + this.offset, value, value);
         validateHandleAccess(node, 2);
         unsafe.putShort(this.base + this.offset, value);
     }
 
     
     public void store_i64_32(Node node, int value) {
-        WasmTracing.trace("store.i64_32 address = %d, value = 0x%08X (%d)", this.base + this.offset, value, value);
         validateHandleAccess(node, 4);
         unsafe.putInt(this.base + this.offset, value);
     }
 
     public void store_handle(Node node, Handle value) {
-        WasmTracing.trace("store.handle address = %d", this.base + this.offset);
         validateHandleAccess(node, 4);        
-        unsafe.putInt(this.base + this.offset, value.getKey());
+        unsafe.putLong(this.base + this.offset, value.getKey());
     }
 
 }
