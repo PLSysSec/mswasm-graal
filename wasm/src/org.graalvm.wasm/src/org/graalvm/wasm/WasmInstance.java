@@ -54,6 +54,7 @@ import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.profiles.BranchProfile;
 import org.graalvm.wasm.collection.IntArrayList;
 import org.graalvm.wasm.constants.GlobalModifier;
+import org.graalvm.wasm.mswasm.Handle;
 
 import java.util.ArrayList;
 import java.util.List;

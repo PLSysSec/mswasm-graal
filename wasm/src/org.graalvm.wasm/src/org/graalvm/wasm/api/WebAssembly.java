@@ -76,6 +76,7 @@ import org.graalvm.wasm.globals.WasmGlobal;
 import org.graalvm.wasm.memory.ByteArrayWasmMemory;
 import org.graalvm.wasm.memory.UnsafeWasmMemory;
 import org.graalvm.wasm.memory.WasmMemory;
+import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CompilerAsserts;
 import com.oracle.truffle.api.TruffleContext;
@@ -670,6 +671,10 @@ public class WebAssembly extends Dictionary {
                     return new DefaultWasmGlobal(valueType, mutable, Float.floatToRawIntBits(valueInterop.asFloat(value)));
                 case f64:
                     return new DefaultWasmGlobal(valueType, mutable, Double.doubleToRawLongBits(valueInterop.asDouble(value)));
+                case handle:
+                    if (!(value instanceof Handle))
+                        throw new WasmJsApiException(WasmJsApiException.Kind.TypeError, "Invalid handle");
+                    return new DefaultWasmGlobal(valueType, mutable, Handle.handleToRawLongBits((Handle)value));
                 default:
                     throw new WasmJsApiException(WasmJsApiException.Kind.TypeError, "Invalid value type");
             }
@@ -697,6 +702,8 @@ public class WebAssembly extends Dictionary {
                 return Float.intBitsToFloat(global.loadAsInt());
             case f64:
                 return Double.longBitsToDouble(global.loadAsLong());
+            case handle: 
+                return Handle.longBitsToHandle(global.loadAsLong());
         }
         throw new WasmJsApiException(WasmJsApiException.Kind.TypeError, "Incorrect internal Global type");
     }
@@ -739,6 +746,12 @@ public class WebAssembly extends Dictionary {
                     throw WasmJsApiException.format(WasmJsApiException.Kind.TypeError, "Global type %s, value: %s", valueType, value);
                 }
                 global.storeLong(Double.doubleToRawLongBits((double) value));
+                break;
+            case handle:
+                if (!(value instanceof Handle)) {
+                    throw WasmJsApiException.format(WasmJsApiException.Kind.TypeError, "Global type %s, value: %s", valueType, value);
+                }
+                global.storeLong(Handle.handleToRawLongBits((Handle) value));
                 break;
         }
         return WasmVoidResult.getInstance();

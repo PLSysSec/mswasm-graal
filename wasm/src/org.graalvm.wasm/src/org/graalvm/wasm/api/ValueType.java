@@ -51,7 +51,7 @@ public enum ValueType {
     i32(WasmType.I32_TYPE),
     i64(WasmType.I64_TYPE),
     f32(WasmType.F32_TYPE),
-    f64(WasmType.F64_TYPE);
+    f64(WasmType.F64_TYPE),
     handle(WasmType.HANDLE_TYPE);
 
     private final byte byteValue;
