@@ -134,7 +134,7 @@ public class GlobalRegistry {
     }
 
     public Handle loadAsHandle(int address) {
-        return SEgmentMemory.getHandleForKey(globals[address]);
+        return Handle.longBitsToHandle(globals[address]);
     }
 
     public void storeInt(int address, int value) {
@@ -151,7 +151,7 @@ public class GlobalRegistry {
     }
 
     public void storeHandle(int address, Handle value) {
-        storeLong(address, value.getKey());
+        storeLong(address, Handle.handleToRawLongBits(value));
     }
 
     public GlobalRegistry duplicate() {

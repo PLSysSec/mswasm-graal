@@ -68,7 +68,7 @@ public class DefaultWasmGlobal extends WasmGlobal {
 
     @Override
     public Handle loadAsHandle() {
-        return SegmentMemory.getHandleForKey(globalValue);
+        return Handle.longBitsToHandle(globalValue);
     }
 
     @Override
@@ -83,6 +83,6 @@ public class DefaultWasmGlobal extends WasmGlobal {
 
     @Override
     public void storeHandle(Handle value) {
-        this.globalValue = value.getKey();
+        this.globalValue = Handle.handleToRawLongBits(value);
     }
 }
