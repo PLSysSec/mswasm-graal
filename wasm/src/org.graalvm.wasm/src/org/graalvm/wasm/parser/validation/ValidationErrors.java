@@ -61,6 +61,8 @@ public class ValidationErrors {
                 return "f32";
             case WasmType.F64_TYPE:
                 return "f64";
+            case WasmType.HANDLE_TYPE:
+                return "handle";
         }
         return "unknown";
     }

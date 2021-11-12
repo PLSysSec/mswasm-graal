@@ -1825,7 +1825,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 break;
             }
             case WasmType.I64_TYPE:
-            case WasmType.F64_TYPE: {
+            case WasmType.F64_TYPE:
+            case WasmType.HANDLE_TYPE: {
                 int address = instance().globalAddress(index);
                 long value = context.globals().loadAsLong(address);
                 push(stack, stackPointer, value);
