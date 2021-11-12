@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -58,7 +58,6 @@ import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.TruffleLanguage.Registration;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.RootNode;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.source.Source;
 
 public class LanguageSPIOrderTest {
@@ -67,7 +66,7 @@ public class LanguageSPIOrderTest {
     private static final Map<String, OrderContext> currentContext = new HashMap<>();
 
     static final String PUBLIC = "SPIPublicLanguage";
-    static final String INTERNAL = "SPIInternalLanguage";
+    public static final String INTERNAL = "SPIInternalLanguage";
     static final String DEPENDENT = "SPIDependentLanguage";
     static final String TRANSITIVE = "SPITransitiveLanguage";
     static final String CYCLIC1 = "SPICyclicLanguage1";
@@ -292,7 +291,7 @@ public class LanguageSPIOrderTest {
 
         @Override
         protected CallTarget parse(com.oracle.truffle.api.TruffleLanguage.ParsingRequest request) throws Exception {
-            return Truffle.getRuntime().createCallTarget(RootNode.createConstantNode(42));
+            return RootNode.createConstantNode(42).getCallTarget();
         }
 
         @Override

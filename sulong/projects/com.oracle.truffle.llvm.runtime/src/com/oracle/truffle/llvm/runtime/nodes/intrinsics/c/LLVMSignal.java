@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -41,7 +41,6 @@ import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.TruffleContext;
 import com.oracle.truffle.api.dsl.Cached;
-import com.oracle.truffle.api.dsl.CachedContext;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.ArityException;
@@ -49,7 +48,6 @@ import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.interop.UnsupportedTypeException;
 import com.oracle.truffle.llvm.runtime.LLVMContext;
-import com.oracle.truffle.llvm.runtime.LLVMLanguage;
 import com.oracle.truffle.llvm.runtime.LLVMThread;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMExpressionNode;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMToNativeNode;
@@ -65,22 +63,21 @@ public abstract class LLVMSignal extends LLVMExpressionNode {
 
     @Specialization
     protected LLVMPointer doSignal(int signal, LLVMPointer handler,
-                    @CachedContext(LLVMLanguage.class) LLVMContext context,
                     @Cached("createToNativeWithTarget()") LLVMToNativeNode toNative) {
-        return setSignalHandler(context, signal, toNative.executeWithTarget(handler));
+        return setSignalHandler(signal, toNative.executeWithTarget(handler));
     }
 
-    private static LLVMPointer setSignalHandler(LLVMContext context, int signalId, LLVMNativePointer function) {
+    private LLVMPointer setSignalHandler(int signalId, LLVMNativePointer function) {
         try {
             Signals decodedSignal = Signals.decode(signalId);
-            return setSignalHandler(context, decodedSignal.signal(), function);
+            return setSignalHandler(getContext(), decodedSignal.signal(), function);
         } catch (NoSuchElementException e) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
-            return context.getSigErr();
+            return getContext().getSigErr();
         }
     }
 
-    private static Lock globalSignalHandlerLock = new ReentrantLock();
+    private static final Lock globalSignalHandlerLock = new ReentrantLock();
 
     private static final Map<Integer, LLVMSignalHandler> registeredSignals = new HashMap<>();
 
@@ -181,14 +178,6 @@ public abstract class LLVMSignal extends LLVMExpressionNode {
             return isRunning.get();
         }
 
-        @Override
-        @TruffleBoundary
-        protected void finalize() throws Throwable {
-            super.finalize();
-            stop();
-            unregisterFromContext();
-        }
-
         private static final long HANDLE_MAX_WAITING_TIME = 250; // ms
 
         @Override
@@ -208,11 +197,11 @@ public abstract class LLVMSignal extends LLVMExpressionNode {
                 if (isRunning.get()) {
                     try {
                         TruffleContext truffleContext = context.getEnv().getContext();
-                        Object p = truffleContext.enter();
+                        Object p = truffleContext.enter(null);
                         try {
                             InteropLibrary.getFactory().getUncached().execute(handler, signal.getNumber());
                         } finally {
-                            truffleContext.leave(p);
+                            truffleContext.leave(null, p);
                         }
                     } catch (UnsupportedTypeException | ArityException | UnsupportedMessageException e) {
                         throw new AssertionError(e);

@@ -28,11 +28,10 @@ import javax.script.ScriptEngine;
 
 import com.oracle.svm.core.annotate.Substitute;
 import com.oracle.svm.core.annotate.TargetClass;
+import com.oracle.svm.core.jdk.NashornSupport.NashornAvailable;
 import com.oracle.svm.core.util.VMError;
 
-import jdk.nashorn.api.scripting.ClassFilter;
-
-@TargetClass(jdk.nashorn.api.scripting.NashornScriptEngineFactory.class)
+@TargetClass(className = "jdk.nashorn.api.scripting.NashornScriptEngineFactory", onlyWith = {JDK11OrEarlier.class, NashornAvailable.class})
 public final class Target_jdk_nashorn_api_scripting_NashornScriptEngineFactory {
     @Substitute
     @SuppressWarnings({"unused", "static-method"})
@@ -42,7 +41,7 @@ public final class Target_jdk_nashorn_api_scripting_NashornScriptEngineFactory {
 
     @Substitute
     @SuppressWarnings({"unused", "static-method"})
-    private ScriptEngine newEngine(String[] args, ClassLoader appLoader, ClassFilter classFilter) {
+    private ScriptEngine newEngine(String[] args, ClassLoader appLoader, Target_jdk_nashorn_api_scripting_ClassFilter classFilter) {
         throw VMError.unsupportedFeature(Util.errorMessage);
     }
 }

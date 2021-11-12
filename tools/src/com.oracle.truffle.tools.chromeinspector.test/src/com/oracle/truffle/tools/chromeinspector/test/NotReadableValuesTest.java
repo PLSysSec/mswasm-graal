@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 package com.oracle.truffle.tools.chromeinspector.test;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -35,8 +34,6 @@ import org.junit.Test;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
-import com.oracle.truffle.api.Scope;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.GenerateWrapper;
@@ -45,7 +42,6 @@ import com.oracle.truffle.api.instrumentation.ProbeNode;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.interop.UnknownIdentifierException;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.nodes.Node;
@@ -84,7 +80,7 @@ public class NotReadableValuesTest {
                                 "\"callFrames\":[{\"callFrameId\":\"0\",\"functionName\":\"TestRootNode\"," +
                                                  "\"scopeChain\":[{\"name\":\"TestRootNode\",\"type\":\"local\",\"object\":{\"description\":\"TestRootNode\",\"type\":\"object\",\"objectId\":\"1\"}}," +
                                                                  "{\"name\":\"top\",\"type\":\"global\",\"object\":{\"description\":\"top\",\"type\":\"object\",\"objectId\":\"2\"}}]," +
-                                                 "\"this\":{\"subtype\":\"null\",\"description\":\"null\",\"type\":\"object\",\"objectId\":\"3\"}," +
+                                                 "\"this\":null," +
                                                  "\"functionLocation\":{\"scriptId\":\"0\",\"columnNumber\":0,\"lineNumber\":0}," +
                                                  "\"location\":{\"scriptId\":\"0\",\"columnNumber\":0,\"lineNumber\":0}," +
                                                  "\"url\":\"" + sourceURI + "\"" +
@@ -93,20 +89,20 @@ public class NotReadableValuesTest {
         tester.sendMessage("{\"id\":10,\"method\":\"Runtime.getProperties\",\"params\":{\"objectId\":\"2\"}}");
         assertTrue(tester.compareReceivedMessages(
                         "{\"result\":{\"result\":[{\"isOwn\":true,\"enumerable\":true,\"name\":\"object\"," +
-                                                  "\"value\":{\"description\":\"Object VariablesObject\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"4\"},\"configurable\":true,\"writable\":false}," +
+                                                  "\"value\":{\"description\":\"Object VariablesObject\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"3\"},\"configurable\":true,\"writable\":false}," +
                                                  "{\"isOwn\":true,\"enumerable\":true,\"name\":\"array\"," +
-                                                  "\"value\":{\"subtype\":\"array\",\"description\":\"Object ArrayValue\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"5\"},\"configurable\":true,\"writable\":false}]," +
+                                                  "\"value\":{\"subtype\":\"array\",\"description\":\"Object ArrayValue\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"4\"},\"configurable\":true,\"writable\":false}]," +
                                 "\"internalProperties\":[]},\"id\":10}\n"));
         // Ask for variable properties
-        tester.sendMessage("{\"id\":20,\"method\":\"Runtime.getProperties\",\"params\":{\"objectId\":\"4\"}}");
+        tester.sendMessage("{\"id\":20,\"method\":\"Runtime.getProperties\",\"params\":{\"objectId\":\"3\"}}");
         assertTrue(tester.compareReceivedMessages(
                         "{\"result\":{\"result\":[{\"isOwn\":true,\"enumerable\":true,\"name\":\"object\"," +
-                                                  "\"value\":{\"description\":\"Object VariablesObject\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"6\"},\"configurable\":true,\"writable\":false}," +
+                                                  "\"value\":{\"description\":\"Object VariablesObject\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"5\"},\"configurable\":true,\"writable\":false}," +
                                                  "{\"isOwn\":true,\"enumerable\":true,\"name\":\"array\"," +
-                                                  "\"value\":{\"subtype\":\"array\",\"description\":\"Object ArrayValue\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"7\"},\"configurable\":true,\"writable\":false}]," +
+                                                  "\"value\":{\"subtype\":\"array\",\"description\":\"Object ArrayValue\",\"className\":\"Object\",\"type\":\"object\",\"objectId\":\"6\"},\"configurable\":true,\"writable\":false}]," +
                                 "\"internalProperties\":[]},\"id\":20}\n"));
         // Ask for array elements
-        tester.sendMessage("{\"id\":30,\"method\":\"Runtime.getProperties\",\"params\":{\"objectId\":\"5\"}}");
+        tester.sendMessage("{\"id\":30,\"method\":\"Runtime.getProperties\",\"params\":{\"objectId\":\"4\"}}");
         assertTrue(tester.compareReceivedMessages(
                         "{\"result\":{\"result\":[{\"isOwn\":true,\"enumerable\":true,\"name\":\"0\",\"value\":{\"description\":\"6\",\"type\":\"number\",\"value\":6},\"configurable\":true,\"writable\":false}," +
                                                  "{\"isOwn\":true,\"enumerable\":true,\"name\":\"1\",\"value\":{\"description\":\"5\",\"type\":\"number\",\"value\":5},\"configurable\":true,\"writable\":false}," +
@@ -119,6 +115,8 @@ public class NotReadableValuesTest {
                         "{\"result\":{},\"id\":100}\n" +
                         "{\"method\":\"Debugger.resumed\"}\n"));
 
+        // Reset the delegate so that we can GC the tested Engine
+        ProxyLanguage.setDelegate(new ProxyLanguage());
         tester.finish();
     }
     // @formatter:on
@@ -129,28 +127,12 @@ public class NotReadableValuesTest {
 
         @Override
         protected final CallTarget parse(TruffleLanguage.ParsingRequest request) throws Exception {
-            return Truffle.getRuntime().createCallTarget(new TestRootNode(languageInstance, request.getSource()));
+            return new TestRootNode(languageInstance, request.getSource()).getCallTarget();
         }
 
         @Override
-        protected Iterable<Scope> findTopScopes(LanguageContext context) {
-            return Collections.singletonList(Scope.newBuilder("top", new VariablesObject()).build());
-        }
-
-        @Override
-        protected Object findMetaObject(LanguageContext context, Object value) {
-            if (value instanceof TruffleObject) {
-                return "Object";
-            }
-            return super.findMetaObject(context, value);
-        }
-
-        @Override
-        protected String toString(LanguageContext context, Object value) {
-            if (value instanceof ProxyInteropObject) {
-                return value.getClass().getSimpleName();
-            }
-            return super.toString(context, value);
+        protected Object getScope(LanguageContext context) {
+            return new VariablesObject(true);
         }
 
         final class TestRootNode extends RootNode {
@@ -226,6 +208,23 @@ public class NotReadableValuesTest {
 
             private static final String[] NAMES = new String[]{"nr_a", "object", "nr_object", "array", "nr_array"};
 
+            private final boolean isScope;
+
+            VariablesObject(boolean isScope) {
+                this.isScope = isScope;
+            }
+
+            @Override
+            protected boolean hasLanguage() {
+                // Provides the ProxyLanguage by default.
+                return true;
+            }
+
+            @Override
+            protected boolean isScope() {
+                return isScope;
+            }
+
             @Override
             protected boolean hasMembers() {
                 return true;
@@ -250,13 +249,56 @@ public class NotReadableValuesTest {
                 }
                 switch (member) {
                     case "object":
-                        return new VariablesObject();
+                        return new VariablesObject(false);
                     case "array":
                         return new ArrayValue();
                     default:
                         throw UnsupportedMessageException.create();
                 }
             }
+
+            @Override
+            protected boolean hasMetaObject() {
+                return true;
+            }
+
+            @Override
+            protected Object getMetaObject() throws UnsupportedMessageException {
+                return new MetaObject();
+            }
+
+            @Override
+            protected Object toDisplayString(boolean allowSideEffects) {
+                if (isScope) {
+                    return "top";
+                } else {
+                    return VariablesObject.class.getSimpleName();
+                }
+            }
+        }
+
+        private static class MetaObject extends ProxyInteropObject {
+
+            @Override
+            protected boolean isMetaObject() {
+                return true;
+            }
+
+            @Override
+            protected boolean isMetaInstance(Object instance) {
+                return instance instanceof VariablesObject || instance instanceof ArrayValue;
+            }
+
+            @Override
+            protected String getMetaSimpleName() throws UnsupportedMessageException {
+                return "Object";
+            }
+
+            @Override
+            protected String getMetaQualifiedName() throws UnsupportedMessageException {
+                return "Object";
+            }
+
         }
 
         private static class Names extends ProxyInteropObject {
@@ -299,6 +341,12 @@ public class NotReadableValuesTest {
             private static final Set<Long> NOT_READABLE = new HashSet<>(Arrays.asList(new Long[]{2L, 3L}));
 
             @Override
+            protected boolean hasLanguage() {
+                // Provides the ProxyLanguage by default.
+                return true;
+            }
+
+            @Override
             protected boolean hasArrayElements() {
                 return true;
             }
@@ -322,6 +370,21 @@ public class NotReadableValuesTest {
                     CompilerDirectives.transferToInterpreter();
                     throw InvalidArrayIndexException.create(index);
                 }
+            }
+
+            @Override
+            protected boolean hasMetaObject() {
+                return true;
+            }
+
+            @Override
+            protected Object getMetaObject() throws UnsupportedMessageException {
+                return new MetaObject();
+            }
+
+            @Override
+            protected Object toDisplayString(boolean allowSideEffects) {
+                return ArrayValue.class.getSimpleName();
             }
         }
     }

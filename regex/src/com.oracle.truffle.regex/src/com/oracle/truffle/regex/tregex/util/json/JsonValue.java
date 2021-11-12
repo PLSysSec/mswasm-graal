@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -41,11 +41,13 @@
 
 package com.oracle.truffle.regex.tregex.util.json;
 
-import com.oracle.truffle.api.TruffleFile;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.StandardOpenOption;
+
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.TruffleFile;
 
 public abstract class JsonValue implements JsonConvertible {
 
@@ -54,6 +56,7 @@ public abstract class JsonValue implements JsonConvertible {
         return this;
     }
 
+    @TruffleBoundary
     public void dump(TruffleFile path) {
         try (PrintWriter writer = new PrintWriter(path.newBufferedWriter(StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING))) {
             dump(writer, 0);

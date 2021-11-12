@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -31,6 +31,8 @@ package com.oracle.truffle.llvm.runtime.interop.convert;
 
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.Cached;
+import com.oracle.truffle.api.dsl.GenerateUncached;
+import com.oracle.truffle.api.dsl.GenerateAOT;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
@@ -38,7 +40,9 @@ import com.oracle.truffle.api.interop.UnsupportedTypeException;
 import com.oracle.truffle.api.library.CachedLibrary;
 import com.oracle.truffle.api.profiles.BranchProfile;
 import com.oracle.truffle.llvm.runtime.except.LLVMPolyglotException;
+import com.oracle.truffle.llvm.runtime.library.internal.LLVMAsForeignLibrary;
 
+@GenerateUncached
 public abstract class ToI8 extends ForeignToLLVM {
 
     @Specialization
@@ -82,16 +86,19 @@ public abstract class ToI8 extends ForeignToLLVM {
     }
 
     @Specialization
-    protected byte fromString(String value) {
-        return (byte) getSingleStringCharacter(value);
+    protected byte fromString(String value,
+                    @Cached BranchProfile exception) {
+        return (byte) getSingleStringCharacter(value, exception);
     }
 
-    @Specialization(limit = "5", guards = {"notLLVM(obj)", "interop.isNumber(obj)"})
+    @Specialization(limit = "5", guards = {"foreigns.isForeign(obj)", "interop.isNumber(foreigns.asForeign(obj))"})
+    @GenerateAOT.Exclude
     protected byte fromForeign(Object obj,
-                    @CachedLibrary("obj") InteropLibrary interop,
+                    @CachedLibrary("obj") LLVMAsForeignLibrary foreigns,
+                    @CachedLibrary(limit = "3") InteropLibrary interop,
                     @Cached BranchProfile exception) {
         try {
-            return interop.asByte(obj);
+            return interop.asByte(foreigns.asForeign(obj));
         } catch (UnsupportedMessageException ex) {
             exception.enter();
             throw new LLVMPolyglotException(this, "Polyglot number can't be converted to byte.");
@@ -107,7 +114,7 @@ public abstract class ToI8 extends ForeignToLLVM {
         } else if (value instanceof Character) {
             return (byte) (char) value;
         } else if (value instanceof String) {
-            return (byte) thiz.getSingleStringCharacter((String) value);
+            return (byte) thiz.getSingleStringCharacter((String) value, BranchProfile.getUncached());
         } else {
             try {
                 return InteropLibrary.getFactory().getUncached().asByte(value);

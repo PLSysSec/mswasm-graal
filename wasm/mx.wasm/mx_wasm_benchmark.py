@@ -82,9 +82,9 @@ class WasmBenchmarkVm(mx_benchmark.OutputCapturingVm):
     If a Wasm benchmark suite consists of benchmarks in the category `c`,
     then the binaries of that benchmark must structured as follows:
 
-    - For GraalWasm: bench/x/{*.wasm, *.init, *.result, *.wat}
-    - For Node: bench/x/node/{*.wasm, *.js}
-    - For native binaries: bench/x/native/*<platform-specific-binary-extension>
+    - For GraalWasm: bench/x/{*.wasm, *.result, *.wat}
+    - For Node: bench/x/{*.wasm, *.js}
+    - For native binaries: bench/x/*<platform-specific-binary-extension>
 
     Furthermore, these VMs expect that the benchmark suites that use them
     will provide a `-Dwasmbench.benchmarkName=<benchmark-name>` command-line flag,
@@ -125,11 +125,11 @@ class WasmBenchmarkVm(mx_benchmark.OutputCapturingVm):
         suite, benchmark = self.parse_suite_benchmark(args)
         return jar, suite, benchmark
 
-    def extract_jar_to_tempdir(self, jar, mode, suite, benchmark):
+    def extract_jar_to_tempdir(self, jar, suite, benchmark):
         tmp_dir = tempfile.mkdtemp()
         with zipfile.ZipFile(jar, "r") as z:
             for name in z.namelist():
-                if name.startswith(os.path.join("bench", suite, mode, benchmark)):
+                if name.startswith(os.path.join("bench", suite, benchmark)):
                     z.extract(name, tmp_dir)
         return tmp_dir
 
@@ -163,10 +163,9 @@ class NodeWasmBenchmarkVm(WasmBenchmarkVm):
         jar, suite, benchmark = self.parse_jar_suite_benchmark(args)
         tmp_dir = None
         try:
-            mode = self.config_name()
-            tmp_dir = self.extract_jar_to_tempdir(jar, mode, suite, benchmark)
-            node_cmd = os.path.join(node_dir, mode)
-            node_cmd_line = [node_cmd, os.path.join(tmp_dir, "bench", suite, mode, benchmark + ".js")]
+            tmp_dir = self.extract_jar_to_tempdir(jar, suite, benchmark)
+            node_cmd = os.path.join(node_dir, "node")
+            node_cmd_line = [node_cmd, "--experimental-wasm-bigint", os.path.join(tmp_dir, "bench", suite, benchmark + ".js")]
             mx.log("Running benchmark " + benchmark + " with node.")
             mx.run(node_cmd_line, cwd=tmp_dir, out=out, err=err, nonZeroIsFatal=nonZeroIsFatal)
         finally:
@@ -181,11 +180,11 @@ class NativeWasmBenchmarkVm(WasmBenchmarkVm):
 
     def run_vm(self, args, out=None, err=None, cwd=None, nonZeroIsFatal=False):
         jar, suite, benchmark = self.parse_jar_suite_benchmark(args)
+        suite = os.path.join(suite, "native")
         tmp_dir = None
         try:
-            mode = self.config_name()
-            tmp_dir = self.extract_jar_to_tempdir(jar, mode, suite, benchmark)
-            binary_path = os.path.join(tmp_dir, "bench", suite, mode, mx.exe_suffix(benchmark))
+            tmp_dir = self.extract_jar_to_tempdir(jar, suite, benchmark)
+            binary_path = os.path.join(tmp_dir, "bench", suite, mx.exe_suffix(benchmark))
             os.chmod(binary_path, stat.S_IRUSR | stat.S_IXUSR)
             cmd_line = [binary_path]
             mx.log("Running benchmark " + benchmark + " natively.")
@@ -206,6 +205,12 @@ class WasmJMHJsonRule(mx_benchmark.JMHJsonRule):
         name_arg = next(arg for arg in result["jvmArgs"] if arg.startswith(name_flag))
         return name_arg[len(name_flag):]
 
+    def parse(self, text):
+        filename = self._prepend_working_dir(self.filename)
+        if not os.path.exists(filename):
+            return []
+        return super(WasmJMHJsonRule, self).parse(text)
+
 
 class WasmBenchmarkSuite(JMHDistBenchmarkSuite):
     def name(self):
@@ -214,8 +219,13 @@ class WasmBenchmarkSuite(JMHDistBenchmarkSuite):
     def group(self):
         return "Graal"
 
-    def benchSuiteName(self, bmSuiteArgs):
-        return next(arg for arg in bmSuiteArgs if arg.endswith("BenchmarkSuite"))
+    def benchSuiteName(self, bmSuiteArgs=None):
+        if bmSuiteArgs is None:
+            bmSuiteArgs = []
+        try:
+            return next(arg for arg in bmSuiteArgs if arg.endswith("BenchmarkSuite"))
+        except StopIteration:
+            return self.name()
 
     def subgroup(self):
         return "wasm"
@@ -223,16 +233,32 @@ class WasmBenchmarkSuite(JMHDistBenchmarkSuite):
     def successPatterns(self):
         return []
 
-    def isWasmBenchmarkVm(self, bmSuiteArgs):
+    def getBenchmarkName(self, bmSuiteArgs):
         parser = argparse.ArgumentParser()
-        parser.add_argument("--jvm-config")
-        jvm_config = parser.parse_known_args(bmSuiteArgs)[0].jvm_config
-        return jvm_config in ("node", "native")
+        parser.add_argument("-Dwasmbench.benchmarkName")
+        name = vars(parser.parse_known_args(bmSuiteArgs)[0])["Dwasmbench.benchmarkName"]
+        return name
 
     def rules(self, out, benchmarks, bmSuiteArgs):
-        if self.isWasmBenchmarkVm(bmSuiteArgs):
-            return []
-        return [WasmJMHJsonRule(mx_benchmark.JMHBenchmarkSuiteBase.jmh_result_file, self.benchSuiteName(bmSuiteArgs))]
+        return [
+            WasmJMHJsonRule(mx_benchmark.JMHBenchmarkSuiteBase.jmh_result_file, self.benchSuiteName(bmSuiteArgs)),
+            mx_benchmark.StdOutRule(
+                r"Iteration (?P<iteration>[0-9]+), result = -?[0-9]+, sec = ([0-9]+\.[0-9]+), ops / sec = (?P<value>([0-9]+\.[0-9]+))", # pylint: disable=line-too-long
+                {
+                    "benchmark": self.getBenchmarkName(bmSuiteArgs),
+                    "bench-suite": self.benchSuiteName(bmSuiteArgs),
+                    "vm": self.name(),
+                    "config.name": "default",
+                    "metric.name": "throughput",
+                    "metric.value": ("<value>", float),
+                    "metric.unit": "op/s",
+                    "metric.type": "numeric",
+                    "metric.score-function": "id",
+                    "metric.better": "higher",
+                    "metric.iteration": ("<iteration>", int)
+                }
+            )
+        ]
 
 
 add_bm_suite(WasmBenchmarkSuite())

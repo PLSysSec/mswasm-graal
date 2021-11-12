@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,15 +28,14 @@ import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.UnwindNode;
 import org.graalvm.compiler.truffle.runtime.GraalTruffleRuntime;
 import org.graalvm.compiler.truffle.runtime.OptimizedCallTarget;
+import org.graalvm.polyglot.Context;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.RootNode;
-import org.graalvm.polyglot.Context;
 
 /**
  * A simple test class verifying that a truffle-2-truffle call never results in the compilation of
@@ -46,67 +45,64 @@ public class TruffleToTruffleCallExceptionHandlerTest extends PartialEvaluationT
 
     private static final GraalTruffleRuntime runtime = (GraalTruffleRuntime) Truffle.getRuntime();
 
-    private final OptimizedCallTarget calleeNoException = (OptimizedCallTarget) GraalTruffleRuntime.getRuntime().createCallTarget(new RootNode(null) {
-        @Override
-        public Object execute(VirtualFrame frame) {
-            return null;
-        }
+    private static final class Compilables {
 
-        @Override
-        public String toString() {
-            return "CALLEE_NO_EXCEPTION";
-        }
-    });
+        final OptimizedCallTarget calleeNoException = (OptimizedCallTarget) new RootNode(null) {
+            @Override
+            public Object execute(VirtualFrame frame) {
+                return null;
+            }
 
-    private final OptimizedCallTarget callerNoException = (OptimizedCallTarget) runtime.createCallTarget(new RootNode(null) {
+            @Override
+            public String toString() {
+                return "CALLEE_NO_EXCEPTION";
+            }
+        }.getCallTarget();
 
-        @Child protected DirectCallNode callNode = runtime.createDirectCallNode(calleeNoException);
+        final OptimizedCallTarget callerNoException = (OptimizedCallTarget) new RootNode(null) {
 
-        @Override
-        public Object execute(VirtualFrame frame) {
-            callNode.call(new Object[0]);
-            return null;
-        }
+            @Child protected DirectCallNode callNode = runtime.createDirectCallNode(calleeNoException);
 
-        @Override
-        public String toString() {
-            return "CALLER_NO_EXCEPTION";
-        }
-    });
+            @Override
+            public Object execute(VirtualFrame frame) {
+                callNode.call(new Object[0]);
+                return null;
+            }
 
-    private final OptimizedCallTarget calleeWithException = (OptimizedCallTarget) runtime.createCallTarget(new RootNode(null) {
-        private boolean called;
+            @Override
+            public String toString() {
+                return "CALLER_NO_EXCEPTION";
+            }
+        }.getCallTarget();
 
-        @Override
-        public Object execute(VirtualFrame frame) {
-            if (!called) {
-                called = true;
+        final OptimizedCallTarget calleeWithException = (OptimizedCallTarget) new RootNode(null) {
+            @Override
+            public Object execute(VirtualFrame frame) {
                 throw new RuntimeException();
             }
-            return null;
-        }
 
-        @Override
-        public String toString() {
-            return "CALLEE_EXCEPTION";
-        }
-    });
+            @Override
+            public String toString() {
+                return "CALLEE_EXCEPTION";
+            }
+        }.getCallTarget();
 
-    private final OptimizedCallTarget callerWithException = (OptimizedCallTarget) runtime.createCallTarget(new RootNode(null) {
+        final OptimizedCallTarget callerWithException = (OptimizedCallTarget) new RootNode(null) {
 
-        @Child protected DirectCallNode callNode = runtime.createDirectCallNode(calleeWithException);
+            @Child protected DirectCallNode callNode = runtime.createDirectCallNode(calleeWithException);
 
-        @Override
-        public Object execute(VirtualFrame frame) {
-            callNode.call(new Object[0]);
-            return null;
-        }
+            @Override
+            public Object execute(VirtualFrame frame) {
+                callNode.call(new Object[0]);
+                return null;
+            }
 
-        @Override
-        public String toString() {
-            return "CALLER_EXCEPTION";
-        }
-    });
+            @Override
+            public String toString() {
+                return "CALLER_EXCEPTION";
+            }
+        }.getCallTarget();
+    }
 
     @Test
     @SuppressWarnings("try")
@@ -114,32 +110,40 @@ public class TruffleToTruffleCallExceptionHandlerTest extends PartialEvaluationT
         /*
          * We disable truffle AST inlining to not inline the callee
          */
-        setupContext(Context.newBuilder().allowAllAccess(true).allowExperimentalOptions(true).option("engine.Inlining", Boolean.FALSE.toString()).build());
-        StructuredGraph graph = partialEval(callerNoException, new Object[0], getTruffleCompiler(calleeNoException).createCompilationIdentifier(callerNoException));
+        setupContext(Context.newBuilder().allowAllAccess(true).allowExperimentalOptions(true).option("engine.Inlining", "false").build());
+        Compilables compilables = new Compilables();
+        StructuredGraph graph = partialEval(compilables.callerNoException, new Object[0], getTruffleCompiler(compilables.calleeNoException).createCompilationIdentifier(compilables.callerNoException));
         Assert.assertEquals(0, graph.getNodes().filter(UnwindNode.class).count());
     }
 
     @Test
     @SuppressWarnings("try")
-    @Ignore
     public void testExceptionOnceCompileExceptionHandler() {
-        /*
-         * call the function at least once so the exception profile will record an exception and the
-         * partial evaluator will compile the exception handler edge
-         */
+        preventProfileCalls = true;
         try {
-            calleeWithException.callDirectOrInlined(null, new Object());
-            Assert.fail();
-        } catch (Throwable t) {
-            Assert.assertTrue(t instanceof RuntimeException);
-        }
+            /*
+             * We disable truffle AST inlining to not inline the callee
+             */
+            setupContext(Context.newBuilder().allowAllAccess(true).allowExperimentalOptions(true).option("engine.Inlining", "false").build());
+            Compilables compilables = new Compilables();
 
-        /*
-         * We disable truffle AST inlining to not inline the callee
-         */
-        setupContext(Context.newBuilder().allowAllAccess(true).allowExperimentalOptions(true).option("engine.Inlining", Boolean.FALSE.toString()).build());
-        StructuredGraph graph = partialEval(callerWithException, new Object[0], getTruffleCompiler(calleeWithException).createCompilationIdentifier(callerWithException));
-        Assert.assertEquals(1, graph.getNodes().filter(UnwindNode.class).count());
+            /*
+             * call the function at least once so the exception profile will record an exception and
+             * the partial evaluator will compile the exception handler edge
+             */
+            try {
+                compilables.callerWithException.callDirect(null, new Object());
+                Assert.fail();
+            } catch (Throwable t) {
+                Assert.assertTrue(t instanceof RuntimeException);
+            }
+
+            StructuredGraph graph = partialEval(compilables.callerWithException, new Object[0],
+                            getTruffleCompiler(compilables.callerWithException).createCompilationIdentifier(compilables.callerWithException));
+            Assert.assertEquals(1, graph.getNodes().filter(UnwindNode.class).count());
+        } finally {
+            preventProfileCalls = false;
+        }
     }
 
 }

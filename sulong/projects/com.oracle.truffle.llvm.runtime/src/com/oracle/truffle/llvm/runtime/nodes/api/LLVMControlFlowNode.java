@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -36,9 +36,7 @@ public abstract class LLVMControlFlowNode extends LLVMInstrumentableNode {
 
     public abstract int getSuccessorCount();
 
-    public abstract LLVMStatementNode getPhiNode(int successorIndex);
+    public abstract int[] getSuccessors();
 
-    public boolean needsBranchProfiling() {
-        return getSuccessorCount() > 1;
-    }
+    public abstract LLVMStatementNode getPhiNode(int successorIndex);
 }

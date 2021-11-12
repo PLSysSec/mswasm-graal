@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,18 +31,18 @@ import org.graalvm.compiler.graph.IterableNodeType;
 import org.graalvm.compiler.graph.NodeClass;
 import org.graalvm.compiler.nodeinfo.InputType;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
-import org.graalvm.compiler.nodes.DeoptimizingFixedWithNextNode;
 import org.graalvm.compiler.nodes.FrameState;
+import org.graalvm.compiler.nodes.ImplicitNullCheckNode;
 import org.graalvm.compiler.nodes.extended.GuardingNode;
 import org.graalvm.compiler.nodes.memory.address.AddressNode;
 import org.graalvm.word.LocationIdentity;
 
 /**
- * Accesses a value at an memory address specified by an {@linkplain #address address}. The access
+ * Accesses a value at a memory address specified by an {@linkplain #address address}. The access
  * does not include a null check on the object.
  */
 @NodeInfo
-public abstract class FixedAccessNode extends DeoptimizingFixedWithNextNode implements AddressableMemoryAccess, GuardedMemoryAccess, OnHeapMemoryAccess, IterableNodeType {
+public abstract class FixedAccessNode extends ImplicitNullCheckNode implements AddressableMemoryAccess, GuardedMemoryAccess, OnHeapMemoryAccess, IterableNodeType {
     public static final NodeClass<FixedAccessNode> TYPE = NodeClass.create(FixedAccessNode.class);
 
     @OptionalInput(InputType.Guard) protected GuardingNode guard;
@@ -50,7 +50,12 @@ public abstract class FixedAccessNode extends DeoptimizingFixedWithNextNode impl
     @OptionalInput(Memory) MemoryKill lastLocationAccess;
     protected final LocationIdentity location;
 
-    protected boolean nullCheck;
+    /*
+     * Indicates whether this access also serves as an implicit null check for the address. This
+     * value can change throughout the node's lifetime and is dependent both on the known qualities
+     * of the address and the access's barriers.
+     */
+    protected boolean usedAsNullCheck;
     protected BarrierType barrierType;
 
     @Override
@@ -69,12 +74,12 @@ public abstract class FixedAccessNode extends DeoptimizingFixedWithNextNode impl
         return location;
     }
 
-    public boolean getNullCheck() {
-        return nullCheck;
+    public boolean getUsedAsNullCheck() {
+        return usedAsNullCheck;
     }
 
-    public void setNullCheck(boolean check) {
-        this.nullCheck = check;
+    public void setUsedAsNullCheck(boolean check) {
+        this.usedAsNullCheck = check;
     }
 
     protected FixedAccessNode(NodeClass<? extends FixedAccessNode> c, AddressNode address, LocationIdentity location, Stamp stamp) {
@@ -85,19 +90,19 @@ public abstract class FixedAccessNode extends DeoptimizingFixedWithNextNode impl
         this(c, address, location, stamp, null, barrierType, false, null);
     }
 
-    protected FixedAccessNode(NodeClass<? extends FixedAccessNode> c, AddressNode address, LocationIdentity location, Stamp stamp, GuardingNode guard, BarrierType barrierType, boolean nullCheck,
+    protected FixedAccessNode(NodeClass<? extends FixedAccessNode> c, AddressNode address, LocationIdentity location, Stamp stamp, GuardingNode guard, BarrierType barrierType, boolean usedAsNullCheck,
                     FrameState stateBefore) {
         super(c, stamp, stateBefore);
         this.address = address;
         this.location = location;
         this.guard = guard;
         this.barrierType = barrierType;
-        this.nullCheck = nullCheck;
+        this.usedAsNullCheck = usedAsNullCheck;
     }
 
     @Override
     public boolean canDeoptimize() {
-        return nullCheck;
+        return usedAsNullCheck;
     }
 
     @Override
@@ -126,5 +131,4 @@ public abstract class FixedAccessNode extends DeoptimizingFixedWithNextNode impl
     public BarrierType getBarrierType() {
         return barrierType;
     }
-
 }

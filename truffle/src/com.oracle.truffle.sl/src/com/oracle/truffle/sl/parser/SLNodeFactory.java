@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -50,7 +50,6 @@ import org.antlr.v4.runtime.Parser;
 import org.antlr.v4.runtime.Token;
 
 import com.oracle.truffle.api.RootCallTarget;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlot;
 import com.oracle.truffle.api.frame.FrameSlotKind;
@@ -168,6 +167,7 @@ public class SLNodeFactory {
          * specialized.
          */
         final SLReadArgumentNode readArg = new SLReadArgumentNode(parameterCount);
+        readArg.setSourceSection(nameToken.getStartIndex(), nameToken.getText().length());
         SLExpressionNode assignment = createAssignment(createStringLiteral(nameToken, false), readArg, parameterCount);
         methodNodes.add(assignment);
         parameterCount++;
@@ -181,14 +181,14 @@ public class SLNodeFactory {
             methodNodes.add(bodyNode);
             final int bodyEndPos = bodyNode.getSourceEndIndex();
             final SourceSection functionSrc = source.createSection(functionStartPos, bodyEndPos - functionStartPos);
-            final SLStatementNode methodBlock = finishBlock(methodNodes, functionBodyStartPos, bodyEndPos - functionBodyStartPos);
+            final SLStatementNode methodBlock = finishBlock(methodNodes, parameterCount, functionBodyStartPos, bodyEndPos - functionBodyStartPos);
             assert lexicalScope == null : "Wrong scoping of blocks in parser";
 
             final SLFunctionBodyNode functionBodyNode = new SLFunctionBodyNode(methodBlock);
             functionBodyNode.setSourceSection(functionSrc.getCharIndex(), functionSrc.getCharLength());
 
             final SLRootNode rootNode = new SLRootNode(language, frameDescriptor, functionBodyNode, functionSrc, functionName);
-            allFunctions.put(functionName, Truffle.getRuntime().createCallTarget(rootNode));
+            allFunctions.put(functionName, rootNode.getCallTarget());
         }
 
         functionStartPos = 0;
@@ -204,6 +204,10 @@ public class SLNodeFactory {
     }
 
     public SLStatementNode finishBlock(List<SLStatementNode> bodyNodes, int startPos, int length) {
+        return finishBlock(bodyNodes, 0, startPos, length);
+    }
+
+    public SLStatementNode finishBlock(List<SLStatementNode> bodyNodes, int skipCount, int startPos, int length) {
         lexicalScope = lexicalScope.outer;
 
         if (containsNull(bodyNodes)) {
@@ -212,7 +216,9 @@ public class SLNodeFactory {
 
         List<SLStatementNode> flattenedNodes = new ArrayList<>(bodyNodes.size());
         flattenBlocks(bodyNodes, flattenedNodes);
-        for (SLStatementNode statement : flattenedNodes) {
+        int n = flattenedNodes.size();
+        for (int i = skipCount; i < n; i++) {
+            SLStatementNode statement = flattenedNodes.get(i);
             if (statement.hasSource() && !isHaltInCondition(statement)) {
                 statement.addStatementTag();
             }
@@ -452,15 +458,18 @@ public class SLNodeFactory {
                         name,
                         argumentIndex,
                         FrameSlotKind.Illegal);
-        lexicalScope.locals.put(name, frameSlot);
-        final SLExpressionNode result = SLWriteLocalVariableNodeGen.create(valueNode, frameSlot);
+        FrameSlot existingSlot = lexicalScope.locals.put(name, frameSlot);
+        boolean newVariable = existingSlot == null;
+        final SLExpressionNode result = SLWriteLocalVariableNodeGen.create(valueNode, frameSlot, nameNode, newVariable);
 
         if (valueNode.hasSource()) {
             final int start = nameNode.getSourceCharIndex();
             final int length = valueNode.getSourceEndIndex() - start;
             result.setSourceSection(start, length);
         }
-        result.addExpressionTag();
+        if (argumentIndex == null) {
+            result.addExpressionTag();
+        }
 
         return result;
     }

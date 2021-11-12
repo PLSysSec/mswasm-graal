@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -42,58 +42,86 @@ package org.graalvm.wasm;
 
 import java.util.List;
 import java.util.ArrayList;
-import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
-
 import org.graalvm.wasm.mswasm.Handle;
 
+import org.graalvm.wasm.exception.Failure;
+import org.graalvm.wasm.exception.WasmException;
+import org.graalvm.wasm.globals.WasmGlobal;
+
+import com.oracle.truffle.api.CompilerAsserts;
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
+
+/**
+ * The global registry holds the global values in the WebAssembly engine instance.
+ *
+ * Global values that are declared in some WebAssembly module are stored in an array of longs.
+ * Global values can also be external objects that are accessed via Interop -- such globals are
+ * stored inside an array of objects, and their addresses are negative.
+ */
 public class GlobalRegistry {
-    private static final int INITIAL_GLOBALS_SIZE = 2048;
+    private static final int INITIAL_GLOBALS_SIZE = 8;
 
     // If we support late linking, we need to ensure that methods accessing the global array
     // are compiled with assumptions on what this field points to.
     // Such an assumption can be invalidated if the late-linking causes this array
     // to be replaced with a larger array.
     @CompilationFinal(dimensions = 0) private long[] globals;
-    private int numGlobals;
-
-    // MSWasm: store global handles
-    private List<Handle> handles;
+    @CompilationFinal(dimensions = 1) private WasmGlobal[] externalGlobals;
+    private int globalCount;
+    private int externalGlobalCount;
 
     public GlobalRegistry() {
         this.globals = new long[INITIAL_GLOBALS_SIZE];
-        this.numGlobals = 0;
-        handles = new ArrayList<>();
+        this.externalGlobals = new WasmGlobal[INITIAL_GLOBALS_SIZE];
+        this.globalCount = 0;
+        this.externalGlobalCount = 0;
     }
 
     public int count() {
-        return numGlobals;
+        return globalCount;
     }
 
-    public int numHandles() {
-        return handles.size();
+    private void ensureGlobalCapacity() {
+        if (globalCount == globals.length) {
+            final long[] nGlobals = new long[globals.length * 2];
+            System.arraycopy(globals, 0, nGlobals, 0, globals.length);
+            globals = nGlobals;
+        }
     }
 
-    private void ensureCapacity() {
-        if (numGlobals == globals.length) {
-            final long[] nglobals = new long[globals.length * 2];
-            System.arraycopy(globals, 0, nglobals, 0, globals.length);
-            globals = nglobals;
+    private void ensureExternalGlobalCapacity() {
+        if (externalGlobalCount == externalGlobals.length) {
+            final WasmGlobal[] nExternalGlobals = new WasmGlobal[externalGlobals.length * 2];
+            System.arraycopy(externalGlobals, 0, nExternalGlobals, 0, externalGlobals.length);
+            externalGlobals = nExternalGlobals;
         }
     }
 
     public int allocateGlobal() {
-        ensureCapacity();
-        globals[numGlobals] = 0;
-        int idx = numGlobals;
-        numGlobals++;
+        ensureGlobalCapacity();
+        globals[globalCount] = 0;
+        int idx = globalCount;
+        globalCount++;
+        return idx;
+    }
+
+    public int allocateExternalGlobal(WasmGlobal object) {
+        ensureExternalGlobalCapacity();
+        externalGlobals[externalGlobalCount] = object;
+        int idx = -externalGlobalCount - 1;
+        externalGlobalCount++;
         return idx;
     }
 
     public int loadAsInt(int address) {
-        return (int) globals[address];
+        return (int) loadAsLong(address);
     }
 
     public long loadAsLong(int address) {
+        if (address < 0) {
+            final WasmGlobal global = externalGlobals[-address - 1];
+            return global.loadAsLong();
+        }
         return globals[address];
     }
 
@@ -105,60 +133,45 @@ public class GlobalRegistry {
         return Double.longBitsToDouble(globals[address]);
     }
 
-    // MSWasm - load global handle
     public Handle loadAsHandle(int address) {
-        int index = (int) globals[address];
-        return handles.get(index);
+        return Handle.longBitsToHandle(globals[address]);
     }
 
     public void storeInt(int address, int value) {
-        globals[address] = value;
+        storeLong(address, value);
     }
 
     public void storeLong(int address, long value) {
-        globals[address] = value;
-    }
-
-    public void storeFloat(int address, float value) {
-        globals[address] = Float.floatToRawIntBits(value);
-    }
-
-    public void storeFloatWithInt(int address, int value) {
-        globals[address] = value;
-    }
-
-    public void storeDouble(int address, double value) {
-        globals[address] = Double.doubleToRawLongBits(value);
-    }
-
-    public void storeDoubleWithLong(int address, long value) {
-        globals[address] = value;
-    }
-
-    // MSWasm - store global handle
-    public int allocateHandle(int address) {
-        globals[address] = handles.size();
-        handles.add(Handle.nullHandle());
-        return (int) globals[address];
+        if (address < 0) {
+            final WasmGlobal global = externalGlobals[-address - 1];
+            global.storeLong(value);
+        } else {
+            globals[address] = value;
+        }
     }
 
     public void storeHandle(int address, Handle value) {
-        handles.set((int) globals[address], new Handle(value));
+        storeLong(address, Handle.handleToRawLongBits(value));
     }
 
     public GlobalRegistry duplicate() {
         final GlobalRegistry other = new GlobalRegistry();
-        for (int i = 0; i < numGlobals; i++) {
+        for (int i = 0; i < globalCount; i++) {
             final int address = other.allocateGlobal();
             final long value = this.loadAsLong(address);
             other.storeLong(address, value);
         }
-
-        // MSWasm - ensure handles are copied over
-        for (Handle handle : handles) {
-            other.handles.add(new Handle(handle));
+        for (int i = 0; i < externalGlobalCount; i++) {
+            other.allocateExternalGlobal(this.externalGlobals[i]);
         }
-
         return other;
+    }
+
+    public WasmGlobal externalGlobal(int address) {
+        CompilerAsserts.neverPartOfCompilation();
+        if (address >= 0) {
+            throw WasmException.create(Failure.UNSPECIFIED_INTERNAL, "Global at address " + address + " is not external.");
+        }
+        return externalGlobals[-address - 1];
     }
 }

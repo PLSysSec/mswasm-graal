@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -30,8 +30,9 @@
 package com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.debug;
 
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.llvm.runtime.CommonNodeFactory;
 import com.oracle.truffle.llvm.runtime.LLVMLanguage;
 import com.oracle.truffle.llvm.runtime.debug.LLDBSupport;
 import com.oracle.truffle.llvm.runtime.debug.value.LLVMDebugTypeConstants;
@@ -68,11 +69,12 @@ final class LLDBMemoryValue implements LLVMDebugValue {
         return value;
     }
 
+    /**
+     * Reading from a managed pointer may lead to the {@link InteropLibrary#toNative} message being
+     * sent. We avoid this to prevent the debugger from changing an objects internal state.
+     */
     @Override
     public boolean canRead(long bitOffset, int bits) {
-        // reading from a managed pointer may entail sending TO_NATIVE to a pointed to
-        // TruffleObject, we avoid this to prevent the debugger from changing an objects internal
-        // state
         return !pointer.isNull() && !isInteropValue();
     }
 
@@ -249,7 +251,6 @@ final class LLDBMemoryValue implements LLVMDebugValue {
             return nativePointer.toString() + (offset == 0 ? "" : " + " + LLDBSupport.toSizeString(offset));
         }
 
-        CompilerDirectives.transferToInterpreter();
         throw new IllegalStateException("Unknown Pointer: " + pointer);
     }
 
@@ -399,7 +400,7 @@ final class LLDBMemoryValue implements LLVMDebugValue {
 
         final Object pointerRead = readAddress(bitOffset);
         if (LLVMPointer.isInstance(pointerRead)) {
-            return LLVMLanguage.getLLDBSupport().createDebugDeclarationBuilder().build(pointerRead);
+            return CommonNodeFactory.createDebugDeclarationBuilder().build(pointerRead);
         }
 
         return null;

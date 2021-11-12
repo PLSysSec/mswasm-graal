@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,13 +31,14 @@ import org.graalvm.compiler.core.common.type.TypeReference;
 import org.graalvm.compiler.graph.IterableNodeType;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.NodeClass;
-import org.graalvm.compiler.graph.spi.Simplifiable;
-import org.graalvm.compiler.graph.spi.SimplifierTool;
+import org.graalvm.compiler.nodes.spi.Simplifiable;
+import org.graalvm.compiler.nodes.spi.SimplifierTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodeinfo.Verbosity;
 import org.graalvm.compiler.nodes.BeginNode;
 import org.graalvm.compiler.nodes.CallTargetNode;
 import org.graalvm.compiler.nodes.FixedGuardNode;
+import org.graalvm.compiler.nodes.FixedNode;
 import org.graalvm.compiler.nodes.Invoke;
 import org.graalvm.compiler.nodes.LogicNode;
 import org.graalvm.compiler.nodes.NodeView;
@@ -61,16 +62,16 @@ import jdk.vm.ci.meta.ResolvedJavaType;
 @NodeInfo
 public class MethodCallTargetNode extends CallTargetNode implements IterableNodeType, Simplifiable {
     public static final NodeClass<MethodCallTargetNode> TYPE = NodeClass.create(MethodCallTargetNode.class);
-    protected JavaTypeProfile profile;
+    protected JavaTypeProfile typeProfile;
 
-    public MethodCallTargetNode(InvokeKind invokeKind, ResolvedJavaMethod targetMethod, ValueNode[] arguments, StampPair returnStamp, JavaTypeProfile profile) {
-        this(TYPE, invokeKind, targetMethod, arguments, returnStamp, profile);
+    public MethodCallTargetNode(InvokeKind invokeKind, ResolvedJavaMethod targetMethod, ValueNode[] arguments, StampPair returnStamp, JavaTypeProfile typeProfile) {
+        this(TYPE, invokeKind, targetMethod, arguments, returnStamp, typeProfile);
     }
 
     protected MethodCallTargetNode(NodeClass<? extends MethodCallTargetNode> c, InvokeKind invokeKind, ResolvedJavaMethod targetMethod, ValueNode[] arguments, StampPair returnStamp,
-                    JavaTypeProfile profile) {
+                    JavaTypeProfile typeProfile) {
         super(c, arguments, targetMethod, invokeKind, returnStamp);
-        this.profile = profile;
+        this.typeProfile = typeProfile;
     }
 
     /**
@@ -177,82 +178,112 @@ public class MethodCallTargetNode extends CallTargetNode implements IterableNode
             return;
         }
 
-        Assumptions assumptions = graph().getAssumptions();
-        /*
-         * Even though we are not registering an assumption (see comment below), the optimization is
-         * only valid when speculative optimizations are enabled.
-         */
-        if (invokeKind().isIndirect() && invokeKind().isInterface() && assumptions != null) {
+        if (invokeKind.isInterface()) {
+            MethodCallTargetNode result = tryDevirtualizeInterfaceCall(receiver(), targetMethod, typeProfile, graph().getAssumptions(), contextType, this, invoke().asFixedNode());
+            assert result == this;
+        }
+    }
 
-            // check if the type of the receiver can narrow the result
-            ValueNode receiver = receiver();
-
-            // try to turn a interface call into a virtual call
-            ResolvedJavaType declaredReceiverType = targetMethod().getDeclaringClass();
-
+    public static MethodCallTargetNode tryDevirtualizeInterfaceCall(ValueNode receiver, ResolvedJavaMethod targetMethod, JavaTypeProfile profile, Assumptions assumptions, ResolvedJavaType contextType,
+                    MethodCallTargetNode callTarget, FixedNode insertionPoint) {
+        if (assumptions == null) {
             /*
-             * We need to check the invoke kind to avoid recursive simplification for virtual
-             * interface methods calls.
+             * Even though we are not registering an assumption (see comment below), the
+             * optimization is only valid when speculative optimizations are enabled.
              */
-            if (declaredReceiverType.isInterface()) {
-                ResolvedJavaType singleImplementor = declaredReceiverType.getSingleImplementor();
-                if (singleImplementor != null && !singleImplementor.equals(declaredReceiverType)) {
-                    TypeReference speculatedType = TypeReference.createTrusted(assumptions, singleImplementor);
-                    if (tryCheckCastSingleImplementor(receiver, speculatedType)) {
-                        return;
-                    }
+            return callTarget;
+        }
+
+        ResolvedJavaType referencedReceiverType = callTarget.referencedType();
+        if (referencedReceiverType == null) {
+            return callTarget;
+        }
+
+        // try to turn a interface call into a virtual call
+        ResolvedJavaType declaredReceiverType = targetMethod.getDeclaringClass();
+
+        /*
+         * We need to check the invoke kind to avoid recursive simplification for virtual interface
+         * methods calls.
+         */
+        if (declaredReceiverType.isInterface()) {
+            ResolvedJavaType singleImplementor = referencedReceiverType.getSingleImplementor();
+            // If singleImplementor is equal to declaredReceiverType it means that there are
+            // multiple implementors.
+            if (singleImplementor != null && !singleImplementor.equals(declaredReceiverType)) {
+                TypeReference speculatedType = TypeReference.createTrusted(assumptions, singleImplementor);
+                MethodCallTargetNode callTargetResult = tryCheckCastSingleImplementor(receiver, targetMethod, profile, contextType, speculatedType, insertionPoint, callTarget);
+                if (callTargetResult != null) {
+                    return callTargetResult;
                 }
             }
+        }
 
-            if (receiver instanceof UncheckedInterfaceProvider) {
-                UncheckedInterfaceProvider uncheckedInterfaceProvider = (UncheckedInterfaceProvider) receiver;
-                Stamp uncheckedStamp = uncheckedInterfaceProvider.uncheckedStamp();
-                if (uncheckedStamp != null) {
-                    TypeReference speculatedType = StampTool.typeReferenceOrNull(uncheckedStamp);
-                    if (speculatedType != null) {
-                        tryCheckCastSingleImplementor(receiver, speculatedType);
+        if (receiver instanceof UncheckedInterfaceProvider) {
+            UncheckedInterfaceProvider uncheckedInterfaceProvider = (UncheckedInterfaceProvider) receiver;
+            Stamp uncheckedStamp = uncheckedInterfaceProvider.uncheckedStamp();
+            if (uncheckedStamp != null) {
+                TypeReference speculatedType = StampTool.typeReferenceOrNull(uncheckedStamp);
+                // speculatedType must be related to the referencedReceiverType.
+                if (speculatedType != null && referencedReceiverType.isAssignableFrom(speculatedType.getType())) {
+                    MethodCallTargetNode callTargetResult = tryCheckCastSingleImplementor(receiver, targetMethod, profile, contextType, speculatedType, insertionPoint, callTarget);
+                    if (callTargetResult != null) {
+                        return callTargetResult;
                     }
                 }
             }
         }
+        return callTarget;
     }
 
-    private boolean tryCheckCastSingleImplementor(ValueNode receiver, TypeReference speculatedType) {
+    private static MethodCallTargetNode tryCheckCastSingleImplementor(ValueNode receiver, ResolvedJavaMethod targetMethod, JavaTypeProfile profile, ResolvedJavaType contextType,
+                    TypeReference speculatedType,
+                    FixedNode insertionPoint, MethodCallTargetNode callTarget) {
         ResolvedJavaType singleImplementor = speculatedType.getType();
         if (singleImplementor != null) {
-            ResolvedJavaMethod singleImplementorMethod = singleImplementor.resolveConcreteMethod(targetMethod(), invoke().getContextType());
+            ResolvedJavaMethod singleImplementorMethod = singleImplementor.resolveConcreteMethod(targetMethod, contextType);
             if (singleImplementorMethod != null) {
-                /**
+                /*
                  * We have an invoke on an interface with a single implementor. We can replace this
                  * with an invoke virtual.
                  *
                  * To do so we need to ensure two properties: 1) the receiver must implement the
-                 * interface (declaredReceiverType). The verifier does not prove this so we need a
+                 * interface (referencedReceiverType). The verifier does not prove this so we need a
                  * dynamic check. 2) we need to ensure that there is still only one implementor of
                  * this interface, i.e. that we are calling the right method. We could do this with
                  * an assumption but as we need an instanceof check anyway we can verify both
                  * properties by checking of the receiver is an instance of the single implementor.
                  */
-                AnchoringNode anchor = BeginNode.prevBegin(invoke().asNode());
-                LogicNode condition = graph().addOrUniqueWithInputs(InstanceOfNode.create(speculatedType, receiver, getProfile(), anchor));
-                FixedGuardNode guard = graph().add(new FixedGuardNode(condition, DeoptimizationReason.OptimizedTypeCheckViolated, DeoptimizationAction.InvalidateRecompile, false));
-                graph().addBeforeFixed(invoke().asNode(), guard);
-                ValueNode valueNode = graph().addOrUnique(new PiNode(receiver, StampFactory.objectNonNull(speculatedType), guard));
-                arguments().set(0, valueNode);
+                StructuredGraph graph = insertionPoint.graph();
+                AnchoringNode anchor = BeginNode.prevBegin(insertionPoint);
+                LogicNode condition = graph.addOrUniqueWithInputs(InstanceOfNode.create(speculatedType, receiver, profile, anchor));
+                FixedGuardNode guard = graph.add(new FixedGuardNode(condition, DeoptimizationReason.OptimizedTypeCheckViolated, DeoptimizationAction.InvalidateRecompile, false));
+                graph.addBeforeFixed(insertionPoint, guard);
+                InvokeKind invokeKind;
                 if (speculatedType.isExact()) {
-                    setInvokeKind(InvokeKind.Special);
+                    invokeKind = InvokeKind.Special;
                 } else {
-                    setInvokeKind(InvokeKind.Virtual);
+                    invokeKind = InvokeKind.Virtual;
                 }
-                setTargetMethod(singleImplementorMethod);
-                return true;
+                MethodCallTargetNode callTargetResult = callTarget;
+                ValueNode valueNode = graph.addOrUnique(new PiNode(receiver, StampFactory.objectNonNull(speculatedType), guard));
+                if (callTarget.isAlive()) {
+                    callTarget.arguments().set(0, valueNode);
+                    callTargetResult.setInvokeKind(invokeKind);
+                    callTargetResult.setTargetMethod(singleImplementorMethod);
+                } else {
+                    ValueNode[] arguments = callTarget.arguments().toArray(new ValueNode[callTarget.arguments().size()]);
+                    arguments[0] = valueNode;
+                    callTargetResult = new MethodCallTargetNode(invokeKind, singleImplementorMethod, arguments, callTarget.returnStamp, profile);
+                }
+                return callTargetResult;
             }
         }
-        return false;
+        return null;
     }
 
-    public JavaTypeProfile getProfile() {
-        return profile;
+    public JavaTypeProfile getTypeProfile() {
+        return typeProfile;
     }
 
     @Override
@@ -273,6 +304,6 @@ public class MethodCallTargetNode extends CallTargetNode implements IterableNode
     }
 
     public void setJavaTypeProfile(JavaTypeProfile profile) {
-        this.profile = profile;
+        this.typeProfile = profile;
     }
 }

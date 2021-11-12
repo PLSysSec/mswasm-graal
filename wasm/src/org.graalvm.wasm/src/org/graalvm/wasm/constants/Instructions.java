@@ -234,6 +234,16 @@ public final class Instructions {
     public static final int I64_REINTERPRET_F64 = 0xBD;
     public static final int F32_REINTERPRET_I32 = 0xBE;
     public static final int F64_REINTERPRET_I64 = 0xBF;
+    public static final int MISC = 0xFF; // avoiding conflict with get_offset
+
+    public static final int I32_TRUNC_SAT_F32_S = 0x00;
+    public static final int I32_TRUNC_SAT_F32_U = 0x01;
+    public static final int I32_TRUNC_SAT_F64_S = 0x02;
+    public static final int I32_TRUNC_SAT_F64_U = 0x03;
+    public static final int I64_TRUNC_SAT_F32_S = 0x04;
+    public static final int I64_TRUNC_SAT_F32_U = 0x05;
+    public static final int I64_TRUNC_SAT_F64_S = 0x06;
+    public static final int I64_TRUNC_SAT_F64_U = 0x07;
 
     // MSWasm instructions
     // public static final int I32_SEGMENT_LOAD = 0xF0;
@@ -242,14 +252,14 @@ public final class Instructions {
     // public static final int I64_SEGMENT_STORE = 0xF3;
     public static final int NEW_SEGMENT = 0xF4;
     public static final int FREE_SEGMENT = 0xF5;
-    public static final int SEGMENT_SLICE = 0xF6;
+    public static final int SEGMENT_SLICE = 0xF6; // Unused
     public static final int HANDLE_SEGMENT_LOAD = 0xF7;
     public static final int HANDLE_SEGMENT_STORE = 0xF8;
     public static final int HANDLE_ADD = 0xF9;
-    public static final int HANDLE_SUB = 0xFA;
+    public static final int HANDLE_SUB = 0xFA; // Unused
     public static final int NULL_HANDLE = 0xFB;
     public static final int HANDLE_GET_OFFSET = 0xFC;
-    public static final int HANDLE_SET_OFFSET = 0xFD;
+    public static final int HANDLE_SET_OFFSET = 0xFD; // Unused
 
     private static String[] decodingTable = new String[256];
 

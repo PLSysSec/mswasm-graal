@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,7 +36,6 @@ import com.oracle.objectfile.LayoutDecisionMap;
 import com.oracle.objectfile.ObjectFile;
 import com.oracle.objectfile.ObjectFile.Element;
 import com.oracle.objectfile.ObjectFile.RelocationKind;
-import com.oracle.objectfile.ObjectFile.RelocationRecord;
 import com.oracle.objectfile.ObjectFile.Segment;
 import com.oracle.objectfile.ObjectFile.Symbol;
 import com.oracle.objectfile.io.AssemblyBuffer;
@@ -155,34 +154,26 @@ public class MachOUserDefinedSection extends MachOSection implements ObjectFile.
     }
 
     @Override
-    public MachORelocationElement getOrCreateRelocationElement(boolean useImplicitAddend) {
-        return getOwner().getOrCreateRelocationElement(useImplicitAddend);
+    public MachORelocationElement getOrCreateRelocationElement(long addend) {
+        return getOwner().getOrCreateRelocationElement();
     }
 
     @Override
-    public RelocationRecord markRelocationSite(int offset, int length, ByteBuffer bb, RelocationKind k, String symbolName, boolean useImplicitAddend, Long explicitAddend) {
-        MachORelocationElement el = getOrCreateRelocationElement(useImplicitAddend);
+    public void markRelocationSite(int offset, ByteBuffer bb, RelocationKind k, String symbolName, long addend) {
+        MachORelocationElement el = getOrCreateRelocationElement(addend);
         AssemblyBuffer sbb = new AssemblyBuffer(bb);
         sbb.setByteOrder(getOwner().getByteOrder());
         sbb.pushSeek(offset);
         /*
          * NOTE: Mach-O does not support explicit addends, and inline addends are applied even
-         * during dynamic linking. So if the caller supplies an explicit addend, we turn it into an
-         * implicit one by updating our content.
+         * during dynamic linking.
          */
-        long currentInlineAddendValue = sbb.readTruncatedLong(length);
-        long desiredInlineAddendValue;
-        if (explicitAddend != null) {
-            /*
-             * This assertion is conservatively disallowing double-addend (could
-             * "add currentValue to explicitAddend"), because that seems more likely to be a bug
-             * than a feature.
-             */
-            assert currentInlineAddendValue == 0;
-            desiredInlineAddendValue = explicitAddend;
-        } else {
-            desiredInlineAddendValue = currentInlineAddendValue;
-        }
+        int length = ObjectFile.RelocationKind.getRelocationSize(k);
+        /*
+         * The addend is passed as a method parameter. The initial implicit addend value within the
+         * instruction does not need to be read, as it is noise.
+         */
+        long desiredInlineAddendValue = addend;
 
         /*
          * One more complication: for PC-relative relocation, at least on x86-64, Mach-O linkers
@@ -193,7 +184,7 @@ public class MachOUserDefinedSection extends MachOSection implements ObjectFile.
          * amount we add is always the length in bytes of the relocation site (since on x86-64 the
          * reference is always the last field in a PC-relative instruction).
          */
-        if (k == RelocationKind.PC_RELATIVE) {
+        if (RelocationKind.isPCRelative(k)) {
             desiredInlineAddendValue += length;
         }
 
@@ -202,6 +193,7 @@ public class MachOUserDefinedSection extends MachOSection implements ObjectFile.
         sbb.writeTruncatedLong(desiredInlineAddendValue, length);
 
         // set section flag to note that we have relocations
+        assert symbolName != null;
         Symbol sym = getOwner().getSymbolTable().getSymbol(symbolName);
         boolean symbolIsDefinedLocally = (sym != null && sym.isDefined());
         // see note in MachOObjectFile's createDefinedSymbol
@@ -211,9 +203,7 @@ public class MachOUserDefinedSection extends MachOSection implements ObjectFile.
 
         // return ByteBuffer cursor to where it was
         sbb.pop();
-        RelocationInfo rec = new RelocationInfo(el, this, offset, length, k, symbolName, createAsLocalReloc);
+        MachORelocationInfo rec = new MachORelocationInfo(el, this, offset, length, k, symbolName, createAsLocalReloc);
         el.add(rec);
-
-        return rec;
     }
 }

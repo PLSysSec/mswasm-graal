@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2018, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -41,6 +41,7 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.DebugTrapInstru
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ExtractElementInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ExtractValueInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.FenceInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.FreezeInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.GetElementPointerInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.IndirectBranchInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.InsertElementInstruction;
@@ -58,6 +59,7 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.ShuffleVectorIn
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.StoreInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.SwitchInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.SwitchOldInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.UnaryOperationInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.UnreachableInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.VoidCallInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.VoidInvokeInstruction;
@@ -74,6 +76,11 @@ public interface InstructionVisitorAdapter extends SymbolVisitor {
 
     @Override
     default void visit(BinaryOperationInstruction operation) {
+        visitInstruction(operation);
+    }
+
+    @Override
+    default void visit(UnaryOperationInstruction operation) {
         visitInstruction(operation);
     }
 
@@ -215,6 +222,11 @@ public interface InstructionVisitorAdapter extends SymbolVisitor {
     @Override
     default void visit(FenceInstruction fence) {
         visitInstruction(fence);
+    }
+
+    @Override
+    default void visit(FreezeInstruction freeze) {
+        visitInstruction(freeze);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,7 +40,12 @@
  */
 package com.oracle.truffle.api.impl;
 
+import sun.misc.Unsafe;
+
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -58,6 +63,11 @@ final class TruffleJDKServices {
 
     @SuppressWarnings("unused")
     static void exportTo(Class<?> client) {
+        // No need to do anything on JDK 8
+    }
+
+    @SuppressWarnings("unused")
+    static void addReads(Class<?> client) {
         // No need to do anything on JDK 8
     }
 
@@ -119,7 +129,7 @@ final class TruffleJDKServices {
             Method m = servicesClass.getDeclaredMethod("load", Class.class);
             return (Iterable<Service>) m.invoke(null, serviceClass);
         } catch (Throwable e) {
-            throw (InternalError) new InternalError().initCause(e);
+            throw new InternalError(e);
         }
     }
 
@@ -136,4 +146,37 @@ final class TruffleJDKServices {
         // classes on the boot loader should not be cleared
         return clazz.getClassLoader() != null;
     }
+
+    static void fullFence() {
+        UNSAFE.fullFence();
+    }
+
+    static void acquireFence() {
+        UNSAFE.loadFence();
+    }
+
+    static void releaseFence() {
+        UNSAFE.storeFence();
+    }
+
+    static void loadLoadFence() {
+        UNSAFE.loadFence();
+    }
+
+    static void storeStoreFence() {
+        UNSAFE.storeFence();
+    }
+
+    static final Unsafe UNSAFE = AccessController.doPrivileged(new PrivilegedAction<Unsafe>() {
+        @Override
+        public Unsafe run() {
+            try {
+                Field theUnsafeInstance = Unsafe.class.getDeclaredField("theUnsafe");
+                theUnsafeInstance.setAccessible(true);
+                return (Unsafe) theUnsafeInstance.get(Unsafe.class);
+            } catch (Exception e) {
+                throw new RuntimeException("exception while trying to get Unsafe.theUnsafe via reflection:", e);
+            }
+        }
+    });
 }

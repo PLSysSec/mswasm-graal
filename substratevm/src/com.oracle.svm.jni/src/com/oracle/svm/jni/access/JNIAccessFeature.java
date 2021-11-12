@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,16 +40,16 @@ import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.hosted.Feature;
+import org.graalvm.nativeimage.impl.ConfigurationCondition;
 import org.graalvm.nativeimage.impl.ReflectionRegistry;
-import org.graalvm.nativeimage.impl.RuntimeReflectionSupport;
 
 import com.oracle.graal.pointsto.BigBang;
-import com.oracle.graal.pointsto.flow.FieldTypeFlow;
-import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.svm.core.configure.ConfigurationFile;
 import com.oracle.svm.core.configure.ConfigurationFiles;
+import com.oracle.svm.core.configure.ConditionalElement;
 import com.oracle.svm.core.configure.ReflectionConfigurationParser;
 import com.oracle.svm.core.jni.JNIRuntimeAccess;
 import com.oracle.svm.core.option.HostedOptionKey;
@@ -59,15 +59,19 @@ import com.oracle.svm.hosted.FeatureImpl.AfterRegistrationAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.BeforeAnalysisAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.CompilationAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.DuringAnalysisAccessImpl;
+import com.oracle.svm.hosted.ConditionalConfigurationRegistry;
 import com.oracle.svm.hosted.c.NativeLibraries;
 import com.oracle.svm.hosted.code.CEntryPointData;
 import com.oracle.svm.hosted.config.ConfigurationParserUtils;
 import com.oracle.svm.hosted.meta.MaterializedConstantFields;
 import com.oracle.svm.hosted.substitute.SubstitutionReflectivityFilter;
 import com.oracle.svm.jni.JNIJavaCallWrappers;
+import com.oracle.svm.jni.JNISupport;
 import com.oracle.svm.jni.hosted.JNICallTrampolineMethod;
+import com.oracle.svm.jni.hosted.JNIFieldAccessorMethod;
 import com.oracle.svm.jni.hosted.JNIJavaCallWrapperMethod;
 import com.oracle.svm.jni.hosted.JNIJavaCallWrapperMethod.CallVariant;
+import com.oracle.svm.jni.hosted.JNIJavaCallWrapperMethodSupport;
 
 import jdk.vm.ci.meta.MetaAccessProvider;
 import jdk.vm.ci.meta.ResolvedJavaField;
@@ -102,8 +106,6 @@ public class JNIAccessFeature implements Feature {
 
     private final Map<JNINativeLinkage, JNINativeLinkage> nativeLinkages = new ConcurrentHashMap<>();
 
-    private boolean haveJavaRuntimeReflectionSupport;
-
     public static class Options {
         @Option(help = "Print JNI methods added to generated image")//
         public static final HostedOptionKey<Boolean> PrintJNIMethods = new HostedOptionKey<>(false);
@@ -122,40 +124,53 @@ public class JNIAccessFeature implements Feature {
         JNIRuntimeAccessibilitySupportImpl registry = new JNIRuntimeAccessibilitySupportImpl();
         ImageSingletons.add(JNIRuntimeAccess.JNIRuntimeAccessibilitySupport.class, registry);
 
-        ReflectionConfigurationParser<Class<?>> parser = ConfigurationParserUtils.create(registry, access.getImageClassLoader());
+        ReflectionConfigurationParser<ConditionalElement<Class<?>>> parser = ConfigurationParserUtils.create(registry, access.getImageClassLoader());
         loadedConfigurations = ConfigurationParserUtils.parseAndRegisterConfigurations(parser, access.getImageClassLoader(), "JNI",
-                        ConfigurationFiles.Options.JNIConfigurationFiles, ConfigurationFiles.Options.JNIConfigurationResources, ConfigurationFiles.JNI_NAME);
+                        ConfigurationFiles.Options.JNIConfigurationFiles, ConfigurationFiles.Options.JNIConfigurationResources, ConfigurationFile.JNI.getFileName());
     }
 
-    private class JNIRuntimeAccessibilitySupportImpl implements JNIRuntimeAccess.JNIRuntimeAccessibilitySupport, ReflectionRegistry {
+    private class JNIRuntimeAccessibilitySupportImpl extends ConditionalConfigurationRegistry implements JNIRuntimeAccess.JNIRuntimeAccessibilitySupport, ReflectionRegistry {
         @Override
-        public void register(Class<?>... classes) {
+        public void register(ConfigurationCondition condition, Class<?>... classes) {
             abortIfSealed();
-            newClasses.addAll(Arrays.asList(classes));
+            registerConditionalConfiguration(condition, () -> newClasses.addAll(Arrays.asList(classes)));
         }
 
         @Override
-        public void register(Executable... methods) {
+        public void register(ConfigurationCondition condition, boolean queriedOnly, Executable... methods) {
             abortIfSealed();
-            newMethods.addAll(Arrays.asList(methods));
+            registerConditionalConfiguration(condition, () -> newMethods.addAll(Arrays.asList(methods)));
         }
 
         @Override
-        public void register(boolean finalIsWritable, boolean allowUnsafeAccess, Field... fields) {
-            UserError.guarantee(!allowUnsafeAccess, "Unsafe access cannot be controlled through JNI configuration.");
+        public void register(ConfigurationCondition condition, boolean finalIsWritable, Field... fields) {
             abortIfSealed();
+            registerConditionalConfiguration(condition, () -> registerFields(finalIsWritable, fields));
+        }
+
+        private void registerFields(boolean finalIsWritable, Field[] fields) {
             for (Field field : fields) {
                 boolean writable = finalIsWritable || !Modifier.isFinal(field.getModifiers());
                 newFields.put(field, writable);
             }
         }
+
     }
 
     @Override
     public void beforeAnalysis(BeforeAnalysisAccess arg) {
+        if (!ImageSingletons.contains(JNIJavaCallWrapperMethodSupport.class)) {
+            ImageSingletons.add(JNIJavaCallWrapperMethodSupport.class, new JNIJavaCallWrapperMethodSupport());
+        }
+        if (!ImageSingletons.contains(JNIFieldAccessorMethod.Factory.class)) {
+            ImageSingletons.add(JNIFieldAccessorMethod.Factory.class, new JNIFieldAccessorMethod.Factory());
+        }
+        if (!ImageSingletons.contains(JNISupport.class)) {
+            ImageSingletons.add(JNISupport.class, new JNISupport());
+        }
+
         BeforeAnalysisAccessImpl access = (BeforeAnalysisAccessImpl) arg;
         this.nativeLibraries = access.getNativeLibraries();
-        this.haveJavaRuntimeReflectionSupport = ImageSingletons.contains(RuntimeReflectionSupport.class);
 
         varargsCallTrampolineMethod = createJavaCallTrampoline(access, CallVariant.VARARGS, false);
         arrayCallTrampolineMethod = createJavaCallTrampoline(access, CallVariant.ARRAY, false);
@@ -163,11 +178,19 @@ public class JNIAccessFeature implements Feature {
         varargsNonvirtualCallTrampolineMethod = createJavaCallTrampoline(access, CallVariant.VARARGS, true);
         arrayNonvirtualCallTrampolineMethod = createJavaCallTrampoline(access, CallVariant.ARRAY, true);
         valistNonvirtualCallTrampolineMethod = createJavaCallTrampoline(access, CallVariant.VA_LIST, true);
+
+        /* duplicated to reduce the number of analysis iterations */
+        getConditionalConfigurationRegistry().flushConditionalConfiguration(access);
+    }
+
+    private static ConditionalConfigurationRegistry getConditionalConfigurationRegistry() {
+        return (ConditionalConfigurationRegistry) ImageSingletons.lookup(JNIRuntimeAccess.JNIRuntimeAccessibilitySupport.class);
     }
 
     private static JNICallTrampolineMethod createJavaCallTrampoline(BeforeAnalysisAccessImpl access, CallVariant variant, boolean nonVirtual) {
         MetaAccessProvider wrappedMetaAccess = access.getMetaAccess().getWrapped();
         ResolvedJavaField field = JNIAccessibleMethod.getCallWrapperField(wrappedMetaAccess, variant, nonVirtual);
+        access.getUniverse().lookup(field.getDeclaringClass()).registerAsReachable();
         access.registerAsAccessed(access.getUniverse().lookup(field));
         ResolvedJavaMethod method = JNIJavaCallWrappers.lookupJavaCallTrampoline(wrappedMetaAccess, variant, nonVirtual);
         JNICallTrampolineMethod trampoline = new JNICallTrampolineMethod(method, field, nonVirtual);
@@ -213,6 +236,7 @@ public class JNIAccessFeature implements Feature {
 
     @Override
     public void duringAnalysis(DuringAnalysisAccess a) {
+        getConditionalConfigurationRegistry().flushConditionalConfiguration(a);
         DuringAnalysisAccessImpl access = (DuringAnalysisAccessImpl) a;
         if (!wereElementsAdded()) {
             return;
@@ -240,13 +264,13 @@ public class JNIAccessFeature implements Feature {
     }
 
     private static JNIAccessibleClass addClass(Class<?> classObj, DuringAnalysisAccessImpl access) {
-        if (SubstitutionReflectivityFilter.shouldExclude(classObj, access.getMetaAccess())) {
+        if (SubstitutionReflectivityFilter.shouldExclude(classObj, access.getMetaAccess(), access.getUniverse())) {
             return null;
         }
         return JNIReflectionDictionary.singleton().addClassIfAbsent(classObj, c -> {
             AnalysisType analysisClass = access.getMetaAccess().lookupJavaType(classObj);
             if (analysisClass.isInterface() || (analysisClass.isInstanceClass() && analysisClass.isAbstract())) {
-                analysisClass.registerAsInTypeCheck();
+                analysisClass.registerAsReachable();
             } else {
                 analysisClass.registerAsAllocated(null);
             }
@@ -255,7 +279,7 @@ public class JNIAccessFeature implements Feature {
     }
 
     private void addMethod(Executable method, DuringAnalysisAccessImpl access) {
-        if (SubstitutionReflectivityFilter.shouldExclude(method, access.getMetaAccess())) {
+        if (SubstitutionReflectivityFilter.shouldExclude(method, access.getMetaAccess(), access.getUniverse())) {
             return;
         }
         JNIAccessibleClass jniClass = addClass(method.getDeclaringClass(), access);
@@ -291,12 +315,14 @@ public class JNIAccessFeature implements Feature {
     }
 
     private static void addField(Field reflField, boolean writable, DuringAnalysisAccessImpl access) {
-        if (SubstitutionReflectivityFilter.shouldExclude(reflField, access.getMetaAccess())) {
+        access.getMetaAccess().lookupJavaType(reflField.getDeclaringClass()).registerAsReachable();
+        if (SubstitutionReflectivityFilter.shouldExclude(reflField, access.getMetaAccess(), access.getUniverse())) {
             return;
         }
         JNIAccessibleClass jniClass = addClass(reflField.getDeclaringClass(), access);
         AnalysisField field = access.getMetaAccess().lookupJavaField(reflField);
         jniClass.addFieldIfAbsent(field.getName(), name -> new JNIAccessibleField(jniClass, name, field.getJavaKind(), field.getModifiers()));
+        field.registerAsJNIAccessed();
         field.registerAsRead(null);
         if (writable) {
             field.registerAsWritten(null);
@@ -310,16 +336,9 @@ public class JNIAccessFeature implements Feature {
         } else if (field.isStatic() && field.isFinal()) {
             MaterializedConstantFields.singleton().register(field);
         }
-        // Same as BigBang.addSystemField() and BigBang.addSystemStaticField():
-        // create type flows for any subtype of the field's declared type
-        BigBang bigBang = access.getBigBang();
-        TypeFlow<?> declaredTypeFlow = field.getType().getTypeFlow(bigBang, true);
-        if (field.isStatic()) {
-            declaredTypeFlow.addUse(bigBang, field.getStaticFieldFlow());
-        } else {
-            FieldTypeFlow instanceFieldFlow = field.getDeclaringClass().getContextInsensitiveAnalysisObject().getInstanceFieldFlow(bigBang, field, writable);
-            declaredTypeFlow.addUse(bigBang, instanceFieldFlow);
-        }
+
+        BigBang bb = access.getBigBang();
+        bb.registerAsJNIAccessed(field, writable);
     }
 
     @Override
@@ -349,10 +368,5 @@ public class JNIAccessFeature implements Feature {
                 access.registerAsImmutable(method); // for constant address to use as identifier
             }
         }
-    }
-
-    @Fold
-    public boolean haveJavaRuntimeReflectionSupport() {
-        return haveJavaRuntimeReflectionSupport;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,6 +27,7 @@ package com.oracle.svm.core.code;
 import java.util.Arrays;
 import java.util.List;
 
+import com.oracle.svm.core.heap.ReferenceMapIndex;
 import org.graalvm.compiler.api.replacements.Fold;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.nativeimage.ImageSingletons;
@@ -35,8 +36,9 @@ import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.WordFactory;
 
-import com.oracle.svm.core.annotate.AlwaysInline;
 import com.oracle.svm.core.annotate.AutomaticFeature;
+import com.oracle.svm.core.annotate.RestrictHeapAccess;
+import com.oracle.svm.core.annotate.RestrictHeapAccess.Access;
 import com.oracle.svm.core.annotate.Uninterruptible;
 import com.oracle.svm.core.c.NonmovableArray;
 import com.oracle.svm.core.c.NonmovableArrays;
@@ -119,7 +121,6 @@ public class CodeInfoTable {
         return result;
     }
 
-    @AlwaysInline("de-virtualize calls to ObjectReferenceVisitor")
     public static boolean visitObjectReferences(Pointer sp, CodePointer ip, CodeInfo info, DeoptimizedFrame deoptimizedFrame, ObjectReferenceVisitor visitor) {
         counters().visitObjectReferencesCount.inc();
 
@@ -138,20 +139,19 @@ public class CodeInfoTable {
          */
 
         NonmovableArray<Byte> referenceMapEncoding = NonmovableArrays.nullArray();
-        long referenceMapIndex = CodeInfoQueryResult.NO_REFERENCE_MAP;
+        long referenceMapIndex = ReferenceMapIndex.NO_REFERENCE_MAP;
         if (info.isNonNull()) {
-            referenceMapEncoding = CodeInfoAccess.getReferenceMapEncoding(info);
-            referenceMapIndex = CodeInfoAccess.lookupReferenceMapIndex(info, CodeInfoAccess.relativeIP(info, ip));
+            referenceMapEncoding = CodeInfoAccess.getStackReferenceMapEncoding(info);
+            referenceMapIndex = CodeInfoAccess.lookupStackReferenceMapIndex(info, CodeInfoAccess.relativeIP(info, ip));
         }
-        if (referenceMapIndex == CodeInfoQueryResult.NO_REFERENCE_MAP) {
-            throw reportNoReferenceMap(sp, ip, deoptimizedFrame, info);
+        if (referenceMapIndex == ReferenceMapIndex.NO_REFERENCE_MAP) {
+            throw reportNoReferenceMap(sp, ip, info);
         }
         return CodeReferenceMapDecoder.walkOffsetsFromPointer(sp, referenceMapEncoding, referenceMapIndex, visitor);
     }
 
-    private static RuntimeException reportNoReferenceMap(Pointer sp, CodePointer ip, DeoptimizedFrame deoptimizedFrame, CodeInfo info) {
-        Log.log().string("ip: ").hex(ip).string("  sp: ").hex(sp);
-        Log.log().string("  deoptFrame: ").object(deoptimizedFrame).string("  info:");
+    public static RuntimeException reportNoReferenceMap(Pointer sp, CodePointer ip, CodeInfo info) {
+        Log.log().string("ip: ").hex(ip).string("  sp: ").hex(sp).string("  info:");
         CodeInfoAccess.log(info, Log.log()).newline();
         throw VMError.shouldNotReachHere("No reference map information found");
     }
@@ -186,7 +186,7 @@ public class CodeInfoTable {
         /* Captures "installedCode" for the VMOperation. */
         JavaVMOperation.enqueueBlockingSafepoint("CodeInfoTable.invalidateInstalledCode", () -> {
             counters().invalidateInstalledCodeCount.inc();
-            if (installedCode.isValid()) {
+            if (installedCode.isAlive()) { // could be invalid (non-entrant), but executing
                 invalidateInstalledCodeAtSafepoint(WordFactory.pointer(installedCode.getAddress()));
             }
         });
@@ -205,7 +205,7 @@ public class CodeInfoTable {
             assert tether != null : "Invalidation can't be triggered before the code was fully installed.";
             CodeInfo info = CodeInfoAccess.convert(untetheredInfo, tether);
             // Multiple threads could trigger this method - only the first one must do something.
-            if (CodeInfoAccess.getState(info) == CodeInfo.STATE_CODE_CONSTANTS_LIVE) {
+            if (CodeInfoAccess.isAlive(info)) {
                 invalidateCodeAtSafepoint0(info);
             }
             assert CodeInfoAccess.getState(info) == CodeInfo.STATE_PARTIALLY_FREED;
@@ -222,17 +222,14 @@ public class CodeInfoTable {
     private static void invalidateCodeAtSafepoint(CodeInfo info) {
         VMOperation.guaranteeInProgressAtSafepoint("Must be at a safepoint");
         RuntimeCodeCache codeCache = getRuntimeCodeCache();
-        long num = codeCache.logMethodOperation(info, RuntimeCodeCache.INFO_INVALIDATE);
         codeCache.invalidateMethod(info);
-        codeCache.logMethodOperationEnd(num);
     }
 
+    @RestrictHeapAccess(access = Access.NO_ALLOCATION, reason = "Called by the GC")
     public static void invalidateNonStackCodeAtSafepoint(CodeInfo info) {
         VMOperation.guaranteeGCInProgress("Must only be called during a GC.");
         RuntimeCodeCache codeCache = getRuntimeCodeCache();
-        long num = codeCache.logMethodOperation(info, RuntimeCodeCache.INFO_INVALIDATE);
         codeCache.invalidateNonStackMethod(info);
-        codeCache.logMethodOperationEnd(num);
     }
 
     @Uninterruptible(reason = "Prevent the GC from freeing the CodeInfo.", callerMustBe = true)
@@ -256,7 +253,7 @@ public class CodeInfoTable {
     }
 }
 
-class CodeInfoTableCounters {
+final class CodeInfoTableCounters {
     private final Counter.Group counters = new Counter.Group(CodeInfoTable.Options.CodeCacheCounters, "CodeInfoTable");
     final Counter lookupCodeInfoCount = new Counter(counters, "lookupCodeInfo", "");
     final Counter lookupDeoptimizationEntrypointCount = new Counter(counters, "lookupDeoptimizationEntrypoint", "");
@@ -278,7 +275,9 @@ class CodeInfoFeature implements Feature {
         ImageSingletons.add(CodeInfoDecoderCounters.class, new CodeInfoDecoderCounters());
         ImageSingletons.add(CodeInfoEncoder.Counters.class, new CodeInfoEncoder.Counters());
         ImageSingletons.add(ImageCodeInfo.class, new ImageCodeInfo());
+        ImageSingletons.add(RuntimeCodeInfoHistory.class, new RuntimeCodeInfoHistory());
         ImageSingletons.add(RuntimeCodeCache.class, new RuntimeCodeCache());
+        ImageSingletons.add(RuntimeCodeInfoMemory.class, new RuntimeCodeInfoMemory());
     }
 
     @Override
@@ -292,6 +291,5 @@ class CodeInfoFeature implements Feature {
         config.registerAsImmutable(imageInfo.frameInfoObjectConstants);
         config.registerAsImmutable(imageInfo.frameInfoSourceClasses);
         config.registerAsImmutable(imageInfo.frameInfoSourceMethodNames);
-        config.registerAsImmutable(imageInfo.frameInfoNames);
     }
 }

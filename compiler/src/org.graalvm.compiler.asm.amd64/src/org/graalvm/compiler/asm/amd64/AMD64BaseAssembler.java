@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -50,6 +50,7 @@ import static org.graalvm.compiler.asm.amd64.AMD64BaseAssembler.VEXPrefixConfig.
 import static org.graalvm.compiler.asm.amd64.AMD64BaseAssembler.VEXPrefixConfig.WIG;
 import static org.graalvm.compiler.core.common.NumUtil.isByte;
 
+import org.graalvm.collections.EconomicSet;
 import org.graalvm.compiler.asm.Assembler;
 import org.graalvm.compiler.asm.amd64.AMD64Address.Scale;
 import org.graalvm.compiler.asm.amd64.AVXKind.AVXSize;
@@ -210,7 +211,25 @@ public abstract class AMD64BaseAssembler extends Assembler {
         }
     }
 
+    public static class AddressDisplacementAnnotation extends CodeAnnotation {
+        /**
+         * The position (bytes from the beginning of the method) of the operand.
+         */
+        public final int operandPosition;
+
+        public final Object annotation;
+
+        AddressDisplacementAnnotation(int operandPosition, Object annotation) {
+            this.operandPosition = operandPosition;
+            this.annotation = annotation;
+        }
+    }
+
     public static class OperandDataAnnotation extends CodeAnnotation {
+        /**
+         * The position (bytes from the beginning of the method) of the annotated instruction.
+         */
+        public final int instructionPosition;
         /**
          * The position (bytes from the beginning of the method) of the operand.
          */
@@ -226,8 +245,7 @@ public abstract class AMD64BaseAssembler extends Assembler {
         public final int nextInstructionPosition;
 
         OperandDataAnnotation(int instructionPosition, int operandPosition, int operandSize, int nextInstructionPosition) {
-            super(instructionPosition);
-
+            this.instructionPosition = instructionPosition;
             this.operandPosition = operandPosition;
             this.operandSize = operandSize;
             this.nextInstructionPosition = nextInstructionPosition;
@@ -248,6 +266,27 @@ public abstract class AMD64BaseAssembler extends Assembler {
 
     public final boolean supports(CPUFeature feature) {
         return ((AMD64) target.arch).getFeatures().contains(feature);
+    }
+
+    /**
+     * Mitigates exception throwing by recording unknown CPU feature names.
+     */
+    private final EconomicSet<String> unknownFeatures = EconomicSet.create();
+
+    /**
+     * Determines if the CPU feature denoted by {@code name} is supported. This name based look up
+     * is for features only available in later JVMCI releases.
+     */
+    public final boolean supportsCPUFeature(String name) {
+        if (unknownFeatures.contains(name)) {
+            return false;
+        }
+        try {
+            return supports(CPUFeature.valueOf(name));
+        } catch (IllegalArgumentException e) {
+            unknownFeatures.add(name);
+            return false;
+        }
     }
 
     protected static boolean inRC(RegisterCategory rc, Register r) {
@@ -576,6 +615,7 @@ public abstract class AMD64BaseAssembler extends Assembler {
 
         Scale scale = addr.getScale();
         int disp = addr.getDisplacement();
+        Object dispAnnotation = addr.getDisplacementAnnotation();
 
         if (base.equals(AMD64.rip)) { // also matches addresses returned by getPlaceholder()
             // [00 reg 101] disp32
@@ -584,15 +624,15 @@ public abstract class AMD64BaseAssembler extends Assembler {
             if (codePatchingAnnotationConsumer != null && addr.instructionStartPosition >= 0) {
                 codePatchingAnnotationConsumer.accept(new OperandDataAnnotation(addr.instructionStartPosition, position(), 4, position() + 4 + additionalInstructionSize));
             }
-            emitInt(disp);
+            emitDisplacementInt(disp, dispAnnotation);
         } else if (base.isValid()) {
-            boolean overriddenForce4Byte = force4Byte;
+            boolean overriddenForce4Byte = force4Byte || dispAnnotation != null;
             int baseenc = base.isValid() ? encode(base) : 0;
 
             if (index.isValid()) {
                 int indexenc = encode(index) << 3;
                 // [base + indexscale + disp]
-                if (disp == 0 && !base.equals(rbp) && !base.equals(r13)) {
+                if (dispAnnotation == null && disp == 0 && !base.equals(rbp) && !base.equals(r13)) {
                     // [base + indexscale]
                     // [00 reg 100][ss index base]
                     assert !index.equals(rsp) : "illegal addressing mode";
@@ -616,6 +656,7 @@ public abstract class AMD64BaseAssembler extends Assembler {
                         assert !index.equals(rsp) : "illegal addressing mode";
                         emitByte(0x44 | regenc);
                         emitByte(scale.log2 << 6 | indexenc | baseenc);
+                        assert dispAnnotation == null;
                         emitByte(disp & 0xFF);
                     } else {
                         // [base + indexscale + disp32]
@@ -623,12 +664,12 @@ public abstract class AMD64BaseAssembler extends Assembler {
                         assert !index.equals(rsp) : "illegal addressing mode";
                         emitByte(0x84 | regenc);
                         emitByte(scale.log2 << 6 | indexenc | baseenc);
-                        emitInt(disp);
+                        emitDisplacementInt(disp, dispAnnotation);
                     }
                 }
             } else if (base.equals(rsp) || base.equals(r12)) {
                 // [rsp + disp]
-                if (disp == 0) {
+                if (dispAnnotation == null && disp == 0) {
                     // [rsp]
                     // [00 reg 100][00 100 100]
                     emitByte(0x04 | regenc);
@@ -650,19 +691,20 @@ public abstract class AMD64BaseAssembler extends Assembler {
                         // [01 reg 100][00 100 100] disp8
                         emitByte(0x44 | regenc);
                         emitByte(0x24);
+                        assert dispAnnotation == null;
                         emitByte(disp & 0xFF);
                     } else {
                         // [rsp + imm32]
                         // [10 reg 100][00 100 100] disp32
                         emitByte(0x84 | regenc);
                         emitByte(0x24);
-                        emitInt(disp);
+                        emitDisplacementInt(disp, dispAnnotation);
                     }
                 }
             } else {
                 // [base + disp]
                 assert !base.equals(rsp) && !base.equals(r12) : "illegal addressing mode";
-                if (disp == 0 && !base.equals(rbp) && !base.equals(r13)) {
+                if (dispAnnotation == null && disp == 0 && !base.equals(rbp) && !base.equals(r13)) {
                     // [base]
                     // [00 reg base]
                     emitByte(0x00 | regenc | baseenc);
@@ -682,12 +724,13 @@ public abstract class AMD64BaseAssembler extends Assembler {
                         // [base + disp8]
                         // [01 reg base] disp8
                         emitByte(0x40 | regenc | baseenc);
+                        assert dispAnnotation == null;
                         emitByte(disp & 0xFF);
                     } else {
                         // [base + disp32]
                         // [10 reg base] disp32
                         emitByte(0x80 | regenc | baseenc);
-                        emitInt(disp);
+                        emitDisplacementInt(disp, dispAnnotation);
                     }
                 }
             }
@@ -699,15 +742,22 @@ public abstract class AMD64BaseAssembler extends Assembler {
                 assert !index.equals(rsp) : "illegal addressing mode";
                 emitByte(0x04 | regenc);
                 emitByte(scale.log2 << 6 | indexenc | 0x05);
-                emitInt(disp);
+                emitDisplacementInt(disp, dispAnnotation);
             } else {
                 // [disp] ABSOLUTE
                 // [00 reg 100][00 100 101] disp32
                 emitByte(0x04 | regenc);
                 emitByte(0x25);
-                emitInt(disp);
+                emitDisplacementInt(disp, dispAnnotation);
             }
         }
+    }
+
+    private void emitDisplacementInt(int disp, Object dispAnnotation) {
+        if (dispAnnotation != null && codePatchingAnnotationConsumer != null) {
+            codePatchingAnnotationConsumer.accept(new AddressDisplacementAnnotation(position(), dispAnnotation));
+        }
+        emitInt(disp);
     }
 
     private interface SIMDEncoder {
@@ -962,25 +1012,105 @@ public abstract class AMD64BaseAssembler extends Assembler {
         return reg != null && reg.isValid() && AMD64.XMM.equals(reg.getRegisterCategory()) && reg.encoding > 15;
     }
 
+    public static boolean isVariableLengthAVX512Register(AMD64.CPUFeature l128feature, AMD64.CPUFeature l256feature, AVXKind.AVXSize size) {
+        return l128feature == AMD64.CPUFeature.AVX512VL && size == AVXKind.AVXSize.XMM || l256feature == AMD64.CPUFeature.AVX512VL && size == AVXKind.AVXSize.YMM;
+    }
+
+    /**
+     * Emits a VEX or EVEX prefix depending on the target register length without considering
+     * variable-length ({@link CPUFeature#AVX512VL}) AVX-512 instructions. No {@code opmask}
+     * register is encoded for AVX-512 instructions.
+     *
+     * @see #vexPrefix(Register, Register, Register, Register, AVXSize, int, int, int, int, boolean,
+     *      CPUFeature, CPUFeature, int, int)
+     */
     public final boolean vexPrefix(Register dst, Register nds, Register src, AVXSize size, int pp, int mmmmm, int w, int wEvex, boolean checkAVX) {
-        if (isAVX512Register(dst) || isAVX512Register(nds) || isAVX512Register(src) || size == AVXSize.ZMM) {
-            evexPrefix(dst, Register.None, nds, src, size, pp, mmmmm, wEvex, Z0, B0);
+        return vexPrefix(dst, nds, src, size, pp, mmmmm, w, wEvex, checkAVX, null, null);
+    }
+
+    /**
+     * Emits a VEX or EVEX prefix depending on the target register length and the given feature
+     * requirements for variable-length ({@link CPUFeature#AVX512VL}) AVX-512 instructions. Here,
+     * the {@code z} and {@code b} bits are unset ({@code 0}) when emitting an EVEX prefix and no
+     * {@code opmask} register is assumed.
+     *
+     * @see #vexPrefix(Register, Register, Register, Register, AVXSize, int, int, int, int, boolean,
+     *      CPUFeature, CPUFeature, int, int)
+     */
+    public final boolean vexPrefix(Register dst, Register nds, Register src, AVXSize size, int pp, int mmmmm, int w, int wEvex, boolean checkAVX, CPUFeature l128feature, CPUFeature l256feature) {
+        return vexPrefix(dst, nds, src, Register.None, size, pp, mmmmm, w, wEvex, checkAVX, l128feature, l256feature, Z0, B0);
+    }
+
+    /**
+     * Emits a VEX or EVEX prefix depending on the target register length as well as the given
+     * feature requirements. If the requirements indicate that a variable-length
+     * ({@link CPUFeature#AVX512VL}) variant of the target instruction exists, an EVEX prefix is
+     * emitted. {@code l128feature} denotes the requirements if the target register side
+     * ({@code size}) is {@link AVXSize#XMM} and {@code l256feature} defines the requirements for a
+     * register size of {@link AVXSize#YMM}. If any of those features is {@code null}, a VEX prefix
+     * is used for the corresponding register size.
+     * <p>
+     * The Opmask ({@code opmask}) register is only used when emitting an EVEX prefix.
+     * <p>
+     * {@code z} and {@code b} denote bits in the EVEX prefix that define the merging/zeroing
+     * behavior and are unused when emitting a VEX prefix.
+     */
+    public final boolean vexPrefix(Register dst, Register nds, Register src, Register opmask, AVXSize size, int pp, int mmmmm, int w, int wEvex, boolean checkAVX, CPUFeature l128feature,
+                    CPUFeature l256feature, int z, int b) {
+        if (isAVX512Register(dst) || isAVX512Register(nds) || isAVX512Register(src) || size == AVXSize.ZMM ||
+                        isVariableLengthAVX512Register(l128feature, l256feature, size)) {
+            evexPrefix(dst, opmask, nds, src, size, pp, mmmmm, wEvex, z, b);
             return true;
         }
         emitVEX(getLFlag(size), pp, mmmmm, w, getRXB(dst, src), nds.isValid() ? nds.encoding() : 0, checkAVX);
         return false;
     }
 
-    public final boolean vexPrefix(Register dst, Register nds, AMD64Address src, AVXSize size, int pp, int mmmmm, int w, int wEvex, boolean checkAVX) {
-        if (isAVX512Register(dst) || isAVX512Register(nds) || size == AVXSize.ZMM) {
-            evexPrefix(dst, Register.None, nds, src, size, pp, mmmmm, wEvex, Z0, B0);
+    /**
+     * Emits a VEX or EVEX prefix depending on the target register length and the given feature
+     * requirements for variable-length ({@link CPUFeature#AVX512VL}) AVX-512 instructions, where
+     * the source {@code src} operand is a memory location. Here, the {@code z} and {@code b} bits
+     * are unset ({@code 0}) when emitting an EVEX prefix and no {@code opmask} register is assumed.
+     *
+     * @see #vexPrefix(Register, Register, Register, Register, AVXSize, int, int, int, int, boolean,
+     *      CPUFeature, CPUFeature, int, int)
+     */
+    public final boolean vexPrefix(Register dst, Register nds, AMD64Address src, AVXSize size, int pp, int mmmmm, int w, int wEvex, boolean checkAVX, CPUFeature l128feature, CPUFeature l256feature) {
+        return vexPrefix(dst, nds, src, Register.None, size, pp, mmmmm, w, wEvex, checkAVX, l128feature, l256feature, Z0, B0);
+    }
+
+    /**
+     * Emits a VEX or EVEX prefix depending on the target register length and the given feature
+     * requirements for variable-length ({@link CPUFeature#AVX512VL}) AVX-512 instructions, where
+     * the source {@code src} operand is a memory location.
+     *
+     * @see #vexPrefix(Register, Register, Register, Register, AVXSize, int, int, int, int, boolean,
+     *      CPUFeature, CPUFeature, int, int)
+     */
+    public final boolean vexPrefix(Register dst, Register nds, AMD64Address src, Register opmask, AVXSize size, int pp, int mmmmm, int w, int wEvex, boolean checkAVX, CPUFeature l128feature,
+                    CPUFeature l256feature, int z, int b) {
+        if (isAVX512Register(dst) || isAVX512Register(nds) || size == AVXSize.ZMM || isVariableLengthAVX512Register(l128feature, l256feature, size)) {
+            evexPrefix(dst, opmask, nds, src, size, pp, mmmmm, wEvex, z, b);
             return true;
         }
         emitVEX(getLFlag(size), pp, mmmmm, w, getRXB(dst, src), nds.isValid() ? nds.encoding() : 0, checkAVX);
         return false;
     }
 
-    protected static final class EVEXPrefixConfig {
+    /**
+     * Contains flag values for the EVEX prefix used in AVX-512 instructions.
+     * <p>
+     * {@link EVEXPrefixConfig#Z0}/{@link EVEXPrefixConfig#Z1} denote possible values of the z-bit
+     * that may be used by AVX-512 instructions to signal zeroing/merging. A set flag indicates that
+     * all lanes that are not selected by the opmask are zeroed in the result register. Per default,
+     * those values are merged (i.e. values in the result register in the corresponding lanes
+     * remain).
+     * <p>
+     * {@link EVEXPrefixConfig#B0}/{@link EVEXPrefixConfig#B1} denote the values of the b-bit that
+     * may be used by AVX-512 instructions to modify the rounding mode or signal broadcasting in
+     * load instructions. The semantics of the flag value depend on the actual instruction.
+     */
+    public static final class EVEXPrefixConfig {
         public static final int Z0 = 0x0;
         public static final int Z1 = 0x1;
 
@@ -1192,7 +1322,7 @@ public abstract class AMD64BaseAssembler extends Assembler {
      */
     protected final void evexPrefix(Register dst, Register mask, Register nds, Register src, AVXSize size, int pp, int mm, int w, int z, int b) {
         assert !mask.isValid() || inRC(MASK, mask);
-        emitEVEX(getLFlag(size), pp, mm, w, getRXBForEVEX(dst, src), dst.encoding, nds.isValid() ? nds.encoding() : 0, z, b, mask.isValid() ? mask.encoding : 0);
+        emitEVEX(getLFlag(size), pp, mm, w, getRXBForEVEX(dst, src), (dst == null ? 0 : dst.encoding), nds.isValid() ? nds.encoding() : 0, z, b, mask.isValid() ? mask.encoding : 0);
     }
 
     /**
@@ -1203,7 +1333,7 @@ public abstract class AMD64BaseAssembler extends Assembler {
      */
     protected final void evexPrefix(Register dst, Register mask, Register nds, AMD64Address src, AVXSize size, int pp, int mm, int w, int z, int b) {
         assert !mask.isValid() || inRC(MASK, mask);
-        emitEVEX(getLFlag(size), pp, mm, w, getRXB(dst, src), dst.encoding, nds.isValid() ? nds.encoding() : 0, z, b, mask.isValid() ? mask.encoding : 0);
+        emitEVEX(getLFlag(size), pp, mm, w, getRXB(dst, src), (dst == null ? 0 : dst.encoding), nds.isValid() ? nds.encoding() : 0, z, b, mask.isValid() ? mask.encoding : 0);
     }
 
 }

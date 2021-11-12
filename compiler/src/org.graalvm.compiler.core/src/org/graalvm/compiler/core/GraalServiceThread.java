@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,6 +24,8 @@
  */
 package org.graalvm.compiler.core;
 
+import jdk.vm.ci.services.Services;
+
 /**
  * This is a utility class for Threads started by the compiler itself. In certain execution
  * environments extra work must be done for these threads to execute correctly and this class
@@ -32,14 +34,21 @@ package org.graalvm.compiler.core;
 public class GraalServiceThread extends Thread {
     private final Runnable runnable;
 
-    public GraalServiceThread(Runnable runnable) {
-        super();
+    public GraalServiceThread(String name, Runnable runnable) {
+        super(name);
         this.runnable = runnable;
     }
 
     @Override
     public final void run() {
-        beforeRun();
+        try {
+            beforeRun();
+        } catch (InternalError t) {
+            // There was a problem attaching this thread to the libgraal peer runtime.
+            // Not much that can be done apart from terminating the thread.
+            onAttachError(t);
+            return;
+        }
         try {
             runnable.run();
         } finally {
@@ -48,17 +57,31 @@ public class GraalServiceThread extends Thread {
     }
 
     /**
+     * Notifies of an error on attaching this thread to the libgraal peer runtime.
+     *
+     * The default implementation of this method is to print the stack trace for {@code error} if
+     * the {@code GraalServiceThread.verbose} system property is {@code "true"}.
+     *
+     * @param error the error
+     */
+    protected void onAttachError(InternalError error) {
+        if (Boolean.parseBoolean(Services.getSavedProperties().getOrDefault("GraalServiceThread.verbose", "false"))) {
+            error.printStackTrace();
+        }
+    }
+
+    /**
      * Substituted by {@code com.oracle.svm.graal.hotspot.libgraal.
-     * Target_org_graalvm_compiler_truffle_common_TruffleCompilerRuntimeInstance} to attach to the
-     * peer runtime if required.
+     * Target_org_graalvm_compiler_core_GraalServiceThread} to attach to the peer runtime if
+     * required.
      */
     private void afterRun() {
     }
 
     /**
      * Substituted by {@code com.oracle.svm.graal.hotspot.libgraal.
-     * Target_org_graalvm_compiler_truffle_common_TruffleCompilerRuntimeInstance} to attach to the
-     * peer runtime if required.
+     * Target_org_graalvm_compiler_core_GraalServiceThread} to attach to the peer runtime if
+     * required.
      */
     private void beforeRun() {
     }

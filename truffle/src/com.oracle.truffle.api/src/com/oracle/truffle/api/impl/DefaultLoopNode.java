@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,11 +40,10 @@
  */
 package com.oracle.truffle.api.impl;
 
+import com.oracle.truffle.api.TruffleSafepoint;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.LoopNode;
 import com.oracle.truffle.api.nodes.RepeatingNode;
-
-import static com.oracle.truffle.api.nodes.RepeatingNode.CONTINUE_LOOP_STATUS;
 
 public final class DefaultLoopNode extends LoopNode {
 
@@ -68,8 +67,8 @@ public final class DefaultLoopNode extends LoopNode {
     @Override
     public Object execute(VirtualFrame frame) {
         Object status;
-        while ((status = repeatNode.executeRepeatingWithValue(frame)) == CONTINUE_LOOP_STATUS) {
-            // Empty
+        while (repeatNode.shouldContinue((status = repeatNode.executeRepeatingWithValue(frame)))) {
+            TruffleSafepoint.poll(this);
         }
         return status;
     }

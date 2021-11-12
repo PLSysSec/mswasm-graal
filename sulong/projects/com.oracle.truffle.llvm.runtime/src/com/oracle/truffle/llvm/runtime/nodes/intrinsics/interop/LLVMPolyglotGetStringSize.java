@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -31,6 +31,7 @@ package com.oracle.truffle.llvm.runtime.nodes.intrinsics.interop;
 
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Fallback;
+import com.oracle.truffle.api.dsl.GenerateAOT;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.InteropLibrary;
@@ -59,8 +60,11 @@ public abstract class LLVMPolyglotGetStringSize extends LLVMIntrinsic {
         return str.length();
     }
 
+    /**
+     * @param value @NodeChild
+     * @see LLVMPolyglotGetStringSize
+     */
     @Fallback
-    @SuppressWarnings("unused")
     public long fallback(Object value) {
         throw new LLVMPolyglotException(this, "Invalid argument to polyglot builtin.");
     }
@@ -70,6 +74,7 @@ public abstract class LLVMPolyglotGetStringSize extends LLVMIntrinsic {
         abstract long execute(Object object);
 
         @Specialization(limit = "3")
+        @GenerateAOT.Exclude
         long doBoxed(Object object,
                         @CachedLibrary("object") InteropLibrary interop,
                         @Cached BranchProfile exception) {

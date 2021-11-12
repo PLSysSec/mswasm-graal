@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,8 +32,8 @@ import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_0;
 
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.graph.NodeClass;
-import org.graalvm.compiler.graph.spi.Simplifiable;
-import org.graalvm.compiler.graph.spi.SimplifierTool;
+import org.graalvm.compiler.nodes.spi.Simplifiable;
+import org.graalvm.compiler.nodes.spi.SimplifierTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.extended.GuardingNode;
 
@@ -48,8 +48,8 @@ public final class SnippetAnchorNode extends FixedWithNextNode implements Simpli
     @Override
     public void simplify(SimplifierTool tool) {
         AbstractBeginNode prevBegin = AbstractBeginNode.prevBegin(this);
-        replaceAtUsages(Anchor, prevBegin);
-        replaceAtUsages(Guard, prevBegin);
+        replaceAtUsages(prevBegin, Anchor);
+        replaceAtUsages(prevBegin, Guard);
         if (tool.allUsagesAvailable() && hasNoUsages()) {
             graph().removeFixed(this);
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -57,8 +57,8 @@ final class PolyglotExceptionFrame extends AbstractStackFrameImpl {
     private final SourceSection sourceLocation;
     private final String rootName;
     private final boolean host;
-    private final PolyglotExceptionImpl source;
     private StackTraceElement stackTrace;
+    private final String formattedSource;
 
     private PolyglotExceptionFrame(PolyglotExceptionImpl source, PolyglotLanguage language,
                     SourceSection sourceLocation, String rootName, boolean isHost, StackTraceElement stackTrace) {
@@ -68,7 +68,11 @@ final class PolyglotExceptionFrame extends AbstractStackFrameImpl {
         this.rootName = rootName;
         this.host = isHost;
         this.stackTrace = stackTrace;
-        this.source = source;
+        if (!isHostFrame()) {
+            this.formattedSource = formatSource(sourceLocation, language != null ? source.getFileSystemContext(language) : null);
+        } else {
+            this.formattedSource = null;
+        }
     }
 
     @Override
@@ -94,7 +98,12 @@ final class PolyglotExceptionFrame extends AbstractStackFrameImpl {
     @Override
     public StackTraceElement toHostFrame() {
         if (stackTrace == null) {
-            String declaringClass = "<" + language.getId() + ">";
+            String declaringClass;
+            if (language != null) {
+                declaringClass = "<" + language.getId() + ">";
+            } else {
+                declaringClass = "";
+            }
             String methodName = rootName == null ? "" : rootName;
             String fileName = sourceLocation != null ? sourceLocation.getSource().getName() : "Unknown";
             int startLine = sourceLocation != null ? sourceLocation.getStartLine() : -1;
@@ -118,7 +127,8 @@ final class PolyglotExceptionFrame extends AbstractStackFrameImpl {
         } else {
             b.append(rootName);
             b.append("(");
-            b.append(formatSource(sourceLocation, source.getFileSystemContext()));
+            assert formattedSource != null;
+            b.append(formattedSource);
             b.append(")");
         }
         return b.toString();
@@ -129,7 +139,7 @@ final class PolyglotExceptionFrame extends AbstractStackFrameImpl {
             return null;
         }
         RootNode targetRoot = frame.getTarget().getRootNode();
-        if (targetRoot.isInternal()) {
+        if (targetRoot.isInternal() && !exception.showInternalStackFrames) {
             return null;
         }
 
@@ -149,8 +159,8 @@ final class PolyglotExceptionFrame extends AbstractStackFrameImpl {
             if (callNode != null) {
                 com.oracle.truffle.api.source.SourceSection section = callNode.getEncapsulatingSourceSection();
                 if (section != null) {
-                    Source source = engine.getAPIAccess().newSource(language.getId(), section.getSource());
-                    location = engine.getAPIAccess().newSourceSection(source, section);
+                    Source source = engine.getAPIAccess().newSource(exception.polyglot.getSourceDispatch(), section.getSource());
+                    location = engine.getAPIAccess().newSourceSection(source, exception.polyglot.getSourceSectionDispatch(), section);
                 } else {
                     location = null;
                 }
@@ -162,7 +172,7 @@ final class PolyglotExceptionFrame extends AbstractStackFrameImpl {
     }
 
     static PolyglotExceptionFrame createHost(PolyglotExceptionImpl exception, StackTraceElement hostStack) {
-        PolyglotLanguage language = exception.engine != null ? exception.engine.hostLanguage : null;
+        PolyglotLanguage language = exception.engine != null ? exception.engine.hostLanguageInstance.language : null;
 
         // source section for the host language is currently null
         // we should potentially in the future create a source section for the host language

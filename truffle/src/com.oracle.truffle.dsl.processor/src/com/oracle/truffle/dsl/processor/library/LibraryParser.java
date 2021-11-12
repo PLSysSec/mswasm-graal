@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -94,8 +94,14 @@ public class LibraryParser extends AbstractParser<LibraryData> {
             return model;
         }
 
+        AnnotationMirror generateAOT = ElementUtils.findAnnotationMirror(element, types.GenerateAOT);
+        if (generateAOT != null) {
+            model.setGenerateAOT(true);
+        }
+
         model.setDefaultExportLookupEnabled(ElementUtils.getAnnotationValue(Boolean.class, mirror, "defaultExportLookupEnabled"));
         model.setDynamicDispatchEnabled(ElementUtils.getAnnotationValue(Boolean.class, mirror, "dynamicDispatchEnabled"));
+        model.setPushEncapsulatingNode(ElementUtils.getAnnotationValue(Boolean.class, mirror, "pushEncapsulatingNode"));
 
         boolean defaultExportReachable = true;
         List<AnnotationMirror> defaultExports = ElementUtils.getRepeatedAnnotation(element.getAnnotationMirrors(), types.GenerateLibrary_DefaultExport);
@@ -154,8 +160,8 @@ public class LibraryParser extends AbstractParser<LibraryData> {
                 continue;
             }
 
-            if (visibility == Modifier.PROTECTED || visibility == null) {
-                message.addError("Library messages must be public.");
+            if (visibility == null) {
+                message.addError("Library messages must be public or protected. Annotate with @GenerateLibrary.Ignore to ignore this method for generation. ");
             }
 
             if (executable.getParameters().isEmpty()) {

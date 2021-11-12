@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,14 +28,16 @@ import static org.graalvm.compiler.nodeinfo.InputType.Guard;
 import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_0;
 import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_0;
 
+import org.graalvm.collections.EconomicSet;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.graph.NodeBitMap;
 import org.graalvm.compiler.graph.NodeClass;
 import org.graalvm.compiler.graph.NodeInputList;
-import org.graalvm.compiler.graph.spi.Canonicalizable;
-import org.graalvm.compiler.graph.spi.CanonicalizerTool;
-import org.graalvm.compiler.graph.spi.Simplifiable;
-import org.graalvm.compiler.graph.spi.SimplifierTool;
+import org.graalvm.compiler.nodes.spi.Canonicalizable;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
+import org.graalvm.compiler.nodes.spi.Simplifiable;
+import org.graalvm.compiler.nodes.spi.SimplifierTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
@@ -43,6 +45,8 @@ import org.graalvm.compiler.nodes.calc.FloatingNode;
 import org.graalvm.compiler.nodes.spi.LIRLowerable;
 import org.graalvm.compiler.nodes.spi.NodeLIRBuilderTool;
 import org.graalvm.compiler.nodes.util.GraphUtil;
+
+import java.util.ArrayList;
 
 @NodeInfo(allowedUsageTypes = Guard, cycles = CYCLES_0, size = SIZE_0)
 public final class MultiGuardNode extends FloatingNode implements GuardingNode, LIRLowerable, Simplifiable, Canonicalizable, Node.ValueNumberable {
@@ -69,7 +73,44 @@ public final class MultiGuardNode extends FloatingNode implements GuardingNode, 
         } else if (guards.size() == 1) {
             // Only a single guard left => replace multi-guard with that single guard.
             return guards.get(0);
+        } else {
+            // Merge chain of MultiGuardNodes.
+            if (guards.filter(MultiGuardNode.class).isNotEmpty()) {
+                final ArrayList<ValueNode> list = new ArrayList<>();
+                for (ValueNode guard : guards) {
+                    if (guard instanceof MultiGuardNode) {
+                        list.addAll(((MultiGuardNode) guard).guards);
+                    } else {
+                        list.add(guard);
+                    }
+                }
+                return new MultiGuardNode(list.toArray(new ValueNode[0]));
+            }
         }
+
+        // if the guard contains duplicates we want to create a de-duplicated guard
+        NodeBitMap guardsSeen = new NodeBitMap(graph());
+        boolean duplicatesFound = false;
+        for (ValueNode guard : guards) {
+            if (guardsSeen.isMarked(guard)) {
+                duplicatesFound = true;
+                break;
+            }
+            guardsSeen.mark(guard);
+        }
+        if (duplicatesFound) {
+            EconomicSet<ValueNode> uniqueGuards = EconomicSet.create();
+            for (ValueNode guard : guards) {
+                uniqueGuards.add(guard);
+            }
+
+            if (uniqueGuards.size() == 1) {
+                return uniqueGuards.iterator().next();
+            }
+
+            return new MultiGuardNode(uniqueGuards.toArray(new ValueNode[uniqueGuards.size()]));
+        }
+
         return this;
     }
 

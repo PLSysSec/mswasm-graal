@@ -31,34 +31,52 @@ import java.util.Map;
 
 import org.graalvm.compiler.core.common.LIRKind;
 import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
+import org.graalvm.compiler.core.common.spi.ForeignCallSignature;
 import org.graalvm.compiler.replacements.arraycopy.ArrayCopyForeignCalls;
-import org.graalvm.nativeimage.ImageSingletons;
+import org.graalvm.compiler.replacements.arraycopy.ArrayCopyLookup;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.word.LocationIdentity;
 
-import com.oracle.svm.core.SubstrateTargetDescription;
+import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.snippets.SnippetRuntime.SubstrateForeignCallDescriptor;
 import com.oracle.svm.core.util.VMError;
 
+import jdk.vm.ci.code.RegisterConfig;
+import jdk.vm.ci.code.TargetDescription;
 import jdk.vm.ci.meta.JavaKind;
+import jdk.vm.ci.meta.MetaAccessProvider;
 
 public class SubstrateForeignCallsProvider implements ArrayCopyForeignCalls {
 
-    private final Map<SubstrateForeignCallDescriptor, SubstrateForeignCallLinkage> foreignCalls;
+    final MetaAccessProvider metaAccess;
+    final RegisterConfig registerConfig;
+    final TargetDescription target;
+    private final Map<ForeignCallSignature, SubstrateForeignCallLinkage> foreignCalls;
+    protected ArrayCopyLookup arrayCopyLookup;
 
     @Platforms(Platform.HOSTED_ONLY.class)
-    public SubstrateForeignCallsProvider() {
+    public SubstrateForeignCallsProvider(MetaAccessProvider metaAccess, RegisterConfig registerConfig) {
+        this.metaAccess = metaAccess;
+        this.registerConfig = registerConfig;
+        this.target = ConfigurationValues.getTarget();
         this.foreignCalls = new HashMap<>();
     }
 
-    public Map<SubstrateForeignCallDescriptor, SubstrateForeignCallLinkage> getForeignCalls() {
+    public Map<ForeignCallSignature, SubstrateForeignCallLinkage> getForeignCalls() {
         return foreignCalls;
+    }
+
+    public void register(SubstrateForeignCallDescriptor... descriptors) {
+        for (SubstrateForeignCallDescriptor descriptor : descriptors) {
+            SubstrateForeignCallLinkage linkage = new SubstrateForeignCallLinkage(this, descriptor);
+            foreignCalls.put(descriptor.getSignature(), linkage);
+        }
     }
 
     @Override
     public SubstrateForeignCallLinkage lookupForeignCall(ForeignCallDescriptor descriptor) {
-        SubstrateForeignCallLinkage callTarget = foreignCalls.get(descriptor);
+        SubstrateForeignCallLinkage callTarget = foreignCalls.get(descriptor.getSignature());
         if (callTarget == null) {
             throw shouldNotReachHere("missing implementation for runtime call: " + descriptor);
         }
@@ -66,42 +84,26 @@ public class SubstrateForeignCallsProvider implements ArrayCopyForeignCalls {
     }
 
     @Override
-    public boolean isAvailable(ForeignCallDescriptor descriptor) {
-        return foreignCalls.containsKey(descriptor);
-    }
-
-    @Override
-    public boolean isReexecutable(ForeignCallDescriptor descriptor) {
-        return lookupForeignCall(descriptor).getDescriptor().isReexecutable();
-    }
-
-    @Override
-    public LocationIdentity[] getKilledLocations(ForeignCallDescriptor descriptor) {
-        return lookupForeignCall(descriptor).getDescriptor().getKilledLocations();
-    }
-
-    @Override
-    public boolean canDeoptimize(ForeignCallDescriptor descriptor) {
-        return lookupForeignCall(descriptor).getDescriptor().needsDebugInfo();
-    }
-
-    @Override
-    public boolean isGuaranteedSafepoint(ForeignCallDescriptor descriptor) {
-        return lookupForeignCall(descriptor).getDescriptor().isGuaranteedSafepoint();
+    public ForeignCallDescriptor getDescriptor(ForeignCallSignature signature) {
+        SubstrateForeignCallLinkage linkage = foreignCalls.get(signature);
+        return linkage.getDescriptor();
     }
 
     @Override
     public LIRKind getValueKind(JavaKind javaKind) {
-        return LIRKind.fromJavaKind(ImageSingletons.lookup(SubstrateTargetDescription.class).arch, javaKind);
+        return LIRKind.fromJavaKind(target.arch, javaKind);
+    }
+
+    public void registerArrayCopyForeignCallsDelegate(ArrayCopyLookup arraycopyForeignCalls) {
+        this.arrayCopyLookup = arraycopyForeignCalls;
     }
 
     @Override
-    public ForeignCallDescriptor lookupCheckcastArraycopyDescriptor(boolean uninit) {
-        throw VMError.unsupportedFeature("Fast ArrayCopy not supported yet.");
-    }
-
-    @Override
-    public ForeignCallDescriptor lookupArraycopyDescriptor(JavaKind kind, boolean aligned, boolean disjoint, boolean uninit, boolean killAny) {
-        throw VMError.unsupportedFeature("Fast ArrayCopy not supported yet.");
+    public ForeignCallDescriptor lookupArraycopyDescriptor(JavaKind kind, boolean aligned, boolean disjoint, boolean uninit, LocationIdentity killedLocation) {
+        if (arrayCopyLookup != null) {
+            return arrayCopyLookup.lookupArraycopyDescriptor(kind, aligned, disjoint, uninit, killedLocation);
+        } else {
+            throw VMError.unsupportedFeature("Fast ArrayCopy not supported yet.");
+        }
     }
 }

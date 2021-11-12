@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -32,7 +32,6 @@ package com.oracle.truffle.llvm.runtime.debug.debugexpr.nodes;
 import java.util.List;
 
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.Scope;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.interop.ArityException;
@@ -44,17 +43,19 @@ import com.oracle.truffle.llvm.runtime.LLVMFunctionDescriptor;
 import com.oracle.truffle.llvm.runtime.debug.debugexpr.parser.DebugExprException;
 import com.oracle.truffle.llvm.runtime.debug.debugexpr.parser.DebugExprType;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMExpressionNode;
+import com.oracle.truffle.llvm.runtime.pointer.LLVMManagedPointer;
 import com.oracle.truffle.llvm.runtime.types.Type;
 
 public abstract class DebugExprFunctionCallNode extends LLVMExpressionNode {
 
     private final String functionName;
     @Children private final LLVMExpressionNode[] arguments;
-    private Iterable<Scope> scopes;
 
-    public DebugExprFunctionCallNode(String functionName, List<DebugExpressionPair> arguments, Iterable<Scope> scopes) {
+    private final Object scope;
+
+    public DebugExprFunctionCallNode(String functionName, List<DebugExpressionPair> arguments, Object scope) {
         this.functionName = functionName;
-        this.scopes = scopes;
+        this.scope = scope;
         this.arguments = new LLVMExpressionNode[arguments.size()];
         for (int i = 0; i < this.arguments.length; i++) {
             this.arguments[i] = arguments.get(i).getNode();
@@ -64,57 +65,57 @@ public abstract class DebugExprFunctionCallNode extends LLVMExpressionNode {
     @TruffleBoundary
     public DebugExprType getType() {
         InteropLibrary library = InteropLibrary.getFactory().getUncached();
-        for (Scope scope : scopes) {
-            Object vars = scope.getVariables();
-            if (library.isMemberExisting(vars, functionName)) {
-                try {
-                    Object member = library.readMember(vars, functionName);
-                    try {
-                        LLVMFunctionDescriptor ldv = (LLVMFunctionDescriptor) member;
-                        Type returnType = ldv.getLLVMFunction().getType().getReturnType();
-                        DebugExprType t = DebugExprType.getTypeFromLLVMType(returnType);
-                        return t;
-                    } catch (ClassCastException e) {
+        if (library.isMemberReadable(scope, functionName)) {
+            try {
+                Object member = library.readMember(scope, functionName);
+                if (LLVMManagedPointer.isInstance(member)) {
+                    LLVMManagedPointer pointer = LLVMManagedPointer.cast(member);
+                    if (pointer.getOffset() == 0) {
+                        member = pointer.getObject();
                     }
-                    throw DebugExprException.create(this, "no type found for function %s", functionName);
-                } catch (UnsupportedMessageException e) {
-                    throw DebugExprException.create(this, "error while accessing function %s", functionName);
-                } catch (UnknownIdentifierException e) {
-                    throw DebugExprException.symbolNotFound(this, functionName, null);
                 }
+                if (member instanceof LLVMFunctionDescriptor) {
+                    LLVMFunctionDescriptor ldv = (LLVMFunctionDescriptor) member;
+                    Type returnType = ldv.getLLVMFunction().getType().getReturnType();
+                    DebugExprType t = DebugExprType.getTypeFromLLVMType(returnType);
+                    return t;
+                } else {
+                    throw DebugExprException.create(this, "variable %s does not point to a function", functionName);
+                }
+            } catch (UnsupportedMessageException e) {
+                throw DebugExprException.create(this, "error while accessing function %s", functionName);
+            } catch (UnknownIdentifierException e) {
+                // fallthrough
             }
         }
-        throw DebugExprException.create(this, "no type found for function %s", functionName);
+        throw DebugExprException.symbolNotFound(this, functionName, null);
     }
 
     @Specialization
     Object doCall(VirtualFrame frame) {
         InteropLibrary library = InteropLibrary.getFactory().getUncached();
-        for (Scope scope : scopes) {
-            Object vars = scope.getVariables();
-            if (library.isMemberExisting(vars, functionName)) {
-                try {
-                    Object member = library.readMember(vars, functionName);
-                    if (library.isExecutable(member)) {
-                        try {
-                            Object[] argumentArr = new Object[arguments.length];
-                            for (int i = 0; i < arguments.length; i++) {
-                                argumentArr[i] = arguments[i].executeGeneric(frame);
-                            }
-                            return library.execute(member, argumentArr);
-                        } catch (UnsupportedTypeException e) {
-                            throw DebugExprException.create(this, "actual and formal parameters of %s do not match", functionName);
-                        } catch (ArityException e) {
-                            throw DebugExprException.create(this, "%s requires %d argument(s) but got %d", functionName, e.getExpectedArity(), e.getActualArity());
+        if (library.isMemberExisting(scope, functionName)) {
+            try {
+                Object member = library.readMember(scope, functionName);
+                if (library.isExecutable(member)) {
+                    try {
+                        Object[] argumentArr = new Object[arguments.length];
+                        for (int i = 0; i < arguments.length; i++) {
+                            argumentArr[i] = arguments[i].executeGeneric(frame);
                         }
-                    } else {
-                        throw DebugExprException.create(this, "%s is not invocable", functionName);
+                        return library.execute(member, argumentArr);
+                    } catch (UnsupportedTypeException e) {
+                        throw DebugExprException.create(this, "actual and formal parameters of %s do not match", functionName);
+                    } catch (ArityException e) {
+                        throw DebugExprException.create(this, "%s requires %d argument(s) but got %d", functionName, e.getExpectedMinArity(), e.getActualArity());
                     }
-                } catch (UnsupportedMessageException e1) {
-                    throw DebugExprException.create(this, "Error while accessing function %s", functionName);
-                } catch (UnknownIdentifierException e1) {
-                    throw DebugExprException.symbolNotFound(this, e1.getUnknownIdentifier(), functionName);
+                } else {
+                    throw DebugExprException.create(this, "%s is not invocable", functionName);
                 }
+            } catch (UnsupportedMessageException e1) {
+                throw DebugExprException.create(this, "Error while accessing function %s", functionName);
+            } catch (UnknownIdentifierException e1) {
+                throw DebugExprException.symbolNotFound(this, e1.getUnknownIdentifier(), functionName);
             }
         }
         throw DebugExprException.symbolNotFound(this, functionName, null);

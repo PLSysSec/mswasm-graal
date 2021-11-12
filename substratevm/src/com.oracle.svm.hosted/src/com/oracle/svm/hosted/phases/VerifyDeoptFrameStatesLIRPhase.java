@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,13 +36,15 @@ import org.graalvm.compiler.lir.LIRFrameState;
 import org.graalvm.compiler.lir.LIRInstruction;
 import org.graalvm.compiler.lir.framemap.FrameMap;
 import org.graalvm.compiler.lir.gen.LIRGenerationResult;
-import org.graalvm.compiler.lir.phases.PostAllocationOptimizationPhase;
+import org.graalvm.compiler.lir.phases.FinalCodeAnalysisPhase;
 
+import com.oracle.svm.core.ReservedRegisters;
 import com.oracle.svm.core.graal.lir.DeoptEntryOp;
 import com.oracle.svm.core.heap.SubstrateReferenceMap;
 import com.oracle.svm.hosted.meta.HostedMethod;
 
 import jdk.vm.ci.code.BytecodeFrame;
+import jdk.vm.ci.code.StackLockValue;
 import jdk.vm.ci.code.StackSlot;
 import jdk.vm.ci.code.TargetDescription;
 import jdk.vm.ci.code.ValueUtil;
@@ -54,9 +56,9 @@ import jdk.vm.ci.meta.JavaValue;
  * values would not be restored during deoptimization, so the value would be undefined after
  * deoptimization.
  */
-public class VerifyDeoptFrameStatesLIRPhase extends PostAllocationOptimizationPhase {
+public class VerifyDeoptFrameStatesLIRPhase extends FinalCodeAnalysisPhase {
     @Override
-    protected void run(TargetDescription target, LIRGenerationResult lirGenRes, PostAllocationOptimizationContext context) {
+    protected void run(TargetDescription target, LIRGenerationResult lirGenRes, FinalCodeAnalysisContext context) {
         new Instance().run(lirGenRes);
     }
 
@@ -106,13 +108,21 @@ class Instance {
                      * Remove stack slot information for all slots which already have a
                      * representative in the bytecode frame.
                      */
-                    for (JavaValue value : frame.values) {
+                    for (JavaValue v : frame.values) {
+                        JavaValue value = v;
+                        if (value instanceof StackLockValue) {
+                            StackLockValue lock = (StackLockValue) value;
+                            assert ValueUtil.isIllegal(lock.getSlot());
+                            value = lock.getOwner();
+                        }
                         if (value instanceof StackSlot) {
                             StackSlot stackSlot = (StackSlot) value;
                             int offset = stackSlot.getOffset(frameMap.totalFrameSize());
                             debug.log("remove slot %d: %s", offset, stackSlot);
                             cleanedStackSlots.remove(offset);
                         } else if (ValueUtil.isConstantJavaValue(value) || ValueUtil.isIllegalJavaValue(value)) {
+                            /* Nothing to do. */
+                        } else if (ReservedRegisters.singleton().isAllowedInFrameState(value)) {
                             /* Nothing to do. */
                         } else {
                             throw shouldNotReachHere("unknown value in deopt target: " + value);

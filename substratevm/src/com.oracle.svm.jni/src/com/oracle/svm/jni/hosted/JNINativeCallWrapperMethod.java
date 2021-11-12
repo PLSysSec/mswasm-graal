@@ -26,8 +26,6 @@ package com.oracle.svm.jni.hosted;
 
 // Checkstyle: allow reflection
 
-import static jdk.vm.ci.services.Services.IS_BUILDING_NATIVE_IMAGE;
-
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,12 +35,13 @@ import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.core.common.type.TypeReference;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.nodes.ConstantNode;
-import org.graalvm.compiler.nodes.FixedGuardNode;
 import org.graalvm.compiler.nodes.InvokeWithExceptionNode;
 import org.graalvm.compiler.nodes.LogicNode;
 import org.graalvm.compiler.nodes.PiNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode.BytecodeExceptionKind;
+import org.graalvm.compiler.nodes.extended.GuardingNode;
 import org.graalvm.compiler.nodes.java.InstanceOfNode;
 import org.graalvm.compiler.nodes.java.MonitorEnterNode;
 import org.graalvm.compiler.nodes.java.MonitorExitNode;
@@ -62,9 +61,8 @@ import com.oracle.svm.jni.nativeapi.JNIEnvironment;
 import com.oracle.svm.jni.nativeapi.JNIObjectHandle;
 
 import jdk.vm.ci.meta.Constant;
-import jdk.vm.ci.meta.DeoptimizationAction;
-import jdk.vm.ci.meta.DeoptimizationReason;
 import jdk.vm.ci.meta.JavaConstant;
+import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.JavaType;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
@@ -127,7 +125,7 @@ class JNINativeCallWrapperMethod extends CustomSubstitutionMethod {
         List<ValueNode> javaArguments = kit.loadArguments(javaArgumentTypes);
 
         List<ValueNode> jniArguments = new ArrayList<>(2 + javaArguments.size());
-        List<JavaType> jniArgumentTypes = new ArrayList<>(jniArguments.size());
+        List<JavaType> jniArgumentTypes = new ArrayList<>(2 + javaArguments.size());
         JavaType environmentType = providers.getMetaAccess().lookupJavaType(JNIEnvironment.class);
         JavaType objectHandleType = providers.getMetaAccess().lookupJavaType(JNIObjectHandle.class);
         jniArguments.add(environment);
@@ -163,7 +161,7 @@ class JNINativeCallWrapperMethod extends CustomSubstitutionMethod {
                 DynamicHub hub = (DynamicHub) SubstrateObjectConstant.asObject(hubConstant);
                 monitorObject = ConstantNode.forConstant(SubstrateObjectConstant.forObject(hub), providers.getMetaAccess(), graph);
             } else {
-                monitorObject = javaArguments.get(0);
+                monitorObject = kit.maybeCreateExplicitNullCheck(javaArguments.get(0));
             }
             MonitorIdNode monitorId = graph.add(new MonitorIdNode(kit.getFrameState().lockDepth(false)));
             MonitorEnterNode monitorEnter = kit.append(new MonitorEnterNode(monitorObject, monitorId));
@@ -190,33 +188,23 @@ class JNINativeCallWrapperMethod extends CustomSubstitutionMethod {
         kit.rethrowPendingException();
         if (javaReturnType.getJavaKind().isObject()) {
             // Just before return to always run the epilogue and never suppress a pending exception
-            returnValue = castObject(kit, returnValue, (ResolvedJavaType) javaReturnType, purpose);
+            returnValue = castObject(kit, returnValue, (ResolvedJavaType) javaReturnType);
         }
         kit.createReturn(returnValue, javaReturnType.getJavaKind());
 
         return kit.finalizeGraph();
     }
 
-    private static ValueNode castObject(JNIGraphKit kit, ValueNode object, ResolvedJavaType type, Purpose purpose) {
+    private static ValueNode castObject(JNIGraphKit kit, ValueNode object, ResolvedJavaType type) {
         ValueNode casted = object;
         if (!type.isJavaLangObject()) { // safe cast to expected type
             TypeReference typeRef = TypeReference.createTrusted(kit.getAssumptions(), type);
-            if (IS_BUILDING_NATIVE_IMAGE && purpose == Purpose.AOT_COMPILATION) {
-                // Workaround GR-14106 until JVMCI 0.56
-                // CompilerToVM.getFailedSpeculations returns an Object[] containing byte[]s instead
-                // of a byte[][]. During analysis we generate the proper instanceof to produce this
-                // type but drop the instanceof in the final code generation so we don't throw an
-                // exception.
-                // The code will work ok because the layouts are the same.
+            LogicNode condition = kit.append(InstanceOfNode.createAllowNull(typeRef, object, null, null));
+            if (!condition.isTautology()) {
                 ObjectStamp stamp = StampFactory.object(typeRef, false);
-                casted = kit.append(PiNode.create(object, stamp));
-            } else {
-                LogicNode condition = kit.append(InstanceOfNode.createAllowNull(typeRef, object, null, null));
-                if (!condition.isTautology()) {
-                    ObjectStamp stamp = StampFactory.object(typeRef, false);
-                    FixedGuardNode fixedGuard = kit.append(new FixedGuardNode(condition, DeoptimizationReason.ClassCastException, DeoptimizationAction.None, false));
-                    casted = kit.append(PiNode.create(object, stamp, fixedGuard));
-                }
+                ValueNode expectedClass = kit.createConstant(kit.getConstantReflection().asJavaClass(type), JavaKind.Object);
+                GuardingNode guard = kit.createCheckThrowingBytecodeException(condition, false, BytecodeExceptionKind.CLASS_CAST, object, expectedClass);
+                casted = kit.append(PiNode.create(object, stamp, guard.asNode()));
             }
         }
         return casted;

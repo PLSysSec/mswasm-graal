@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,6 +33,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.graalvm.compiler.bytecode.BytecodeProvider;
@@ -106,12 +107,6 @@ public final class MethodSubstitutionPlugin implements InvocationPlugin {
         this.substituteName = substituteName;
         this.parameters = parameters;
         this.originalIsStatic = parameters.length == 0 || parameters[0] != InvocationPlugin.Receiver.class;
-    }
-
-    @Override
-    public boolean inlineOnly() {
-        // Conservatively assume MacroNodes may be used in a substitution
-        return true;
     }
 
     /**
@@ -218,11 +213,11 @@ public final class MethodSubstitutionPlugin implements InvocationPlugin {
     }
 
     @Override
-    public StackTraceElement getApplySourceLocation(MetaAccessProvider metaAccess) {
+    public String getSourceLocation() {
         Class<?> c = getClass();
         for (Method m : c.getDeclaredMethods()) {
             if (m.getName().equals("execute")) {
-                return metaAccess.lookupJavaMethod(m).asStackTraceElement(0);
+                return String.format("%s.%s()", m.getClass().getName(), m.getName());
             }
         }
         throw new GraalError("could not find method named \"execute\" in " + c.getName());
@@ -232,6 +227,28 @@ public final class MethodSubstitutionPlugin implements InvocationPlugin {
     public String toString() {
         return String.format("%s[%s.%s(%s)]", getClass().getSimpleName(), declaringClass.getName(), substituteName,
                         Arrays.asList(parameters).stream().map(c -> c.getTypeName()).collect(Collectors.joining(", ")));
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        MethodSubstitutionPlugin that = (MethodSubstitutionPlugin) o;
+        return originalIsStatic == that.originalIsStatic &&
+                        Objects.equals(declaringClass, that.declaringClass) &&
+                        Objects.equals(substituteName, that.substituteName) &&
+                        Objects.equals(originalName, that.originalName) &&
+                        Arrays.equals(parameters, that.parameters);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hash(declaringClass, substituteName, originalName, originalIsStatic);
+        return result;
     }
 
     public String originalMethodAsString() {

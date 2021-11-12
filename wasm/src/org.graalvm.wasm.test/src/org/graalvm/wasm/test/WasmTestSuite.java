@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,7 @@
  */
 package org.graalvm.wasm.test;
 
+import org.graalvm.wasm.test.suites.WasmImplementationLimitationsSuite;
 import org.graalvm.wasm.test.suites.arithmetic.Float32Suite;
 import org.graalvm.wasm.test.suites.arithmetic.Float64Suite;
 import org.graalvm.wasm.test.suites.arithmetic.Integer32Suite;
@@ -48,11 +49,14 @@ import org.graalvm.wasm.test.suites.control.BlockWithLocalsSuite;
 import org.graalvm.wasm.test.suites.control.BranchBlockSuite;
 import org.graalvm.wasm.test.suites.control.IfThenElseSuite;
 import org.graalvm.wasm.test.suites.control.LoopBlockSuite;
+import org.graalvm.wasm.test.suites.control.MultipleFunctionsSuite;
 import org.graalvm.wasm.test.suites.control.SimpleBlockSuite;
 import org.graalvm.wasm.test.suites.linker.LinkerSuite;
 import org.graalvm.wasm.test.suites.memory.MemorySuite;
-import org.graalvm.wasm.test.suites.wasi.WasiSdkSuite;
-import org.graalvm.wasm.test.suites.control.MultipleFunctionsSuite;
+import org.graalvm.wasm.test.suites.validation.ValidationSuite;
+import org.graalvm.wasm.test.suites.wasi.WasiSuite;
+import org.graalvm.wasm.test.suites.webassembly.EmscriptenSuite;
+import org.graalvm.wasm.test.suites.webassembly.IssueSuite;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
@@ -78,10 +82,14 @@ import org.graalvm.wasm.test.suites.mswasm.MSWasmSuite;
                 IssueSuite.class,
                 MultipleFunctionsSuite.class,
                 EmscriptenSuite.class,
-                WasiSdkSuite.class,
+                WasiSuite.class,
                 LinkerSuite.class,
                 WasmPolyglotTestSuite.class,
                 MSWasmSuite.class,
+                WasmJsApiSuite.class,
+                ValidationSuite.class,
+                WasmLateLinkingSuite.class,
+                WasmImplementationLimitationsSuite.class,
 })
 public class WasmTestSuite {
     @Test

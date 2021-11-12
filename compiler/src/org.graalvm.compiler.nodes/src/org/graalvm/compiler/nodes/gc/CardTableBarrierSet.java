@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2019, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -27,6 +27,7 @@ package org.graalvm.compiler.nodes.gc;
 
 import org.graalvm.compiler.core.common.type.AbstractObjectStamp;
 import org.graalvm.compiler.debug.GraalError;
+import org.graalvm.compiler.nodes.FixedWithNextNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
@@ -158,8 +159,10 @@ public class CardTableBarrierSet implements BarrierSet {
     public boolean isMatchingBarrier(FixedAccessNode n, WriteBarrier barrier) {
         if (n instanceof ReadNode) {
             return false;
-        } else if (n instanceof WriteNode || n instanceof LoweredAtomicReadAndWriteNode || n instanceof AbstractCompareAndSwapNode || n instanceof ArrayRangeWrite) {
+        } else if (n instanceof WriteNode || n instanceof LoweredAtomicReadAndWriteNode || n instanceof AbstractCompareAndSwapNode) {
             return barrier instanceof SerialWriteBarrier && matches(n, (SerialWriteBarrier) barrier);
+        } else if (n instanceof ArrayRangeWrite) {
+            return barrier instanceof SerialArrayRangeWriteBarrier && matches((ArrayRangeWrite) n, (SerialArrayRangeWriteBarrier) barrier);
         } else {
             throw GraalError.shouldNotReachHere("Unexpected node: " + n.getClass());
         }
@@ -169,7 +172,7 @@ public class CardTableBarrierSet implements BarrierSet {
         if (needsWriteBarrier(write)) {
             StructuredGraph graph = write.asNode().graph();
             SerialArrayRangeWriteBarrier serialArrayRangeWriteBarrier = graph.add(new SerialArrayRangeWriteBarrier(write.getAddress(), write.getLength(), write.getElementStride()));
-            graph.addAfterFixed(write.asNode(), serialArrayRangeWriteBarrier);
+            graph.addAfterFixed(write.postBarrierInsertionPosition(), serialArrayRangeWriteBarrier);
         }
     }
 
@@ -209,7 +212,7 @@ public class CardTableBarrierSet implements BarrierSet {
     }
 
     private static boolean hasWriteBarrier(ArrayRangeWrite write) {
-        FixedAccessNode node = write.asNode();
+        FixedWithNextNode node = write.asFixedWithNextNode();
         return node.next() instanceof SerialArrayRangeWriteBarrier && matches(write, (SerialArrayRangeWriteBarrier) node.next());
     }
 
@@ -235,5 +238,10 @@ public class CardTableBarrierSet implements BarrierSet {
 
     private static boolean matches(ArrayRangeWrite node, SerialArrayRangeWriteBarrier barrier) {
         return barrier.getAddress() == node.getAddress() && node.getLength() == barrier.getLength() && node.getElementStride() == barrier.getElementStride();
+    }
+
+    @Override
+    public boolean mayNeedPreWriteBarrier(JavaKind storageKind) {
+        return false;
     }
 }

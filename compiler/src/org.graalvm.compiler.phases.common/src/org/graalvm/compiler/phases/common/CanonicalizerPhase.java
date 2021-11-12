@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,16 +25,17 @@
 package org.graalvm.compiler.phases.common;
 
 import static org.graalvm.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.CFG_SIMPLIFICATION;
+import static org.graalvm.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.FINAL_CANONICALIZATION;
 import static org.graalvm.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.GVN;
 import static org.graalvm.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.READ_CANONICALIZATION;
 
 import java.util.EnumSet;
 
-import org.graalvm.compiler.core.common.spi.ConstantFieldProvider;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.debug.CounterKey;
 import org.graalvm.compiler.debug.DebugCloseable;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.GraalGraphError;
 import org.graalvm.compiler.graph.Graph;
 import org.graalvm.compiler.graph.Graph.Mark;
@@ -44,9 +45,6 @@ import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.Node.IndirectCanonicalization;
 import org.graalvm.compiler.graph.NodeClass;
 import org.graalvm.compiler.graph.NodeWorkList;
-import org.graalvm.compiler.graph.spi.Canonicalizable;
-import org.graalvm.compiler.graph.spi.Canonicalizable.BinaryCommutative;
-import org.graalvm.compiler.graph.spi.SimplifierTool;
 import org.graalvm.compiler.nodeinfo.InputType;
 import org.graalvm.compiler.nodes.AbstractBeginNode;
 import org.graalvm.compiler.nodes.AbstractMergeNode;
@@ -57,9 +55,18 @@ import org.graalvm.compiler.nodes.FixedWithNextNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.StartNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
+import org.graalvm.compiler.nodes.StructuredGraph.StageFlag;
 import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.WithExceptionNode;
 import org.graalvm.compiler.nodes.calc.FloatingNode;
+import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
+import org.graalvm.compiler.nodes.spi.Canonicalizable;
+import org.graalvm.compiler.nodes.spi.Canonicalizable.BinaryCommutative;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
+import org.graalvm.compiler.nodes.spi.CoreProvidersDelegate;
+import org.graalvm.compiler.nodes.spi.Simplifiable;
+import org.graalvm.compiler.nodes.spi.SimplifierTool;
 import org.graalvm.compiler.nodes.util.GraphUtil;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.phases.BasePhase;
@@ -67,15 +74,54 @@ import org.graalvm.compiler.phases.Phase;
 
 import jdk.vm.ci.meta.Assumptions;
 import jdk.vm.ci.meta.Constant;
-import jdk.vm.ci.meta.ConstantReflectionProvider;
-import jdk.vm.ci.meta.MetaAccessProvider;
 
 public class CanonicalizerPhase extends BasePhase<CoreProviders> {
 
+    /**
+     * Constants for types of canonicalization that can be performed.
+     *
+     * {@link Canonicalizable} and {@link CanonicalizerPhase} combine different optimizations into a
+     * single API. This includes global value numbering, strength reductions, stamp based
+     * optimizations and many more. This feature enum groups them into different categories.
+     */
     public enum CanonicalizerFeature {
+        /**
+         * Determines if {@link CanonicalizerPhase} is allowed to canonicalize memory read
+         * operations. See {@link CanonicalizerTool#canonicalizeReads()}.
+         */
         READ_CANONICALIZATION,
+        /**
+         * Determines if the canonicalizer is allowed to change {@link ControlFlowGraph} of the
+         * currently compiled method. This includes removal/deletion/insertion/etc of
+         * {@link FixedNode}.
+         */
         CFG_SIMPLIFICATION,
-        GVN
+        /**
+         * Determines if the canonicalizer is allowed to perform global value numbering. See
+         * {@link StructuredGraph#findDuplicate(Node)} for details.
+         */
+        GVN,
+        /**
+         * Determines if the application of the canonicalizer is its "FINAL" one, i.e., after this
+         * application of the phase no further canonicalizations are made to a
+         * {@link StructuredGraph}. See {@link CanonicalizerTool#finalCanonicalization()} for more
+         * details.
+         */
+        FINAL_CANONICALIZATION(false);
+
+        /**
+         * Determines if the feature is enabled per default if an unrestricted
+         * {@link CanonicalizerPhase} is created.
+         */
+        final boolean enabledByDefault;
+
+        CanonicalizerFeature() {
+            this(true);
+        }
+
+        CanonicalizerFeature(boolean defaultValue) {
+            this.enabledByDefault = defaultValue;
+        }
     }
 
     private static final int MAX_ITERATION_PER_NODE = 10;
@@ -85,20 +131,11 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
     private static final CounterKey COUNTER_INFER_STAMP_CALLED = DebugContext.counter("InferStampCalled");
     private static final CounterKey COUNTER_STAMP_CHANGED = DebugContext.counter("StampChanged");
     private static final CounterKey COUNTER_SIMPLIFICATION_CONSIDERED_NODES = DebugContext.counter("SimplificationConsideredNodes");
+    private static final CounterKey COUNTER_CUSTOM_SIMPLIFICATION_CONSIDERED_NODES = DebugContext.counter("CustomSimplificationConsideredNodes");
     private static final CounterKey COUNTER_GLOBAL_VALUE_NUMBERING_HITS = DebugContext.counter("GlobalValueNumberingHits");
 
     private final EnumSet<CanonicalizerFeature> features;
-    private final CustomCanonicalization customCanonicalization;
     private final CustomSimplification customSimplification;
-
-    public interface CustomCanonicalization {
-        /**
-         * @param node the node to be canonicalized
-         * @return the same node if no action should be taken, {@code null} if the node should be
-         *         deleted, or a new node that should replace the given node
-         */
-        Node canonicalize(Node node);
-    }
 
     public interface CustomSimplification {
         /**
@@ -109,57 +146,70 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
     }
 
     protected CanonicalizerPhase(EnumSet<CanonicalizerFeature> features) {
-        this(null, null, features);
+        this(null, features);
     }
 
     protected CanonicalizerPhase() {
-        this(null, null, EnumSet.allOf(CanonicalizerFeature.class));
+        this(null, defaultFeatures());
     }
 
-    protected CanonicalizerPhase(CustomCanonicalization customCanonicalization, CustomSimplification customSimplification) {
-        this(customCanonicalization, customSimplification, EnumSet.allOf(CanonicalizerFeature.class));
+    protected CanonicalizerPhase(CustomSimplification customSimplification) {
+        this(customSimplification, defaultFeatures());
     }
 
-    protected CanonicalizerPhase(CustomCanonicalization customCanonicalization, CustomSimplification customSimplification, EnumSet<CanonicalizerFeature> features) {
-        this.customCanonicalization = customCanonicalization;
+    protected CanonicalizerPhase(CustomSimplification customSimplification, EnumSet<CanonicalizerFeature> features) {
         this.customSimplification = customSimplification;
         this.features = features;
     }
 
-    public CanonicalizerPhase copyWithCustomCanonicalization(CustomCanonicalization newCanonicalization) {
-        return new CanonicalizerPhase(newCanonicalization, customSimplification, features);
-    }
-
     public CanonicalizerPhase copyWithCustomSimplification(CustomSimplification newSimplification) {
-        return new CanonicalizerPhase(customCanonicalization, newSimplification, features);
+        return new CanonicalizerPhase(newSimplification, features);
     }
 
     public CanonicalizerPhase copyWithoutGVN() {
         EnumSet<CanonicalizerFeature> newFeatures = EnumSet.copyOf(features);
         newFeatures.remove(GVN);
-        return new CanonicalizerPhase(customCanonicalization, customSimplification, newFeatures);
+        return new CanonicalizerPhase(customSimplification, newFeatures);
     }
 
     public CanonicalizerPhase copyWithoutSimplification() {
         EnumSet<CanonicalizerFeature> newFeatures = EnumSet.copyOf(features);
         newFeatures.remove(CFG_SIMPLIFICATION);
-        return new CanonicalizerPhase(customCanonicalization, customSimplification, newFeatures);
+        return new CanonicalizerPhase(customSimplification, newFeatures);
+    }
+
+    public CanonicalizerPhase copyWithoutFurtherCanonicalizations() {
+        EnumSet<CanonicalizerFeature> newFeatures = EnumSet.copyOf(features);
+        newFeatures.add(FINAL_CANONICALIZATION);
+        return new CanonicalizerPhase(customSimplification, newFeatures);
     }
 
     public static CanonicalizerPhase create() {
-        return new CanonicalizerPhase(null, null, EnumSet.allOf(CanonicalizerFeature.class));
+        return new CanonicalizerPhase(null, defaultFeatures());
     }
 
     public static CanonicalizerPhase createWithoutReadCanonicalization() {
-        return new CanonicalizerPhase(EnumSet.complementOf(EnumSet.of(READ_CANONICALIZATION)));
+        return new CanonicalizerPhase(defaultFeaturesWithout(READ_CANONICALIZATION));
     }
 
     public static CanonicalizerPhase createWithoutGVN() {
-        return new CanonicalizerPhase(EnumSet.complementOf(EnumSet.of(GVN)));
+        return new CanonicalizerPhase(defaultFeaturesWithout(GVN));
     }
 
     public static CanonicalizerPhase createWithoutCFGSimplification() {
-        return new CanonicalizerPhase(EnumSet.complementOf(EnumSet.of(CFG_SIMPLIFICATION)));
+        return new CanonicalizerPhase(defaultFeaturesWithout(CFG_SIMPLIFICATION));
+    }
+
+    private static EnumSet<CanonicalizerFeature> defaultFeatures() {
+        EnumSet<CanonicalizerFeature> features = EnumSet.allOf(CanonicalizerFeature.class);
+        features.removeIf(f -> !f.enabledByDefault);
+        return features;
+    }
+
+    private static EnumSet<CanonicalizerFeature> defaultFeaturesWithout(CanonicalizerFeature feature) {
+        EnumSet<CanonicalizerFeature> features = defaultFeatures();
+        features.remove(feature);
+        return features;
     }
 
     @Override
@@ -248,6 +298,9 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
 
         @Override
         protected void run(StructuredGraph graph) {
+            if (graph.isAfterStage(StageFlag.FINAL_CANONICALIZATION)) {
+                GraalError.shouldNotReachHere("cannot run further canonicalizations after the final canonicalization");
+            }
             this.debug = graph.getDebug();
             boolean wholeGraph = newNodesMark == null || newNodesMark.isStart();
             if (initWorkingSet == null) {
@@ -262,6 +315,9 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
 
             tool = new Tool(graph.getAssumptions(), graph.getOptions());
             processWorkSet(graph);
+            if (features.contains(FINAL_CANONICALIZATION)) {
+                graph.setAfterStage(StageFlag.FINAL_CANONICALIZATION);
+            }
         }
 
         @SuppressWarnings("try")
@@ -335,7 +391,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                 if (constant != null && !(node instanceof ConstantNode)) {
                     ConstantNode stampConstant = ConstantNode.forConstant(valueNode.stamp(NodeView.DEFAULT), constant, context.getMetaAccess(), graph);
                     debug.log("Canonicalizer: constant stamp replaces %1s with %1s", valueNode, stampConstant);
-                    valueNode.replaceAtUsages(InputType.Value, stampConstant);
+                    valueNode.replaceAtUsages(stampConstant, InputType.Value);
                     GraphUtil.tryKillUnused(valueNode);
                     return true;
                 } else if (improvedStamp) {
@@ -384,14 +440,9 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     COUNTER_CANONICALIZATION_CONSIDERED_NODES.increment(debug);
                     Node canonical = node;
                     try (AutoCloseable verify = getCanonicalizeableContractAssertion(node)) {
-                        if (customCanonicalization != null) {
-                            canonical = customCanonicalization.canonicalize(node);
-                        }
-                        if (canonical == node) {
-                            canonical = ((Canonicalizable) node).canonical(tool);
-                            if (canonical == node && nodeClass.isCommutative()) {
-                                canonical = ((BinaryCommutative<?>) node).maybeCommuteInputs();
-                            }
+                        canonical = ((Canonicalizable) node).canonical(tool);
+                        if (canonical == node && nodeClass.isCommutative()) {
+                            canonical = ((BinaryCommutative<?>) node).maybeCommuteInputs();
                         }
                     } catch (Throwable e) {
                         throw new GraalGraphError(e).addContext(node);
@@ -401,19 +452,29 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     }
                 }
 
-                if (features.contains(CFG_SIMPLIFICATION) && nodeClass.isSimplifiable()) {
-                    debug.log(DebugContext.VERBOSE_LEVEL, "Canonicalizer: simplifying %s", node);
-                    COUNTER_SIMPLIFICATION_CONSIDERED_NODES.increment(debug);
+                if (features.contains(CFG_SIMPLIFICATION)) {
                     if (customSimplification != null) {
+                        debug.log(DebugContext.VERBOSE_LEVEL, "Canonicalizer: customSimplification simplifying %s", node);
+                        COUNTER_CUSTOM_SIMPLIFICATION_CONSIDERED_NODES.increment(debug);
+
+                        int modCount = node.graph().getModificationCount();
                         customSimplification.simplify(node, tool);
-                    }
-                    if (node.isAlive()) {
-                        node.simplify(tool);
-                        if (node.isDeleted()) {
-                            debug.log("Canonicalizer: simplified %s", node);
+                        if (node.isDeleted() || modCount != node.graph().getModificationCount()) {
+                            debug.log("Canonicalizer: customSimplification simplified %s", node);
+                            return true;
                         }
                     }
-                    return node.isDeleted();
+                    if (nodeClass.isSimplifiable()) {
+                        debug.log(DebugContext.VERBOSE_LEVEL, "Canonicalizer: simplifying %s", node);
+                        COUNTER_SIMPLIFICATION_CONSIDERED_NODES.increment(debug);
+
+                        int modCount = node.graph().getModificationCount();
+                        ((Simplifiable) node).simplify(tool);
+                        if (node.isDeleted() || modCount != node.graph().getModificationCount()) {
+                            debug.log("Canonicalizer: simplified %s", node);
+                            return true;
+                        }
+                    }
                 }
                 return false;
             } catch (Throwable throwable) {
@@ -421,22 +482,22 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
             }
         }
 
-// @formatter:off
-//     cases:                                           original node:
-//                                         |Floating|Fixed-unconnected|Fixed-connected|
-//                                         --------------------------------------------
-//                                     null|   1    |        X        |       3       |
-//                                         --------------------------------------------
-//                                 Floating|   2    |        X        |       4       |
-//       canonical node:                   --------------------------------------------
-//                        Fixed-unconnected|   X    |        X        |       5       |
-//                                         --------------------------------------------
-//                          Fixed-connected|   2    |        X        |       6       |
-//                                         --------------------------------------------
-//                              ControlSink|   X    |        X        |       7       |
-//                                         --------------------------------------------
-//       X: must not happen (checked with assertions)
-// @formatter:on
+        // @formatter:off
+        //     cases:                                           original node:
+        //                                         |Floating|Fixed-unconnected|Fixed-connected|
+        //                                         --------------------------------------------
+        //                                     null|   1    |        X        |       3       |
+        //                                         --------------------------------------------
+        //                                 Floating|   2    |        X        |       4       |
+        //       canonical node:                   --------------------------------------------
+        //                        Fixed-unconnected|   X    |        X        |       5       |
+        //                                         --------------------------------------------
+        //                          Fixed-connected|   2    |        X        |       6       |
+        //                                         --------------------------------------------
+        //                              ControlSink|   X    |        X        |       7       |
+        //                                         --------------------------------------------
+        //       X: must not happen (checked with assertions)
+        // @formatter:on
         private boolean performReplacement(final Node node, Node newCanonical) {
             if (newCanonical == node) {
                 debug.log(DebugContext.VERBOSE_LEVEL, "Canonicalizer: work on %1s", node);
@@ -464,6 +525,49 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                         fixed.replaceAtPredecessor(canonical);
                         GraphUtil.killCFG(fixed);
                         return true;
+
+                    } else if (fixed instanceof WithExceptionNode) {
+                        /*
+                         * A fixed node with an exception edge is handled similarly to a
+                         * FixedWithNextNode. The only difference is that the exception edge needs
+                         * to be killed as part of canonicalization (unless the canonical node is a
+                         * new WithExceptionNode too).
+                         */
+                        WithExceptionNode withException = (WithExceptionNode) fixed;
+
+                        // When removing a fixed node, new canonicalization
+                        // opportunities for its successor may arise
+                        assert withException.next() != null;
+                        tool.addToWorkList(withException.next());
+                        if (canonical == null) {
+                            // case 3
+                            node.replaceAtUsages(null);
+                            GraphUtil.unlinkAndKillExceptionEdge(withException);
+                            GraphUtil.killWithUnusedFloatingInputs(withException);
+                        } else if (canonical instanceof FloatingNode) {
+                            // case 4
+                            withException.killExceptionEdge();
+                            graph.replaceSplitWithFloating(withException, (FloatingNode) canonical, withException.next());
+                        } else {
+                            assert canonical instanceof FixedNode;
+                            if (canonical.predecessor() == null) {
+                                assert !canonical.cfgSuccessors().iterator().hasNext() : "replacement " + canonical + " shouldn't have successors";
+                                // case 5
+                                if (canonical instanceof WithExceptionNode) {
+                                    graph.replaceWithExceptionSplit(withException, (WithExceptionNode) canonical);
+                                } else {
+                                    withException.killExceptionEdge();
+                                    graph.replaceSplitWithFixed(withException, (FixedWithNextNode) canonical, withException.next());
+                                }
+                            } else {
+                                assert canonical.cfgSuccessors().iterator().hasNext() : "replacement " + canonical + " should have successors";
+                                // case 6
+                                node.replaceAtUsages(canonical);
+                                GraphUtil.unlinkAndKillExceptionEdge(withException);
+                                GraphUtil.killWithUnusedFloatingInputs(withException);
+                            }
+                        }
+
                     } else {
                         assert fixed instanceof FixedWithNextNode;
                         FixedWithNextNode fixedWithNext = (FixedWithNextNode) fixed;
@@ -517,13 +621,14 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
             return false;
         }
 
-        private final class Tool implements SimplifierTool, NodeView {
+        private final class Tool extends CoreProvidersDelegate implements SimplifierTool, NodeView {
 
             private final Assumptions assumptions;
             private final OptionValues options;
             private NodeView nodeView;
 
             Tool(Assumptions assumptions, OptionValues options) {
+                super(context);
                 this.assumptions = assumptions;
                 this.options = options;
                 this.nodeView = getNodeView();
@@ -534,21 +639,6 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                 FixedNode fixedBranch = (FixedNode) branch;
                 fixedBranch.predecessor().replaceFirstSuccessor(fixedBranch, null);
                 GraphUtil.killCFG(fixedBranch);
-            }
-
-            @Override
-            public MetaAccessProvider getMetaAccess() {
-                return context.getMetaAccess();
-            }
-
-            @Override
-            public ConstantReflectionProvider getConstantReflection() {
-                return context.getConstantReflection();
-            }
-
-            @Override
-            public ConstantFieldProvider getConstantFieldProvider() {
-                return context.getConstantFieldProvider();
             }
 
             @Override
@@ -572,6 +662,11 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
             }
 
             @Override
+            public boolean finalCanonicalization() {
+                return features.contains(FINAL_CANONICALIZATION);
+            }
+
+            @Override
             public boolean allUsagesAvailable() {
                 return true;
             }
@@ -584,6 +679,11 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
             @Override
             public Integer smallestCompareWidth() {
                 return context.getLowerer().smallestCompareWidth();
+            }
+
+            @Override
+            public boolean supportsRounding() {
+                return context.getLowerer().supportsRounding();
             }
 
             @Override

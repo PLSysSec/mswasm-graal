@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -47,7 +47,7 @@ public final class LLVMDebugSimpleObjectBuilder extends LLVMDebugObjectBuilder {
     private final LLVMDebugValue.Builder builder;
     private final Object value;
 
-    LLVMDebugSimpleObjectBuilder(LLVMDebugValue.Builder builder, Object value) {
+    public LLVMDebugSimpleObjectBuilder(LLVMDebugValue.Builder builder, Object value) {
         this.builder = builder;
         this.value = value;
     }

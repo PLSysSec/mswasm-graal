@@ -62,7 +62,7 @@ public class AArch64TestBitAndBranchTest extends LIRTest {
 
     public static long testBit42Snippet(long a, long b, long c) {
         if ((a & (1L << 42)) == 0) {
-            return b;
+            return b + c;
         } else {
             return c;
         }
@@ -79,7 +79,7 @@ public class AArch64TestBitAndBranchTest extends LIRTest {
 
     /**
      * Tests the graceful case, where the estimation for
-     * {@link CompilationResultBuilder#labelWithinRange(LIRInstruction, org.graalvm.compiler.asm.Label, int)}
+     * {@link CompilationResultBuilder#labelWithinLIRRange(LIRInstruction, org.graalvm.compiler.asm.Label, int)}
      * holds.
      */
     public static int testBitTestAndBranchSingleSnippet(int a) {
@@ -102,7 +102,7 @@ public class AArch64TestBitAndBranchTest extends LIRTest {
 
     /**
      * Tests the case, where the estimation for
-     * {@link CompilationResultBuilder#labelWithinRange(LIRInstruction, org.graalvm.compiler.asm.Label, int)}
+     * {@link CompilationResultBuilder#labelWithinLIRRange(LIRInstruction, org.graalvm.compiler.asm.Label, int)}
      * does not hold and the code generation must be redone with large branches.
      */
     public static int testBitTestAndBranchFourSnippet(int a) {

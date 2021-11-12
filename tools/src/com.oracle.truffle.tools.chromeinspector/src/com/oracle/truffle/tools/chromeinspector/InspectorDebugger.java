@@ -56,6 +56,7 @@ import com.oracle.truffle.api.debug.Breakpoint;
 import com.oracle.truffle.api.debug.DebugException;
 import com.oracle.truffle.api.debug.DebugScope;
 import com.oracle.truffle.api.debug.DebugStackFrame;
+import com.oracle.truffle.api.debug.DebugStackTraceElement;
 import com.oracle.truffle.api.debug.DebugValue;
 import com.oracle.truffle.api.debug.Debugger;
 import com.oracle.truffle.api.debug.DebuggerSession;
@@ -68,6 +69,7 @@ import com.oracle.truffle.api.debug.SuspensionFilter;
 import com.oracle.truffle.api.nodes.LanguageInfo;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
+import com.oracle.truffle.api.utilities.TriState;
 
 import com.oracle.truffle.tools.chromeinspector.InspectorExecutionContext.CancellableRunnable;
 import com.oracle.truffle.tools.chromeinspector.InspectorExecutionContext.NoSuspendedThreadException;
@@ -86,6 +88,7 @@ import com.oracle.truffle.tools.chromeinspector.types.Location;
 import com.oracle.truffle.tools.chromeinspector.types.RemoteObject;
 import com.oracle.truffle.tools.chromeinspector.types.Scope;
 import com.oracle.truffle.tools.chromeinspector.types.Script;
+import com.oracle.truffle.tools.chromeinspector.types.StackTrace;
 import com.oracle.truffle.tools.chromeinspector.util.LineSearch;
 
 import org.graalvm.collections.Pair;
@@ -106,6 +109,7 @@ public final class InspectorDebugger extends DebuggerDomain {
 
     private final InspectorExecutionContext context;
     private final Object suspendLock = new Object();
+    private volatile SuspendedCallbackImpl suspendedCallback;
     private volatile DebuggerSession debuggerSession;
     private volatile ScriptsHandler scriptsHandler;
     private volatile BreakpointsHandler breakpointsHandler;
@@ -153,7 +157,8 @@ public final class InspectorDebugger extends DebuggerDomain {
 
     private void startSession() {
         Debugger tdbg = context.getEnv().lookup(context.getEnv().getInstruments().get("debugger"), Debugger.class);
-        debuggerSession = tdbg.startSession(new SuspendedCallbackImpl(), SourceElement.ROOT, SourceElement.STATEMENT);
+        suspendedCallback = new SuspendedCallbackImpl();
+        debuggerSession = tdbg.startSession(suspendedCallback, SourceElement.ROOT, SourceElement.STATEMENT);
         debuggerSession.setSourcePath(context.getSourcePath());
         debuggerSession.setSteppingFilter(SuspensionFilter.newBuilder().ignoreLanguageContextInitialization(!context.isInspectInitialization()).includeInternal(context.isInspectInternal()).build());
         scriptsHandler = context.acquireScriptsHandler();
@@ -175,6 +180,8 @@ public final class InspectorDebugger extends DebuggerDomain {
         scriptsHandler.setDebuggerSession(null);
         debuggerSession.close();
         debuggerSession = null;
+        suspendedCallback.dispose();
+        suspendedCallback = null;
         context.releaseScriptsHandler();
         scriptsHandler = null;
         breakpointsHandler = null;
@@ -187,8 +194,21 @@ public final class InspectorDebugger extends DebuggerDomain {
     }
 
     @Override
-    public void setAsyncCallStackDepth(int maxDepth) {
+    protected void notifyDisabled() {
+        // We might call startSession() in the constructor, without doEnable().
+        // That means that doDisable() might not have been called.
+        if (debuggerSession != null) {
+            doDisable();
+        }
+    }
 
+    @Override
+    public void setAsyncCallStackDepth(int maxDepth) throws CommandProcessException {
+        if (maxDepth >= 0) {
+            debuggerSession.setAsynchronousStackDepth(maxDepth);
+        } else {
+            throw new CommandProcessException("Invalid async call stack depth: " + maxDepth);
+        }
     }
 
     @Override
@@ -234,7 +254,7 @@ public final class InspectorDebugger extends DebuggerDomain {
         }
         JSONObject json = new JSONObject();
         JSONArray arr = new JSONArray();
-        Source source = script.getSource();
+        Source source = script.getSourceLoaded();
         if (source.hasCharacters() && source.getLength() > 0) {
             int lc = source.getLineCount();
             int l1 = start.getLine();
@@ -409,11 +429,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                 // should not be, double-check
                 continue;
             }
-            int scriptId = scriptsHandler.assureLoaded(source);
-            if (scriptId < 0) {
-                continue;
-            }
-            Script script = scriptsHandler.getScript(scriptId);
+            Script script = scriptsHandler.assureLoaded(source);
             List<Scope> scopes = new ArrayList<>();
             DebugScope dscope;
             try {
@@ -429,7 +445,6 @@ public final class InspectorDebugger extends DebuggerDomain {
             String scopeType = "block";
             boolean wasFunction = false;
             SourceSection functionSourceSection = null;
-            DebugValue thisValue = null;
             if (dscope == null) {
                 functionSourceSection = sourceSection;
             }
@@ -439,17 +454,42 @@ public final class InspectorDebugger extends DebuggerDomain {
             } else {
                 oldScopes = null;
             }
+            List<DebugValue> receivers = new ArrayList<>();
+            int thisIndex = -1;  // index of "this" receiver in `receivers` array
             int scopeIndex = 0;  // index of language implementation scope
+            TriState isJS = TriState.UNDEFINED;
             while (dscope != null) {
                 if (wasFunction) {
                     scopeType = "closure";
                 } else if (dscope.isFunctionScope()) {
                     scopeType = "local";
                     functionSourceSection = dscope.getSourceSection();
-                    thisValue = dscope.getReceiver();
                     wasFunction = true;
                 }
-                addScope(scopes, dscope, scopeType, scopeIndex, oldScopes);
+                boolean scopeAdded = addScope(scopes, dscope, scopeType, scopeIndex, oldScopes);
+                if (scopeAdded) {
+                    DebugValue receiver = dscope.getReceiver();
+                    receivers.add(receiver);
+                    if (receiver != null) {
+                        if (thisIndex == -1 && "this".equals(receiver.getName())) {
+                            // There is one receiver named "this".
+                            thisIndex = scopes.size() - 1;
+                        } else {
+                            // There are multiple receivers, or the receiver is not named as "this"
+                            // Unless we're in JavaScript, we'll not provide frame's "this",
+                            // we'll add the receiver(s) to scope variables instead.
+                            if (TriState.UNDEFINED == isJS) {
+                                isJS = TriState.valueOf(LanguageChecks.isJS(receiver.getOriginalLanguage()));
+                            }
+                            // JavaScript needs to provide frame's "this",
+                            // therefore we need to keep the index for JS.
+                            if (TriState.FALSE == isJS) {
+                                thisIndex = -2;
+                            }
+                        }
+
+                    }
+                }
                 dscope = getParent(dscope);
                 scopeIndex++;
             }
@@ -471,13 +511,22 @@ public final class InspectorDebugger extends DebuggerDomain {
             if (depthAll == 0 && returnValue != null) {
                 returnObj = context.getRemoteObjectsHandler().getRemote(returnValue);
             }
-            SuspendAnchor anchor = (depthAll == 0) ? topAnchor : SuspendAnchor.BEFORE;
             RemoteObject thisObj;
-            if (thisValue != null) {
-                thisObj = context.getRemoteObjectsHandler().getRemote(thisValue);
+            if (thisIndex < -1) {
+                for (int i = 0; i < receivers.size(); i++) {
+                    DebugValue receiver = receivers.get(i);
+                    if (receiver != null) {
+                        scopes.get(i).getObject().setScopeReceiver(receiver);
+                    }
+                }
+                thisObj = null;
+            } else if (thisIndex == -1) {
+                // no added scope, no receiver
+                thisObj = null;
             } else {
-                thisObj = RemoteObject.createNullObject(context.getEnv(), frame.getLanguage());
+                thisObj = context.getRemoteObjectsHandler().getRemote(receivers.get(thisIndex));
             }
+            SuspendAnchor anchor = (depthAll == 0) ? topAnchor : SuspendAnchor.BEFORE;
             CallFrame cf = new CallFrame(frame, depth++, script, sourceSection, anchor, functionSourceSection,
                             thisObj, returnObj, scopes.toArray(new Scope[scopes.size()]));
             cfs.add(cf);
@@ -485,12 +534,15 @@ public final class InspectorDebugger extends DebuggerDomain {
         return cfs.toArray(new CallFrame[cfs.size()]);
     }
 
-    private void addScope(List<Scope> scopes, DebugScope dscope, String scopeType, int scopeIndex, Scope[] oldScopes) {
+    private boolean addScope(List<Scope> scopes, DebugScope dscope, String scopeType, int scopeIndex, Scope[] oldScopes) {
         if (dscope.isFunctionScope() || dscope.getDeclaredValues().iterator().hasNext()) {
             // provide only scopes that have some variables
             String lastId = getLastScopeId(oldScopes, scopeIndex);
             // Create the new scope with the ID of the old one to refresh the content
             scopes.add(createScope(scopeType, dscope, scopeIndex, lastId));
+            return true;
+        } else {
+            return false;
         }
     }
 
@@ -671,7 +723,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                     }
                     CallFrame cf = suspendedInfo.getCallFrames()[frameId];
                     JSONObject json = new JSONObject();
-                    if (runSpecialFunctions(expression, cf, generatePreview, json)) {
+                    if (runSpecialFunctions(expression, cf, json)) {
                         return json;
                     }
                     DebugValue value = getVarValue(expression, cf);
@@ -688,7 +740,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                         if (languageInfo == null || !languageInfo.isInteractive()) {
                             String errorMessage = getEvalNonInteractiveMessage();
                             ExceptionDetails exceptionDetails = new ExceptionDetails(errorMessage);
-                            json.put("exceptionDetails", exceptionDetails.createJSON(context, generatePreview));
+                            json.put("exceptionDetails", exceptionDetails.createJSON(context));
                             JSONObject err = new JSONObject();
                             err.putOpt("value", errorMessage);
                             err.putOpt("type", "string");
@@ -712,7 +764,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                 @Override
                 public JSONObject processException(DebugException dex) {
                     JSONObject json = new JSONObject();
-                    InspectorRuntime.fillExceptionDetails(json, dex, context, generatePreview);
+                    InspectorRuntime.fillExceptionDetails(json, dex, context);
                     DebugValue exceptionObject = dex.getExceptionObject();
                     if (exceptionObject != null) {
                         RemoteObject ro = context.createAndRegister(exceptionObject, generatePreview);
@@ -735,7 +787,7 @@ public final class InspectorDebugger extends DebuggerDomain {
         return new Params(jsonResult);
     }
 
-    private boolean runSpecialFunctions(String expression, CallFrame cf, boolean generatePreview, JSONObject json) {
+    private boolean runSpecialFunctions(String expression, CallFrame cf, JSONObject json) {
         // Test whether code-completion on an object was requested:
         Matcher completionMatcher = FUNCTION_COMPLETION_PATTERN.matcher(expression);
         if (completionMatcher.matches()) {
@@ -749,7 +801,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                 }
             }
             if (value != null) {
-                JSONObject result = InspectorRuntime.createCodecompletion(value, null, generatePreview, context, false);
+                JSONObject result = InspectorRuntime.createCodecompletion(value, null, context, false);
                 json.put("result", result);
                 return true;
             }
@@ -880,8 +932,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                     DebuggerSuspendedInfo susp = suspendedInfo;
                     if (susp != null) {
                         SuspendedEvent suspendedEvent = susp.getSuspendedEvent();
-                        DebugValue returnValue = suspendedEvent.getReturnValue();
-                        context.setValue(returnValue, newValue);
+                        DebugValue returnValue = context.getDebugValue(newValue, suspendedEvent.getSession());
                         susp.getSuspendedEvent().setReturnValue(returnValue);
                     }
                     return null;
@@ -1026,10 +1077,16 @@ public final class InspectorDebugger extends DebuggerDomain {
                         // Debugger has been disabled while waiting on locks
                         return;
                     }
-                    if (se.hasSourceElement(SourceElement.ROOT) && !se.hasSourceElement(SourceElement.STATEMENT) && se.getSuspendAnchor() == SuspendAnchor.BEFORE && se.getBreakpoints().isEmpty()) {
-                        // Suspend requested and we're at the begining of a ROOT.
-                        debuggerSession.suspendNextExecution();
-                        return;
+                    DebugValue returnValue = se.getReturnValue();
+                    if (se.hasSourceElement(SourceElement.ROOT) && se.getBreakpoints().isEmpty()) {
+                        if ((!se.hasSourceElement(SourceElement.STATEMENT) && se.getSuspendAnchor() == SuspendAnchor.BEFORE) ||
+                                        (se.getSuspendAnchor() == SuspendAnchor.AFTER && returnValue == null)) {
+                            // We're at the begining of a `RootTag` node, or
+                            // we're at the end of `RootTag` node and have no return value.
+                            // Do not suspend in this case, not to cause distrations.
+                            se.prepareStepInto(STEP_CONFIG);
+                            return;
+                        }
                     }
                     synchronized (suspendLock) {
                         running = false;
@@ -1041,7 +1098,6 @@ public final class InspectorDebugger extends DebuggerDomain {
                         runningUnwind = false;
                     }
                     JSONObject jsonParams = new JSONObject();
-                    DebugValue returnValue = se.getReturnValue();
                     if (!se.hasSourceElement(SourceElement.ROOT)) {
                         // It is misleading to see return values on call exit,
                         // when we show it at function exit
@@ -1055,6 +1111,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                         commandLazyResponse = null;
                     } else {
                         jsonParams.put("callFrames", getFramesParam(callFrames));
+                        jsonParams.putOpt("asyncStackTrace", findAsyncStackTrace(se.getAsynchronousStacks()));
                         List<Breakpoint> breakpoints = se.getBreakpoints();
                         JSONArray bpArr = new JSONArray();
                         Set<Breakpoint.Kind> kinds = new HashSet<>(1);
@@ -1125,7 +1182,7 @@ public final class InspectorDebugger extends DebuggerDomain {
                     silentResume = false;
                 }
             } finally {
-                onSuspendPhaser.arrive();
+                onSuspendPhaser.arriveAndDeregister();
                 if (delayUnlock.getAndSet(false)) {
                     future.set(scheduler.schedule(() -> {
                         unlock();
@@ -1191,22 +1248,36 @@ public final class InspectorDebugger extends DebuggerDomain {
             return data;
         }
 
-        private class SchedulerThreadFactory implements ThreadFactory {
-
-            private final ThreadGroup group;
-
-            SchedulerThreadFactory() {
-                SecurityManager s = System.getSecurityManager();
-                this.group = (s != null) ? s.getThreadGroup() : Thread.currentThread().getThreadGroup();
+        private void dispose() {
+            unlock();
+            ScheduledFuture<?> sf = future.getAndSet(null);
+            if (sf != null) {
+                sf.cancel(true);
             }
-
-            @Override
-            public Thread newThread(Runnable r) {
-                Thread t = new Thread(group, r, "Suspend Unlocking Scheduler");
-                t.setDaemon(true);
-                t.setPriority(Thread.NORM_PRIORITY);
-                return t;
+            scheduler.shutdown();
+            try {
+                scheduler.awaitTermination(30, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
             }
+        }
+    }
+
+    private static class SchedulerThreadFactory implements ThreadFactory {
+
+        private final ThreadGroup group;
+
+        @SuppressWarnings("deprecation")
+        SchedulerThreadFactory() {
+            SecurityManager s = System.getSecurityManager();
+            this.group = (s != null) ? s.getThreadGroup() : Thread.currentThread().getThreadGroup();
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(group, r, "Suspend Unlocking Scheduler");
+            t.setDaemon(true);
+            t.setPriority(Thread.NORM_PRIORITY);
+            return t;
         }
     }
 
@@ -1216,6 +1287,14 @@ public final class InspectorDebugger extends DebuggerDomain {
             array.put(cf.toJSON());
         }
         return array;
+    }
+
+    private JSONObject findAsyncStackTrace(List<List<DebugStackTraceElement>> asyncStacks) {
+        if (asyncStacks.isEmpty()) {
+            return null;
+        }
+        StackTrace stackTrace = new StackTrace(context, asyncStacks);
+        return stackTrace.toJSON();
     }
 
     private interface CommandLazyResponse {

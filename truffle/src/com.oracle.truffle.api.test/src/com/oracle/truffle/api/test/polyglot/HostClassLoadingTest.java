@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -58,6 +58,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.security.CodeSource;
+import java.security.ProtectionDomain;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.Attributes;
@@ -65,18 +68,20 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
 import org.junit.Test;
 
-import com.oracle.truffle.api.TruffleException;
 import com.oracle.truffle.api.TruffleFile;
 import com.oracle.truffle.api.TruffleLanguage.Env;
 import com.oracle.truffle.api.interop.ArityException;
+import com.oracle.truffle.api.interop.InteropException;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnknownIdentifierException;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.interop.UnsupportedTypeException;
+import java.net.URLClassLoader;
 
 public class HostClassLoadingTest extends AbstractPolyglotTest {
 
@@ -108,8 +113,7 @@ public class HostClassLoadingTest extends AbstractPolyglotTest {
             languageEnv.addToHostClassPath(file);
             fail();
         } catch (Exception e) {
-            assertTrue(e instanceof TruffleException);
-            assertFalse(((TruffleException) e).isInternalError());
+            assertNonInternalException(e);
         }
 
         // test with only host access rights
@@ -119,8 +123,7 @@ public class HostClassLoadingTest extends AbstractPolyglotTest {
             languageEnv.addToHostClassPath(file);
             fail();
         } catch (Exception e) {
-            assertTrue(e instanceof TruffleException);
-            assertFalse(((TruffleException) e).isInternalError());
+            assertNonInternalException(e);
         }
 
         // test with only class path add rights
@@ -131,16 +134,14 @@ public class HostClassLoadingTest extends AbstractPolyglotTest {
             languageEnv.addToHostClassPath(file);
             fail();
         } catch (Exception e) {
-            assertTrue(e instanceof TruffleException);
-            assertFalse(((TruffleException) e).isInternalError());
+            assertNonInternalException(e);
         }
         try {
             // we should fail early
             languageEnv.lookupHostSymbol(TEST_REPLACE_QUALIFIED_CLASS_NAME);
             fail();
         } catch (Exception e) {
-            assertTrue(e instanceof TruffleException);
-            assertFalse(((TruffleException) e).isInternalError());
+            assertNonInternalException(e);
         }
 
         setupEnv(Context.newBuilder().allowIO(true).allowHostClassLoading(true).allowHostAccess(HostAccess.ALL).allowHostClassLookup((String s) -> true).build());
@@ -183,11 +184,15 @@ public class HostClassLoadingTest extends AbstractPolyglotTest {
             languageEnv.lookupHostSymbol(TEST_REPLACE_QUALIFIED_CLASS_NAME);
             fail();
         } catch (Exception e) {
-            assertTrue(e instanceof TruffleException);
-            assertFalse(((TruffleException) e).isInternalError());
+            assertNonInternalException(e);
         }
 
         deleteDir(tempDir);
+    }
+
+    private static void assertNonInternalException(Throwable t) {
+        InteropLibrary interop = InteropLibrary.getUncached();
+        assertTrue(interop.isException(t));
     }
 
     private static Path setupSimpleClassPath() throws IOException {
@@ -268,16 +273,161 @@ public class HostClassLoadingTest extends AbstractPolyglotTest {
         deleteDir(tempDir2);
     }
 
+    @Test
+    public void testLoadingFromContextClassLoader() throws Exception {
+        Class<?> hostClass = HostClassLoadingTestClass1.class;
+        Path tempDir1 = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME);
+        Path tempDir2 = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME_2);
+        Path jar1 = createJar(tempDir1);
+        Path jar2 = createJar(tempDir2);
+        try {
+            URLClassLoader hostClassLoader = new URLClassLoader(new URL[]{jar1.toUri().toURL()});
+            try {
+                setupEnv(Context.newBuilder().allowAllAccess(true).hostClassLoader(hostClassLoader).build());
+                languageEnv.addToHostClassPath(languageEnv.getPublicTruffleFile(jar2.toString()));
+
+                Object newSymbol = languageEnv.lookupHostSymbol(hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME);
+                assertEquals(42, read(newSymbol, "staticField"));
+
+                newSymbol = languageEnv.lookupHostSymbol(hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME_2);
+                assertEquals(42, read(newSymbol, "staticField"));
+            } finally {
+                hostClassLoader.close();
+            }
+        } finally {
+            Files.deleteIfExists(jar1);
+            Files.deleteIfExists(jar2);
+            deleteDir(tempDir1);
+            deleteDir(tempDir2);
+        }
+    }
+
+    @Test
+    public void testMultipleJarStreams() throws IOException, InteropException {
+        setupEnv();
+
+        final Class<?> hostClass = HostClassLoadingTestClass3.class;
+        Path tempDir = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME);
+        Path jar = createJar(tempDir);
+        try {
+            languageEnv.addToHostClassPath(languageEnv.getPublicTruffleFile(jar.toString()));
+
+            Object statics = languageEnv.lookupHostSymbol(hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME);
+            Object result = InteropLibrary.getUncached(statics).invokeMember(statics, "testMethod");
+
+            try (InputStream stream = hostClass.getResourceAsStream("/" + HostClassLoadingTestClass3.class.getName().replace('.', '/') + ".class")) {
+                assertNotNull(stream);
+                assertEquals(HostClassLoadingTestClass3.countBytes(stream), result);
+            }
+        } finally {
+            Files.deleteIfExists(jar);
+            deleteDir(tempDir);
+        }
+    }
+
+    @Test
+    public void testInterruptedThread() throws IOException {
+        setupEnv();
+        final Class<?> hostClass = HostClassLoadingTestClass1.class;
+        Path tempDir1 = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME);
+        try {
+            Path jar = createJar(tempDir1);
+            try {
+                String newClassName = hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME;
+                assertClassNotFound(languageEnv, newClassName);
+                languageEnv.addToHostClassPath(languageEnv.getPublicTruffleFile(jar.toString()));
+                Thread.currentThread().interrupt();
+                try {
+                    assertFails(() -> languageEnv.lookupHostSymbol(newClassName), AbstractTruffleException.class, (t) -> {
+                        assertTrue(t.getMessage().contains(String.format("Access to host class %s is not allowed or does not exist.", newClassName)));
+                    });
+                } finally {
+                    Thread.interrupted();   // Clean interrupted
+                }
+                assertNotNull(languageEnv.lookupHostSymbol(newClassName));
+            } finally {
+                Files.deleteIfExists(jar);
+            }
+        } finally {
+            deleteDir(tempDir1);
+        }
+    }
+
+    @Test
+    public void testResourceBundleJar() throws IOException {
+        setupEnv();
+        final Class<?> hostClass = HostClassLoadingTestClass4.class;
+        String newClassName = hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME;
+        Path tempDir = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME);
+        try {
+            Files.write(tempDir.resolve("bundle.properties"), Collections.singleton("key=value"));
+            Path jar = createJar(tempDir);
+            try {
+                languageEnv.addToHostClassPath(languageEnv.getPublicTruffleFile(jar.toString()));
+                Object testClass = languageEnv.lookupHostSymbol(newClassName);
+                assertEquals("value", execute(read(testClass, "testMethod"), "bundle", "key"));
+            } finally {
+                Files.deleteIfExists(jar);
+            }
+        } finally {
+            deleteDir(tempDir);
+        }
+    }
+
+    @Test
+    public void testResourceBundleFolder() throws IOException {
+        setupEnv();
+        final Class<?> hostClass = HostClassLoadingTestClass4.class;
+        String newClassName = hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME;
+        Path tempDir = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME);
+        try {
+            Files.write(tempDir.resolve("bundle.properties"), Collections.singleton("key=value"));
+            languageEnv.addToHostClassPath(languageEnv.getPublicTruffleFile(tempDir.toString()));
+            Object testClass = languageEnv.lookupHostSymbol(newClassName);
+            assertEquals("value", execute(read(testClass, "testMethod"), "bundle", "key"));
+        } finally {
+            deleteDir(tempDir);
+        }
+    }
+
+    @Test
+    public void testProtectionDomainJar() throws IOException {
+        setupEnv();
+        Class<?> hostClass = HostClassLoadingTestClass1.class;
+        Path tempDir = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME);
+        Path jar = createJar(tempDir);
+        languageEnv.addToHostClassPath(languageEnv.getPublicTruffleFile(jar.toString()));
+        Object newSymbol = languageEnv.lookupHostSymbol(hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME);
+        Class<?> clz = (Class<?>) languageEnv.asHostObject(newSymbol);
+        ProtectionDomain protectionDomain = clz.getProtectionDomain();
+        assertNotNull(protectionDomain);
+        CodeSource codeSource = protectionDomain.getCodeSource();
+        assertNotNull(codeSource);
+        assertEquals(jar.toUri().toURL().toString(), codeSource.getLocation().toString());
+        Files.deleteIfExists(jar);
+        deleteDir(tempDir);
+    }
+
+    @Test
+    public void testProtectionDomainFolder() throws IOException {
+        setupEnv();
+        Class<?> hostClass = HostClassLoadingTestClass1.class;
+        Path tempDir = renameHostClass(hostClass, TEST_REPLACE_CLASS_NAME);
+        languageEnv.addToHostClassPath(languageEnv.getPublicTruffleFile(tempDir.toString()));
+        Object newSymbol = languageEnv.lookupHostSymbol(hostClass.getPackage().getName() + "." + TEST_REPLACE_CLASS_NAME);
+        Class<?> clz = (Class<?>) languageEnv.asHostObject(newSymbol);
+        ProtectionDomain protectionDomain = clz.getProtectionDomain();
+        assertNotNull(protectionDomain);
+        CodeSource codeSource = protectionDomain.getCodeSource();
+        assertNotNull(codeSource);
+        assertEquals(tempDir.toUri().toURL().toString(), codeSource.getLocation().toString());
+        deleteDir(tempDir);
+    }
+
     private static void assertHostClassPath(Env env, final Class<?> hostClass, String newName, TruffleFile classPathEntry) {
         String newClassName = hostClass.getPackage().getName() + "." + newName;
 
-        try {
-            env.lookupHostSymbol(newClassName);
-            fail();
-        } catch (Exception e) {
-            assertTrue(e instanceof TruffleException);
-            assertFalse(((TruffleException) e).isInternalError());
-        }
+        assertClassNotFound(env, newClassName);
 
         env.addToHostClassPath(classPathEntry);
 
@@ -294,6 +444,12 @@ public class HostClassLoadingTest extends AbstractPolyglotTest {
 
         oldSymbol = env.lookupHostSymbol(hostClass.getName());
         assertHostSymbol(oldSymbol, hostStaticFieldValue++);
+    }
+
+    private static void assertClassNotFound(Env env, String className) {
+        assertFails(() -> env.lookupHostSymbol(className), Exception.class, (e) -> {
+            assertNonInternalException(e);
+        });
     }
 
     private static Path createJar(Path directory) throws IOException {

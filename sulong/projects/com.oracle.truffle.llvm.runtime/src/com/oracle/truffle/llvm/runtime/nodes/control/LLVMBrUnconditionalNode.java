@@ -56,18 +56,6 @@ public abstract class LLVMBrUnconditionalNode extends LLVMControlFlowNode {
     // we need an execute method so the node can be properly instrumented
     public abstract void execute(VirtualFrame frame);
 
-    /**
-     * Override to allow access from generated wrapper.
-     */
-    @Override
-    protected abstract boolean isStatement();
-
-    /**
-     * Override to allow access from generated wrapper.
-     */
-    @Override
-    protected abstract void setStatement(boolean statementTag);
-
     abstract static class LLVMBrUnconditionalNodeImpl extends LLVMBrUnconditionalNode {
 
         @Child private LLVMStatementNode phi;
@@ -95,6 +83,11 @@ public abstract class LLVMBrUnconditionalNode extends LLVMControlFlowNode {
         @Specialization
         public void doCondition() {
             // nothing to do, since this branch is unconditional
+        }
+
+        @Override
+        public final int[] getSuccessors() {
+            return new int[]{getSuccessor()};
         }
     }
 }

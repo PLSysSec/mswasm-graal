@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -233,7 +233,9 @@ public class OptionProcessor extends AbstractProcessor {
         }
 
         String optionTypeName = getAnnotationValue(annotation, "type", VariableElement.class).getSimpleName().toString();
-        info.options.add(new OptionInfo(optionName, optionTypeName, help, extraHelp, optionType, declaringClass, field.getSimpleName().toString()));
+        boolean deprecated = getAnnotationValue(annotation, "deprecated", Boolean.class);
+        String deprecationMessage = getAnnotationValue(annotation, "deprecationMessage", String.class);
+        info.options.add(new OptionInfo(optionName, optionTypeName, help, extraHelp, optionType, declaringClass, field.getSimpleName().toString(), deprecated, deprecationMessage));
     }
 
     public static void createOptionsDescriptorsFile(ProcessingEnvironment processingEnv, OptionsInfo info) {
@@ -273,6 +275,8 @@ public class OptionProcessor extends AbstractProcessor {
                 List<String> extraHelp = option.extraHelp;
                 String declaringClass = option.declaringClass;
                 String fieldName = option.field;
+                boolean deprecated = option.deprecated;
+                String deprecationMessage = option.deprecationMessage;
                 out.printf("            return " + desc + ".create(\n");
                 out.printf("                /*name*/ \"%s\",\n", name);
                 out.printf("                /*optionType*/ %s.%s,\n", getSimpleName(OPTION_TYPE_CLASS_NAME), optionType);
@@ -287,7 +291,9 @@ public class OptionProcessor extends AbstractProcessor {
                 }
                 out.printf("                /*declaringClass*/ %s.class,\n", declaringClass);
                 out.printf("                /*fieldName*/ \"%s\",\n", fieldName);
-                out.printf("                /*option*/ %s);\n", optionField);
+                out.printf("                /*option*/ %s,\n", optionField);
+                out.printf("                /*deprecated*/ %b,\n", deprecated);
+                out.printf("                /*deprecationMessage*/ \"%s\");\n", deprecationMessage);
                 out.println("        }");
             }
             out.println("        // CheckStyle: resume line length check");
@@ -345,8 +351,10 @@ public class OptionProcessor extends AbstractProcessor {
         public final String type;
         public final String declaringClass;
         public final String field;
+        public final boolean deprecated;
+        public final String deprecationMessage;
 
-        public OptionInfo(String name, String optionType, String help, List<String> extraHelp, String type, String declaringClass, String field) {
+        public OptionInfo(String name, String optionType, String help, List<String> extraHelp, String type, String declaringClass, String field, boolean deprecated, String deprecationMessage) {
             this.name = name;
             this.optionType = optionType;
             this.help = help;
@@ -354,6 +362,8 @@ public class OptionProcessor extends AbstractProcessor {
             this.type = type;
             this.declaringClass = declaringClass;
             this.field = field;
+            this.deprecated = deprecated;
+            this.deprecationMessage = deprecationMessage;
         }
 
         @Override

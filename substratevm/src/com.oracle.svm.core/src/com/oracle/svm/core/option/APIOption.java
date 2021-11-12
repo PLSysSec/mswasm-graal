@@ -33,6 +33,8 @@ import java.util.function.Function;
 
 import org.graalvm.compiler.options.Option;
 
+import com.oracle.svm.core.util.VMError;
+
 /**
  * If an {@link Option} is additionally annotated with {@link APIOption} it will be exposed as
  * native-image option with the given name.
@@ -49,9 +51,20 @@ public @interface APIOption {
     }
 
     /**
-     * The name of the option when exposed as native-image option.
+     * The name of the option when exposed as native-image option. If more than one name is passed
+     * the other names are set up as aliases for the option.
      */
-    String name();
+    String[] name();
+
+    /**
+     * This option should only be shown with --help-extra.
+     */
+    boolean extra() default false;
+
+    /**
+     * Make a boolean option part of a group of boolean options.
+     **/
+    Class<? extends APIOptionGroup> group() default NullGroup.class;
 
     /**
      * Provide a custom help message for the option.
@@ -59,6 +72,17 @@ public @interface APIOption {
     String customHelp() default "";
 
     APIOptionKind kind() default APIOptionKind.Default;
+
+    char WHITESPACE_SEPARATOR = ' ';
+
+    /**
+     * Provide a custom separator that should be used to separate the option name from its option
+     * values. The default separator is {@code '='}. If {@code WHITESPACE_SEPARATOR} is used the
+     * option value has to be passed as the next argument (i.e., separated by whitespace on the
+     * command line). It is also allowed to provide more than one separator. See e.g. the options
+     * defined in {@code com.oracle.svm.hosted.NativeImageClassLoaderOptions}
+     */
+    char[] valueSeparator() default {'='};
 
     /**
      * The value that will be passed to a non-boolean option when no {@code =} is specified.
@@ -107,12 +131,20 @@ public @interface APIOption {
     }
 
     class Utils {
-        public static String name(APIOption annotation) {
-            if (annotation.name().startsWith("-")) {
-                return annotation.name();
+        public static String optionName(String name) {
+            if (name.startsWith("-")) {
+                return name;
             } else {
-                return "--" + annotation.name();
+                return "--" + name;
             }
+        }
+
+        public static String groupName(APIOptionGroup group) {
+            if (group.name() == null || group.name().isEmpty()) {
+                VMError.shouldNotReachHere("Invalid APIOptionGroup.name() for " + group.getClass().getName());
+            }
+
+            return optionName(group.name()) + group.valueSeparator();
         }
     }
 
@@ -120,6 +152,13 @@ public @interface APIOption {
         @Override
         public Object apply(Object o) {
             return o;
+        }
+    }
+
+    final class NullGroup implements APIOptionGroup {
+        @Override
+        public String name() {
+            return null;
         }
     }
 }

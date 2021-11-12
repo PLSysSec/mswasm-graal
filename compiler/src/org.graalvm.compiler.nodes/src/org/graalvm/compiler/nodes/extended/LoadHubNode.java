@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,7 +24,6 @@
  */
 package org.graalvm.compiler.nodes.extended;
 
-import static org.graalvm.compiler.core.common.GraalOptions.GeneratePIC;
 import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_1;
 
@@ -33,15 +32,14 @@ import org.graalvm.compiler.core.common.type.ObjectStamp;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.core.common.type.TypeReference;
 import org.graalvm.compiler.graph.NodeClass;
-import org.graalvm.compiler.graph.spi.Canonicalizable;
-import org.graalvm.compiler.graph.spi.CanonicalizerTool;
+import org.graalvm.compiler.nodes.spi.Canonicalizable;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.ConstantNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.calc.FloatingNode;
 import org.graalvm.compiler.nodes.spi.Lowerable;
-import org.graalvm.compiler.nodes.spi.LoweringTool;
 import org.graalvm.compiler.nodes.spi.StampProvider;
 import org.graalvm.compiler.nodes.spi.Virtualizable;
 import org.graalvm.compiler.nodes.spi.VirtualizerTool;
@@ -91,42 +89,31 @@ public final class LoadHubNode extends FloatingNode implements Lowerable, Canoni
     }
 
     @Override
-    public void lower(LoweringTool tool) {
-        tool.getLowerer().lower(this, tool);
-    }
-
-    @Override
     public ValueNode canonical(CanonicalizerTool tool) {
-        if (!GeneratePIC.getValue(tool.getOptions())) {
-            NodeView view = NodeView.from(tool);
-            MetaAccessProvider metaAccess = tool.getMetaAccess();
-            ValueNode curValue = getValue();
-            ValueNode newNode = findSynonym(curValue, stamp(view), metaAccess, tool.getConstantReflection());
-            if (newNode != null) {
-                return newNode;
-            }
+        NodeView view = NodeView.from(tool);
+        MetaAccessProvider metaAccess = tool.getMetaAccess();
+        ValueNode curValue = getValue();
+        ValueNode newNode = findSynonym(curValue, stamp(view), metaAccess, tool.getConstantReflection());
+        if (newNode != null) {
+            return newNode;
         }
         return this;
     }
 
     public static ValueNode findSynonym(ValueNode curValue, Stamp stamp, MetaAccessProvider metaAccess, ConstantReflectionProvider constantReflection) {
-        if (!GeneratePIC.getValue(curValue.getOptions())) {
-            TypeReference type = StampTool.typeReferenceOrNull(curValue);
-            if (type != null && type.isExact()) {
-                return ConstantNode.forConstant(stamp, constantReflection.asObjectHub(type.getType()), metaAccess);
-            }
+        TypeReference type = StampTool.typeReferenceOrNull(curValue);
+        if (type != null && type.isExact()) {
+            return ConstantNode.forConstant(stamp, constantReflection.asObjectHub(type.getType()), metaAccess);
         }
         return null;
     }
 
     @Override
     public void virtualize(VirtualizerTool tool) {
-        if (!GeneratePIC.getValue(tool.getOptions())) {
-            ValueNode alias = tool.getAlias(getValue());
-            TypeReference type = StampTool.typeReferenceOrNull(alias);
-            if (type != null && type.isExact()) {
-                tool.replaceWithValue(ConstantNode.forConstant(stamp(NodeView.DEFAULT), tool.getConstantReflection().asObjectHub(type.getType()), tool.getMetaAccess(), graph()));
-            }
+        ValueNode alias = tool.getAlias(getValue());
+        TypeReference type = StampTool.typeReferenceOrNull(alias);
+        if (type != null && type.isExact()) {
+            tool.replaceWithValue(ConstantNode.forConstant(stamp(NodeView.DEFAULT), tool.getConstantReflection().asObjectHub(type.getType()), tool.getMetaAccess(), graph()));
         }
     }
 }

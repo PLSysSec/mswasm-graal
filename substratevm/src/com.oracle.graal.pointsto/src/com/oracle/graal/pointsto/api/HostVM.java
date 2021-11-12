@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,6 +24,7 @@
  */
 package com.oracle.graal.pointsto.api;
 
+import java.lang.reflect.AnnotatedElement;
 import java.util.Optional;
 
 import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
@@ -36,9 +37,15 @@ import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.phases.OptimisticOptimizations;
 
 import com.oracle.graal.pointsto.BigBang;
+import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.meta.HostedProviders;
+import com.oracle.graal.pointsto.phases.InlineBeforeAnalysisPolicy;
+
+import jdk.vm.ci.meta.ResolvedJavaMethod;
+import jdk.vm.ci.meta.ResolvedJavaType;
 
 /**
  * This is an interface for the functionality that the hosting VM must support.
@@ -59,7 +66,21 @@ public interface HostVM {
 
     void registerType(AnalysisType newValue);
 
+    void initializeType(AnalysisType newValue);
+
     boolean isInitialized(AnalysisType type);
+
+    /**
+     * Hook to change the {@link GraphBuilderConfiguration} used for parsing a method during
+     * analysis.
+     * 
+     * @param config The default configuration used by the static analysis.
+     * @param method The method that is going to be parsed with the returned configuration.
+     * @return The updated configuration for the method.
+     */
+    default GraphBuilderConfiguration updateGraphBuilderConfiguration(GraphBuilderConfiguration config, AnalysisMethod method) {
+        return config;
+    }
 
     Optional<AnalysisMethod> handleForeignCall(ForeignCallDescriptor foreignCallDescriptor, ForeignCallsProvider foreignCallsProvider);
 
@@ -79,5 +100,29 @@ public interface HostVM {
         return null;
     }
 
-    void checkMethod(BigBang bb, AnalysisMethod method, StructuredGraph graph);
+    void checkType(ResolvedJavaType type, AnalysisUniverse universe);
+
+    void methodAfterParsingHook(BigBang bb, AnalysisMethod method, StructuredGraph graph);
+
+    void methodBeforeTypeFlowCreationHook(PointsToAnalysis bb, AnalysisMethod method, StructuredGraph graph);
+
+    default boolean hasNeverInlineDirective(@SuppressWarnings("unused") ResolvedJavaMethod method) {
+        /* No inlining by the static analysis unless explicitly overwritten by the VM. */
+        return true;
+    }
+
+    default InlineBeforeAnalysisPolicy<?> inlineBeforeAnalysisPolicy() {
+        /* No inlining by the static analysis unless explicitly overwritten by the VM. */
+        return InlineBeforeAnalysisPolicy.NO_INLINING;
+    }
+
+    @SuppressWarnings("unused")
+    default boolean skipInterface(AnalysisUniverse universe, ResolvedJavaType interfaceType, ResolvedJavaType implementingType) {
+        return false;
+    }
+
+    @SuppressWarnings("unused")
+    default boolean platformSupported(AnalysisUniverse universe, AnnotatedElement element) {
+        return true;
+    }
 }

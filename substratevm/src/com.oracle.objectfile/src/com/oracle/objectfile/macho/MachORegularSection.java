@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,6 @@ import java.util.EnumSet;
 import com.oracle.objectfile.ObjectFile;
 import com.oracle.objectfile.ObjectFile.ProgbitsSectionImpl;
 import com.oracle.objectfile.ObjectFile.RelocationKind;
-import com.oracle.objectfile.ObjectFile.RelocationRecord;
 import com.oracle.objectfile.macho.MachOObjectFile.SectionFlag;
 import com.oracle.objectfile.macho.MachOObjectFile.Segment64Command;
 
@@ -51,8 +50,8 @@ public class MachORegularSection extends MachOUserDefinedSection implements Obje
     }
 
     @Override
-    public RelocationRecord markRelocationSite(int offset, int length, RelocationKind k, String symbolName, boolean useImplicitAddend, Long explicitAddend) {
-        return markRelocationSite(offset, length, ByteBuffer.wrap(getContent()).order(getOwner().getByteOrder()), k, symbolName, useImplicitAddend, explicitAddend);
+    public void markRelocationSite(int offset, RelocationKind k, String symbolName, long addend) {
+        markRelocationSite(offset, ByteBuffer.wrap(getContent()).order(getOwner().getByteOrder()), k, symbolName, addend);
     }
 
 }

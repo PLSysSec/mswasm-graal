@@ -38,7 +38,6 @@ import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.nativeimage.hosted.Feature;
-import org.graalvm.word.Pointer;
 
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.svm.core.SubstrateOptions;
@@ -80,7 +79,7 @@ public class LLVMFeature implements Feature, GraalFeature {
         if (!SubstrateOptions.useLLVMBackend()) {
             for (HostedOptionKey<?> llvmOption : LLVMOptions.allOptions) {
                 if (llvmOption.hasBeenSet()) {
-                    throw UserError.abort("Flag " + llvmOption.getName() + " can only be used together with -H:CompilerBackend=llvm");
+                    throw UserError.abort("Flag %s can only be used together with -H:CompilerBackend=llvm", llvmOption.getName());
                 }
             }
         }
@@ -105,12 +104,7 @@ public class LLVMFeature implements Feature, GraalFeature {
             }
         });
 
-        ImageSingletons.add(ExceptionUnwind.class, new ExceptionUnwind() {
-            @Override
-            protected void customUnwindException(Pointer callerSP) {
-                LLVMExceptionUnwind.raiseException();
-            }
-        });
+        ImageSingletons.add(ExceptionUnwind.class, LLVMExceptionUnwind.createRaiseExceptionHandler());
 
         ImageSingletons.add(TargetGraphBuilderPlugins.class, new LLVMGraphBuilderPlugins());
 
@@ -153,9 +147,9 @@ public class LLVMFeature implements Feature, GraalFeature {
             int version = Integer.parseInt(splitVersion[0]);
 
             if (version < MIN_LLVM_VERSION) {
-                throw UserError.abort("Unsupported LLVM version: " + version + ". Supported versions are LLVM " + MIN_LLVM_VERSION + " and above");
+                throw UserError.abort("Unsupported LLVM version: %d. Supported versions are LLVM %d and above", version, MIN_LLVM_VERSION);
             } else if (LLVMOptions.BitcodeOptimizations.getValue() && version < MIN_LLVM_OPTIMIZATIONS_VERSION) {
-                throw UserError.abort("Unsupported LLVM version to enable bitcode optimizations: " + version + ". Supported versions are LLVM " + MIN_LLVM_OPTIMIZATIONS_VERSION + ".0.0 and above");
+                throw UserError.abort("Unsupported LLVM version to enable bitcode optimizations: %d. Supported versions are LLVM %d.0.0 and above", version, MIN_LLVM_OPTIMIZATIONS_VERSION);
             }
 
             return version;

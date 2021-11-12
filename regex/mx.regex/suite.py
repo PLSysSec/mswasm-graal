@@ -39,11 +39,11 @@
 # SOFTWARE.
 #
 suite = {
-  "mxversion" : "5.223.0",
+  "mxversion" : "5.292.5",
 
   "name" : "regex",
 
-  "version" : "20.1.0",
+  "version" : "22.0.0",
   "release" : False,
   "groupId" : "org.graalvm.regex",
   "url" : "http://www.graalvm.org/",
@@ -71,7 +71,14 @@ suite = {
     ]
   },
 
-  "defaultLicense" : "GPLv2-CPE",
+  "licenses" : {
+    "upl" : {
+      "name" : "Universal Permissive License, Version 1.0",
+      "url" : "http://opensource.org/licenses/upl",
+    },
+  },
+
+  "defaultLicense" : "UPL",
 
   "javac.lint.overrides" : "none",
 
@@ -86,7 +93,7 @@ suite = {
       "exports" : [
         "com.oracle.truffle.regex.chardata",
       ],
-      "checkstyleVersion" : "8.8",
+      "checkstyleVersion" : "8.36.1",
       "javaCompliance" : "8+",
       "workingSets" : "Truffle,Regex",
       "spotbugsIgnoresGenerated" : True,
@@ -112,7 +119,13 @@ suite = {
 
   "distributions" : {
     "TREGEX" : {
-      "moduleName" : "com.oracle.truffle.regex",
+      "moduleInfo" : {
+        "name" : "com.oracle.truffle.regex",
+        "requires" : [
+          "java.logging",
+          "jdk.unsupported", # sun.misc.Unsafe
+        ],
+      },
       "subDir" : "src",
       "dependencies" : ["com.oracle.truffle.regex"],
       "distDependencies" : [

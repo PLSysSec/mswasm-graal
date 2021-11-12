@@ -27,8 +27,8 @@ package com.oracle.svm.hosted.lambda;
 import java.lang.annotation.Annotation;
 
 import com.oracle.graal.pointsto.infrastructure.OriginalClassProvider;
-import com.oracle.svm.core.jdk.InternalVMMethod;
-import com.oracle.svm.hosted.c.GraalAccess;
+import com.oracle.graal.pointsto.util.GraalAccess;
+import com.oracle.svm.core.jdk.LambdaFormHiddenMethod;
 
 import jdk.vm.ci.meta.Assumptions.AssumptionResult;
 import jdk.vm.ci.meta.JavaConstant;
@@ -60,18 +60,18 @@ public class LambdaSubstitutionType implements ResolvedJavaType, OriginalClassPr
 
     @Override
     public Annotation[] getAnnotations() {
-        return InternalVMMethod.Holder.ARRAY;
+        return LambdaFormHiddenMethod.Holder.ARRAY;
     }
 
     @Override
     public boolean isAnnotationPresent(Class<? extends Annotation> annotationClass) {
-        return annotationClass == InternalVMMethod.class;
+        return annotationClass == LambdaFormHiddenMethod.class;
     }
 
     @Override
     public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
-        if (annotationClass == InternalVMMethod.class) {
-            return annotationClass.cast(InternalVMMethod.Holder.INSTANCE);
+        if (annotationClass == LambdaFormHiddenMethod.class) {
+            return annotationClass.cast(LambdaFormHiddenMethod.Holder.INSTANCE);
         }
         return null;
     }
@@ -127,10 +127,26 @@ public class LambdaSubstitutionType implements ResolvedJavaType, OriginalClassPr
     }
 
     @Override
+    public void link() {
+        original.link();
+    }
+
+    @Override
+    public boolean hasDefaultMethods() {
+        return original.hasDefaultMethods();
+    }
+
+    @Override
+    public boolean declaresDefaultMethods() {
+        return original.declaresDefaultMethods();
+    }
+
+    @Override
     public boolean isAssignableFrom(ResolvedJavaType other) {
         return original.isAssignableFrom(other);
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public ResolvedJavaType getHostClass() {
         return original.getHostClass();

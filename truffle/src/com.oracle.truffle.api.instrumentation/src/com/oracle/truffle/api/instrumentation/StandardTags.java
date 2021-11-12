@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,11 +40,11 @@
  */
 package com.oracle.truffle.api.instrumentation;
 
-import com.oracle.truffle.api.Scope;
-import com.oracle.truffle.api.TruffleException;
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameSlot;
+import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.nodes.Node;
+import com.oracle.truffle.api.source.SourceSection;
 
 /**
  * Set of standard tags usable by language agnostic tools. Language should {@link ProvidedTags
@@ -159,9 +159,8 @@ public final class StandardTags {
      * <p>
      * Use case descriptions:
      * <ul>
-     * <li><b>Profiler:</b> Marks body of every root that should be profiled and where
-     * {@link Scope#getArguments() arguments} and {@link Scope#getReceiver() receiver object} are
-     * initialized and ready to be retrieved.</li>
+     * <li><b>Profiler:</b> Marks body of every root that should be profiled and where local
+     * variables are initialized and ready to be retrieved.</li>
      * </ul>
      *
      * The RootBodyTag uses the {@link Tag.Identifier identifier} <code>"ROOT_BODY"</code>. A node
@@ -222,13 +221,14 @@ public final class StandardTags {
      * Marks program locations to be considered as try blocks, that are followed by catch. To
      * determine which exceptions are caught by {@link InstrumentableNode} tagged with this tag, the
      * node might provide a {@link InstrumentableNode#getNodeObject() node object} that has
-     * <code>catches</code> function, which takes a {@link TruffleException#getExceptionObject()}
-     * and returns a boolean return value indicating whether the try block catches the exception, or
-     * not. When this block catches all exceptions, no special node object or catches function needs
-     * to be provided.
+     * <code>catches</code> function, which takes a an interop value that returns <code>true</code>
+     * for {@link InteropLibrary#isException(Object)} and returns a boolean value indicating whether
+     * the try block catches the exception, or not. When this block catches all exceptions, no
+     * special node object or catches function needs to be provided.
      *
      * @since 19.0
      */
+    @SuppressWarnings("deprecation")
     @Tag.Identifier("TRY_BLOCK")
     public static final class TryBlockTag extends Tag {
 
@@ -256,8 +256,18 @@ public final class StandardTags {
      * </ul>
      * To determine the name of the variable, it is required that a node tagged with
      * {@link ReadVariableTag} also provides a {@link InstrumentableNode#getNodeObject() node
-     * object} that has a <code>name</code> property. Furthermore, nodes tagged with
-     * {@link ReadVariableTag} have to provide a {@link Node#getSourceSection() source section}.
+     * object} that has {@link ReadVariableTag#NAME} property. The value of that property is either:
+     * <ul>
+     * <li>a String name of the variable (in that case the node's {@link Node#getSourceSection()
+     * source section} is considered as the variable's source section),
+     * <li>an object that provides name and {@link SourceSection} via
+     * {@link InteropLibrary#asString(Object)} and {@link InteropLibrary#getSourceLocation(Object)}
+     * respectively,
+     * <li>an array of objects when multiple variables are being read, where each array element
+     * provides name and {@link SourceSection} as specified above.
+     * </ul>
+     * Furthermore, nodes tagged with {@link ReadVariableTag} have to provide a
+     * {@link Node#getSourceSection() source section}.
      *
      * @since 20.0.0
      */
@@ -288,8 +298,19 @@ public final class StandardTags {
      * </ul>
      * To determine the name of the variable, it is required that a node tagged with
      * {@link WriteVariableTag} also provides a {@link InstrumentableNode#getNodeObject() node
-     * object} that has a <code>name</code> property. Furthermore, nodes tagged with
-     * {@link WriteVariableTag} have to provide a {@link Node#getSourceSection() source section}.
+     * object} that has {@link WriteVariableTag#NAME} property. The value of that property is
+     * either:
+     * <ul>
+     * <li>a String name of the variable (in that case the node's {@link Node#getSourceSection()
+     * source section} is considered as the variable's source section),
+     * <li>an object that provides name and {@link SourceSection} via
+     * {@link InteropLibrary#asString(Object)} and {@link InteropLibrary#getSourceLocation(Object)}
+     * respectively,
+     * <li>an array of objects when multiple variables are being read, where each array element
+     * provides name and {@link SourceSection} as specified above.
+     * </ul>
+     * Furthermore, nodes tagged with {@link WriteVariableTag} have to provide a
+     * {@link Node#getSourceSection() source section}.
      *
      * @since 20.0.0
      */

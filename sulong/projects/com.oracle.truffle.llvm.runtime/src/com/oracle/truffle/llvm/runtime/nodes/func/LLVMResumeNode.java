@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -60,6 +60,11 @@ public abstract class LLVMResumeNode extends LLVMControlFlowNode {
     }
 
     @Override
+    public int[] getSuccessors() {
+        return new int[]{};
+    }
+
+    @Override
     public LLVMStatementNode getPhiNode(int successorIndex) {
         return null;
     }
@@ -70,20 +75,7 @@ public abstract class LLVMResumeNode extends LLVMControlFlowNode {
             LLVMUserException thrownException = (LLVMUserException) frame.getObject(getExceptionSlot());
             throw thrownException;
         } catch (FrameSlotTypeException e) {
-            CompilerDirectives.transferToInterpreter();
-            throw new IllegalStateException(e);
+            throw CompilerDirectives.shouldNotReachHere(e);
         }
     }
-
-    /**
-     * Override to allow access from generated wrapper.
-     */
-    @Override
-    protected abstract boolean isStatement();
-
-    /**
-     * Override to allow access from generated wrapper.
-     */
-    @Override
-    protected abstract void setStatement(boolean statementTag);
 }

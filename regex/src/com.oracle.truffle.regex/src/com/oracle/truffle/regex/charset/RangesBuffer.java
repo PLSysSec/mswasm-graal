@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -78,7 +78,7 @@ public interface RangesBuffer extends SortedListOfRanges {
 
     /**
      * Add {@code [lo hi]} to this list. The list is altered such that all values of the given range
-     * are included and {@link #rangesAreSortedAndDisjoint()} holds after the operation.
+     * are included and {@link #rangesAreSortedNonAdjacentAndDisjoint()} holds after the operation.
      */
     default void addRange(int lo, int hi) {
         int search = binarySearch(lo);

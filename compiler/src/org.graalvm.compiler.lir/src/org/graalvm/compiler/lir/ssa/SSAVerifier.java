@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,8 +26,10 @@
 package org.graalvm.compiler.lir.ssa;
 
 import static jdk.vm.ci.code.ValueUtil.isRegister;
+import static org.graalvm.compiler.lir.LIRValueUtil.isCast;
 import static org.graalvm.compiler.lir.LIRValueUtil.isConstantValue;
 import static org.graalvm.compiler.lir.LIRValueUtil.isStackSlotValue;
+import static org.graalvm.compiler.lir.LIRValueUtil.stripCast;
 
 import java.util.BitSet;
 import java.util.EnumSet;
@@ -116,7 +118,8 @@ final class SSAVerifier {
      * @param mode
      * @param flags
      */
-    private void useConsumer(LIRInstruction inst, Value value, OperandMode mode, EnumSet<OperandFlag> flags) {
+    private void useConsumer(LIRInstruction inst, Value val, OperandMode mode, EnumSet<OperandFlag> flags) {
+        Value value = stripCast(val);
         if (shouldProcess(value)) {
             assert defined.containsKey(value) || flags.contains(OperandFlag.UNINITIALIZED) : String.format("Value %s used at instruction %s in block %s but never defined", value, inst,
                             currentBlock);
@@ -129,8 +132,9 @@ final class SSAVerifier {
      * @param flags
      */
     private void defConsumer(LIRInstruction inst, Value value, OperandMode mode, EnumSet<OperandFlag> flags) {
+        assert !isCast(value);
         if (shouldProcess(value)) {
-            assert !defined.containsKey(value) : String.format("Value %s redefined at %s but never defined (previous definition %s in block %s)", value, inst, defined.get(value).inst,
+            assert !defined.containsKey(value) : String.format("Value %s redefined at %s (previous definition %s in block %s)", value, inst, defined.get(value).inst,
                             defined.get(value).block);
             defined.put(value, new Entry(inst, currentBlock));
         }

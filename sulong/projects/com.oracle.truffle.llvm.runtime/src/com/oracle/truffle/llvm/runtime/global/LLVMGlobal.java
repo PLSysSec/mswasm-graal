@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -31,8 +31,10 @@ package com.oracle.truffle.llvm.runtime.global;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
+import com.oracle.truffle.llvm.runtime.IDGenerater;
+import com.oracle.truffle.llvm.runtime.IDGenerater.BitcodeID;
 import com.oracle.truffle.llvm.runtime.LLVMContext;
-import com.oracle.truffle.llvm.runtime.ExternalLibrary;
+import com.oracle.truffle.llvm.runtime.LLVMElemPtrSymbol;
 import com.oracle.truffle.llvm.runtime.LLVMFunction;
 import com.oracle.truffle.llvm.runtime.LLVMSymbol;
 import com.oracle.truffle.llvm.runtime.debug.scope.LLVMSourceSymbol;
@@ -45,28 +47,29 @@ public final class LLVMGlobal extends LLVMSymbol {
 
     private final LLVMSourceSymbol sourceSymbol;
     private final boolean readOnly;
+    public static final LLVMGlobal[] EMPTY = {};
 
-    @CompilationFinal private String name;
-    @CompilationFinal private PointerType type;
+    private final String name;
+    private final PointerType type;
     @CompilationFinal private boolean interopTypeCached;
     @CompilationFinal private LLVMInteropType interopType;
 
-    public static LLVMGlobal create(String name, PointerType type, LLVMSourceSymbol sourceSymbol, boolean readOnly, int index, int id) {
+    public static LLVMGlobal create(String name, PointerType type, LLVMSourceSymbol sourceSymbol, boolean readOnly, int index, BitcodeID id, boolean exported, boolean externalWeak) {
         if (index < 0) {
             throw new AssertionError("Invalid index for LLVM global: " + index);
         }
-        if (id < 0) {
+        if (id == null) {
             throw new AssertionError("Invalid index for LLVM global: " + id);
         }
-        return new LLVMGlobal(name, type, sourceSymbol, readOnly, index, id);
+        return new LLVMGlobal(name, type, sourceSymbol, readOnly, index, id, exported, externalWeak);
     }
 
     public static LLVMGlobal createUnavailable(String name) {
-        return new LLVMGlobal(name + " (unavailable)", PointerType.VOID, null, true, -1, -1);
+        return new LLVMGlobal(name + " (unavailable)", PointerType.VOID, null, true, LLVMSymbol.INVALID_INDEX, IDGenerater.INVALID_ID, false, false);
     }
 
-    private LLVMGlobal(String name, PointerType type, LLVMSourceSymbol sourceSymbol, boolean readOnly, int globalIndex, int moduleId) {
-        super(name, null, moduleId, globalIndex);
+    private LLVMGlobal(String name, PointerType type, LLVMSourceSymbol sourceSymbol, boolean readOnly, int globalIndex, BitcodeID id, boolean exported, boolean externalWeak) {
+        super(name, id, globalIndex, exported, externalWeak);
         this.name = name;
         this.type = type;
         this.sourceSymbol = sourceSymbol;
@@ -78,14 +81,14 @@ public final class LLVMGlobal extends LLVMSymbol {
 
     @Override
     public String toString() {
-        return "(" + type + ")" + (getLibrary() == null ? "" : getLibrary().getName() + "::") + name;
+        return "(" + type + ")" + name;
     }
 
     public LLVMInteropType getInteropType(LLVMContext context) {
         if (!interopTypeCached) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
             LLVMSourceType sourceType = sourceSymbol != null ? sourceSymbol.getType() : null;
-            interopType = context.getInteropType(sourceType);
+            interopType = context.getLanguage().getInteropType(sourceType);
             interopTypeCached = true;
         }
         return interopType;
@@ -97,28 +100,6 @@ public final class LLVMGlobal extends LLVMSymbol {
 
     public Type getPointeeType() {
         return type.getPointeeType();
-    }
-
-    @Override
-    public boolean isDefined() {
-        return getLibrary() != null;
-    }
-
-    public void define(ExternalLibrary newLibrary) {
-        define(type, newLibrary);
-    }
-
-    // TODO (chaeubl): overwriting the type is a workaround to avoid type mismatches that occur for
-    // C++ code
-    public void define(PointerType newType, ExternalLibrary newLibrary) {
-        assert newType != null && newLibrary != null;
-        if (!isDefined()) {
-            this.type = newType;
-            setLibrary(newLibrary);
-        } else {
-            CompilerDirectives.transferToInterpreter();
-            throw new AssertionError("Found multiple definitions of global " + getName() + ".");
-        }
     }
 
     public boolean isReadOnly() {
@@ -148,5 +129,15 @@ public final class LLVMGlobal extends LLVMSymbol {
     @Override
     public LLVMGlobal asGlobalVariable() {
         return this;
+    }
+
+    @Override
+    public boolean isElemPtrExpression() {
+        return false;
+    }
+
+    @Override
+    public LLVMElemPtrSymbol asElemPtrExpression() {
+        throw new IllegalStateException("Global " + name + " is not a GetElementPointer symbol.");
     }
 }

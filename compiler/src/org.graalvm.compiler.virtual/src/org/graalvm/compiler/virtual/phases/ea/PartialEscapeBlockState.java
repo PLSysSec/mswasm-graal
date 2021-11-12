@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -74,7 +74,7 @@ public abstract class PartialEscapeBlockState<T extends PartialEscapeBlockState<
     }
 
     /**
-     * Usage count for the objectStates array, to avoid unneessary copying.
+     * Usage count for the objectStates array, to avoid unnecessary copying.
      */
     private RefCount arrayRefCount;
 
@@ -118,6 +118,10 @@ public abstract class PartialEscapeBlockState<T extends PartialEscapeBlockState<
 
     public ObjectState getObjectStateOptional(int object) {
         return object >= objectStates.length ? null : objectStates[object];
+    }
+
+    public boolean hasObjectState(int object) {
+        return object >= 0 && object < objectStates.length && objectStates[object] != null;
     }
 
     /**

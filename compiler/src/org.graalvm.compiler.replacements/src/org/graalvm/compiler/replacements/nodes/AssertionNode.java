@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,16 +24,15 @@
  */
 package org.graalvm.compiler.replacements.nodes;
 
-import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_UNKNOWN;
-import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_UNKNOWN;
+import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_IGNORED;
+import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_IGNORED;
 
-import org.graalvm.compiler.core.common.GraalOptions;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.NodeClass;
-import org.graalvm.compiler.graph.spi.Canonicalizable;
-import org.graalvm.compiler.graph.spi.CanonicalizerTool;
+import org.graalvm.compiler.nodes.spi.Canonicalizable;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.FixedWithNextNode;
 import org.graalvm.compiler.nodes.ValueNode;
@@ -47,27 +46,34 @@ import org.graalvm.compiler.nodes.spi.NodeLIRBuilderTool;
  * fail if this has not happened by the time the node is lowered to LIR, while runtime assertions
  * may need to insert a check.
  */
-@NodeInfo(cycles = CYCLES_UNKNOWN, size = SIZE_UNKNOWN)
+@NodeInfo(cycles = CYCLES_IGNORED, size = SIZE_IGNORED)
 public final class AssertionNode extends FixedWithNextNode implements Lowerable, Canonicalizable, LIRLowerable {
 
     public static final NodeClass<AssertionNode> TYPE = NodeClass.create(AssertionNode.class);
     @Input ValueNode condition;
+    @Input ValueNode l1;
+    @Input ValueNode l2;
 
     protected final boolean compileTimeAssertion;
     protected final String message;
 
-    public AssertionNode(boolean compileTimeAssertion, ValueNode condition, String message, Object arg1, Object arg2) {
+    protected AssertionNode(@ConstantNodeParameter boolean compileTimeAssertion, ValueNode condition, @ConstantNodeParameter String message, @ConstantNodeParameter Object msgArg1,
+                    @ConstantNodeParameter Object msgArg2,
+                    ValueNode l1, ValueNode l2) {
         super(TYPE, StampFactory.forVoid());
         this.condition = condition;
         this.compileTimeAssertion = compileTimeAssertion;
-        this.message = message + arg1 + arg2;
+        this.message = message + msgArg1 + msgArg2;
+        this.l1 = l1;
+        this.l2 = l2;
     }
 
-    public AssertionNode(boolean compileTimeAssertion, ValueNode condition, String message, long arg1, long arg2) {
-        super(TYPE, StampFactory.forVoid());
-        this.condition = condition;
-        this.compileTimeAssertion = compileTimeAssertion;
-        this.message = message + arg1 + arg2;
+    public ValueNode getL1() {
+        return l1;
+    }
+
+    public ValueNode getL2() {
+        return l2;
     }
 
     public ValueNode condition() {
@@ -76,6 +82,10 @@ public final class AssertionNode extends FixedWithNextNode implements Lowerable,
 
     public String message() {
         return message;
+    }
+
+    public boolean isCompileTimeAssertion() {
+        return compileTimeAssertion;
     }
 
     @Override
@@ -93,44 +103,39 @@ public final class AssertionNode extends FixedWithNextNode implements Lowerable,
     @Override
     public void lower(LoweringTool tool) {
         if (!compileTimeAssertion) {
-            if (GraalOptions.ImmutableCode.getValue(getOptions())) {
-                // Snippet assertions are disabled for AOT
-                graph().removeFixed(this);
-            } else {
-                tool.getLowerer().lower(this, tool);
-            }
+            tool.getLowerer().lower(this, tool);
         }
     }
 
     @Override
     public void generate(NodeLIRBuilderTool generator) {
         assert compileTimeAssertion;
-        if (GraalOptions.ImmutableCode.getValue(getOptions())) {
-            // Snippet assertions are disabled for AOT
-            return;
-        }
         if (condition.isConstant()) {
             if (condition.asJavaConstant().asInt() == 0) {
                 throw new GraalError("%s: failed compile-time assertion: %s", this, message);
             }
         } else {
-            throw new GraalError("%s: failed compile-time assertion (value %s): %s", this, condition, message);
+            throw new GraalError("%s: failed compile-time assertion (value %s): %s. Condition must be constant.", this, condition, message);
         }
     }
 
     @NodeIntrinsic
-    public static native void assertion(@ConstantNodeParameter boolean compileTimeAssertion, boolean condition, @ConstantNodeParameter String message, @ConstantNodeParameter Object arg1,
-                    @ConstantNodeParameter Object arg2);
+    public static native void assertion(@ConstantNodeParameter boolean compileTimeAssertion, boolean condition, @ConstantNodeParameter String message, @ConstantNodeParameter Object msgArg1,
+                    @ConstantNodeParameter Object msgArg2, long arg1, long arg2);
 
-    @NodeIntrinsic
-    public static native void assertion(@ConstantNodeParameter boolean compileTimeAssertion, boolean condition, @ConstantNodeParameter String message, @ConstantNodeParameter long arg1,
-                    @ConstantNodeParameter long arg2);
-
-    public static void assertion(@ConstantNodeParameter boolean compileTimeAssertion, boolean condition, @ConstantNodeParameter String message) {
-        assertion(compileTimeAssertion, condition, message, "", "");
+    public static void staticAssert(boolean condition, String message) {
+        assertion(true, condition, message, "", "", 0L, 0L);
     }
 
-    public static void assertion(@ConstantNodeParameter boolean compileTimeAssertion, boolean condition, @ConstantNodeParameter String message, @ConstantNodeParameter Object arg1) {
-        assertion(compileTimeAssertion, condition, message, arg1, "");
+    public static void staticAssert(boolean condition, String message, Object msgArg1, Object msgArg2) {
+        assertion(true, condition, message, msgArg1, msgArg2, 0L, 0L);
+    }
+
+    public static void dynamicAssert(boolean condition, String message) {
+        assertion(false, condition, message, "", "", 0L, 0L);
+    }
+
+    public static void dynamicAssert(boolean condition, String message, long arg1, long arg2) {
+        assertion(false, condition, message, "", "", arg1, arg2);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -31,17 +31,15 @@ package com.oracle.truffle.llvm.runtime.nodes.memory.load;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.dsl.Cached;
-import com.oracle.truffle.api.dsl.CachedLanguage;
+import com.oracle.truffle.api.dsl.GenerateAOT;
 import com.oracle.truffle.api.dsl.NodeField;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.library.CachedLibrary;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
-import com.oracle.truffle.llvm.runtime.LLVMLanguage;
 import com.oracle.truffle.llvm.runtime.library.internal.LLVMManagedReadLibrary;
 import com.oracle.truffle.llvm.runtime.memory.LLVMMemory;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMLoadNode;
-import com.oracle.truffle.llvm.runtime.nodes.api.LLVMObjectAccess.LLVMObjectReadNode;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMTypesGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMLoadVectorNodeFactory.LLVMLoadDoubleVectorNodeGen;
 import com.oracle.truffle.llvm.runtime.nodes.memory.load.LLVMLoadVectorNodeFactory.LLVMLoadFloatVectorNodeGen;
@@ -62,30 +60,44 @@ import com.oracle.truffle.llvm.runtime.vector.LLVMI32Vector;
 import com.oracle.truffle.llvm.runtime.vector.LLVMI64Vector;
 import com.oracle.truffle.llvm.runtime.vector.LLVMI8Vector;
 import com.oracle.truffle.llvm.runtime.vector.LLVMPointerVector;
+import com.oracle.truffle.llvm.runtime.vector.LLVMVector;
 
 @NodeField(name = "vectorLength", type = int.class)
 public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
-    @Children private volatile LLVMObjectReadNode[] foreignReadNodes;
+    protected final boolean isRecursive;
+
+    protected LLVMLoadVectorNode() {
+        this(false);
+    }
+
+    protected LLVMLoadVectorNode(boolean isRecursive) {
+        this.isRecursive = isRecursive;
+    }
 
     public abstract int getVectorLength();
 
     public abstract static class LLVMLoadI1VectorNode extends LLVMLoadVectorNode {
-
-        LLVMLoadI1VectorNode createRecursive() {
-            return LLVMLoadI1VectorNodeGen.create(null, getVectorLength());
+        protected LLVMLoadI1VectorNode() {
         }
 
-        protected abstract LLVMI1Vector executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadI1VectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        LLVMLoadI1VectorNode createRecursive() {
+            return LLVMLoadI1VectorNodeGen.create(true, null, getVectorLength());
+        }
+
+        public abstract LLVMI1Vector executeWithTarget(LLVMManagedPointer managed);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMI1Vector doI1VectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMI1Vector doI1VectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             boolean[] vector = new boolean[getVectorLength()];
             long basePtr = addr.asNative();
             for (int byteOffset = 0; byteOffset < (vector.length / 8) + 1; byteOffset++) {
-                int b = memory.getI8(basePtr + byteOffset);
+                int b = memory.getI8(this, basePtr + byteOffset);
                 for (int bitOffset = 0; bitOffset < 8 && ((byteOffset * 8) + bitOffset) < vector.length; bitOffset++) {
                     int mask = (1 << bitOffset) & 0xFF;
                     vector[(byteOffset * 8) + bitOffset] = ((b & mask) >> bitOffset) == 1;
@@ -94,16 +106,17 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
             return LLVMI1Vector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
         protected LLVMI1Vector doI1VectorDerefHandle(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
+
                         @Cached("createRecursive()") LLVMLoadI1VectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3")
         @ExplodeLoop
+        @GenerateAOT.Exclude
         protected LLVMI1Vector doForeign(LLVMManagedPointer addr,
                         @CachedLibrary("addr.getObject()") LLVMManagedReadLibrary nativeRead) {
             boolean[] vector = new boolean[getVectorLength()];
@@ -118,36 +131,42 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
     public abstract static class LLVMLoadI8VectorNode extends LLVMLoadVectorNode {
 
-        LLVMLoadI8VectorNode createRecursive() {
-            return LLVMLoadI8VectorNodeGen.create(null, getVectorLength());
+        protected LLVMLoadI8VectorNode() {
         }
 
-        protected abstract LLVMI8Vector executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadI8VectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        LLVMLoadI8VectorNode createRecursive() {
+            return LLVMLoadI8VectorNodeGen.create(true, null, getVectorLength());
+        }
+
+        public abstract LLVMI8Vector executeWithTarget(LLVMManagedPointer managed);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMI8Vector doI8VectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMI8Vector doI8VectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             byte[] vector = new byte[getVectorLength()];
             long currentPtr = addr.asNative();
             for (int i = 0; i < vector.length; i++) {
-                vector[i] = memory.getI8(currentPtr);
+                vector[i] = memory.getI8(this, currentPtr);
                 currentPtr += I8_SIZE_IN_BYTES;
             }
             return LLVMI8Vector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
         protected LLVMI8Vector doI8VectorDerefHandle(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
                         @Cached("createRecursive()") LLVMLoadI8VectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3")
         @ExplodeLoop
+        @GenerateAOT.Exclude
         protected LLVMI8Vector doForeign(LLVMManagedPointer addr,
                         @CachedLibrary("addr.getObject()") LLVMManagedReadLibrary nativeRead) {
             byte[] vector = new byte[getVectorLength()];
@@ -162,36 +181,42 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
     public abstract static class LLVMLoadI16VectorNode extends LLVMLoadVectorNode {
 
-        LLVMLoadI16VectorNode createRecursive() {
-            return LLVMLoadI16VectorNodeGen.create(null, getVectorLength());
+        protected LLVMLoadI16VectorNode() {
         }
 
-        protected abstract LLVMI16Vector executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadI16VectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        LLVMLoadI16VectorNode createRecursive() {
+            return LLVMLoadI16VectorNodeGen.create(true, null, getVectorLength());
+        }
+
+        public abstract LLVMI16Vector executeWithTarget(LLVMManagedPointer managed);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMI16Vector doI16VectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMI16Vector doI16VectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             short[] vector = new short[getVectorLength()];
             long currentPtr = addr.asNative();
             for (int i = 0; i < vector.length; i++) {
-                vector[i] = memory.getI16(currentPtr);
+                vector[i] = memory.getI16(this, currentPtr);
                 currentPtr += I16_SIZE_IN_BYTES;
             }
             return LLVMI16Vector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
         protected LLVMI16Vector doI16VectorDerefHandle(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
                         @Cached("createRecursive()") LLVMLoadI16VectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3")
         @ExplodeLoop
+        @GenerateAOT.Exclude
         protected LLVMI16Vector doForeign(LLVMManagedPointer addr,
                         @CachedLibrary("addr.getObject()") LLVMManagedReadLibrary nativeRead) {
             short[] vector = new short[getVectorLength()];
@@ -206,36 +231,42 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
     public abstract static class LLVMLoadI32VectorNode extends LLVMLoadVectorNode {
 
-        LLVMLoadI32VectorNode createRecursive() {
-            return LLVMLoadI32VectorNodeGen.create(null, getVectorLength());
+        protected LLVMLoadI32VectorNode() {
         }
 
-        protected abstract LLVMI32Vector executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadI32VectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        LLVMLoadI32VectorNode createRecursive() {
+            return LLVMLoadI32VectorNodeGen.create(true, null, getVectorLength());
+        }
+
+        public abstract LLVMI32Vector executeWithTarget(LLVMManagedPointer managed);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMI32Vector doI32VectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMI32Vector doI32VectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             int[] vector = new int[getVectorLength()];
             long currentPtr = addr.asNative();
             for (int i = 0; i < vector.length; i++) {
-                vector[i] = memory.getI32(currentPtr);
+                vector[i] = memory.getI32(this, currentPtr);
                 currentPtr += I32_SIZE_IN_BYTES;
             }
             return LLVMI32Vector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
         protected LLVMI32Vector doI32VectorDerefHandle(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
                         @Cached("createRecursive()") LLVMLoadI32VectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3")
         @ExplodeLoop
+        @GenerateAOT.Exclude
         protected LLVMI32Vector doForeign(LLVMManagedPointer addr,
                         @CachedLibrary("addr.getObject()") LLVMManagedReadLibrary nativeRead) {
             int[] vector = new int[getVectorLength()];
@@ -250,32 +281,37 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
     public abstract static class LLVMLoadI64VectorNode extends LLVMLoadVectorNode {
 
-        LLVMLoadI64VectorNode createRecursive() {
-            return LLVMLoadI64VectorNodeGen.create(null, getVectorLength());
+        protected LLVMLoadI64VectorNode() {
         }
 
-        protected abstract Object executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadI64VectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        LLVMLoadI64VectorNode createRecursive() {
+            return LLVMLoadI64VectorNodeGen.create(true, null, getVectorLength());
+        }
+
+        public abstract LLVMVector executeWithTarget(LLVMManagedPointer managed);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMI64Vector doI64VectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMI64Vector doI64VectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             long[] vector = new long[getVectorLength()];
             long currentPtr = addr.asNative();
             for (int i = 0; i < vector.length; i++) {
-                vector[i] = memory.getI64(currentPtr);
+                vector[i] = memory.getI64(this, currentPtr);
                 currentPtr += I64_SIZE_IN_BYTES;
             }
             return LLVMI64Vector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
-        protected Object doI64VectorDerefHandle(LLVMNativePointer addr,
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
+        protected LLVMVector doI64VectorDerefHandle(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
                         @Cached("createRecursive()") LLVMLoadI64VectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3", rewriteOn = UnexpectedResultException.class)
@@ -318,7 +354,7 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
         @Specialization(replaces = "doI64Vector")
         @ExplodeLoop
-        protected Object doPointerVector(LLVMManagedPointer addr,
+        protected LLVMPointerVector doPointerVector(LLVMManagedPointer addr,
                         @Cached("create(getVectorLength())") LLVMLoadPointerVectorNode load) {
             return load.executeWithTarget(addr);
         }
@@ -326,36 +362,46 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
     public abstract static class LLVMLoadPointerVectorNode extends LLVMLoadVectorNode {
 
-        static LLVMLoadPointerVectorNode create(int length) {
-            return LLVMLoadPointerVectorNodeGen.create(null, length);
+        protected LLVMLoadPointerVectorNode() {
         }
 
-        protected abstract LLVMPointerVector executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadPointerVectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        static LLVMLoadPointerVectorNode create(int length) {
+            return LLVMLoadPointerVectorNodeGen.create(false, null, length);
+        }
+
+        static LLVMLoadPointerVectorNode createRecursive(int length) {
+            return LLVMLoadPointerVectorNodeGen.create(true, null, length);
+        }
+
+        public abstract LLVMPointerVector executeWithTarget(Object address);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMPointerVector doPointerVectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMPointerVector doPointerVectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             LLVMPointer[] vector = new LLVMPointer[getVectorLength()];
             long currentPtr = addr.asNative();
             for (int i = 0; i < vector.length; i++) {
-                vector[i] = memory.getPointer(currentPtr);
+                vector[i] = memory.getPointer(this, currentPtr);
                 currentPtr += ADDRESS_SIZE_IN_BYTES;
             }
             return LLVMPointerVector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
         protected LLVMPointerVector doPointerVectorDerefHandle(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
                         @Cached("create(getVectorLength())") LLVMLoadPointerVectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3")
         @ExplodeLoop
+        @GenerateAOT.Exclude
         protected LLVMPointerVector doForeignPointers(LLVMManagedPointer addr,
                         @CachedLibrary("addr.getObject()") LLVMManagedReadLibrary nativeRead) {
             LLVMPointer[] vector = new LLVMPointer[getVectorLength()];
@@ -370,36 +416,42 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
     public abstract static class LLVMLoadFloatVectorNode extends LLVMLoadVectorNode {
 
-        LLVMLoadFloatVectorNode createRecursive() {
-            return LLVMLoadFloatVectorNodeGen.create(null, getVectorLength());
+        protected LLVMLoadFloatVectorNode() {
         }
 
-        protected abstract LLVMFloatVector executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadFloatVectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        LLVMLoadFloatVectorNode createRecursive() {
+            return LLVMLoadFloatVectorNodeGen.create(true, null, getVectorLength());
+        }
+
+        public abstract LLVMFloatVector executeWithTarget(LLVMManagedPointer managed);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMFloatVector doFloatVectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMFloatVector doFloatVectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             float[] vector = new float[getVectorLength()];
             long currentPtr = addr.asNative();
             for (int i = 0; i < vector.length; i++) {
-                vector[i] = memory.getFloat(currentPtr);
+                vector[i] = memory.getFloat(this, currentPtr);
                 currentPtr += FLOAT_SIZE_IN_BYTES;
             }
             return LLVMFloatVector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
         protected LLVMFloatVector doFloatVectorDerefHandle(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
                         @Cached("createRecursive()") LLVMLoadFloatVectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3")
         @ExplodeLoop
+        @GenerateAOT.Exclude
         protected LLVMFloatVector doForeign(LLVMManagedPointer addr,
                         @CachedLibrary("addr.getObject()") LLVMManagedReadLibrary nativeRead) {
             float[] vector = new float[getVectorLength()];
@@ -414,36 +466,43 @@ public abstract class LLVMLoadVectorNode extends LLVMLoadNode {
 
     public abstract static class LLVMLoadDoubleVectorNode extends LLVMLoadVectorNode {
 
-        LLVMLoadDoubleVectorNode createRecursive() {
-            return LLVMLoadDoubleVectorNodeGen.create(null, getVectorLength());
+        protected LLVMLoadDoubleVectorNode() {
         }
 
-        protected abstract LLVMDoubleVector executeManaged(LLVMManagedPointer managed);
+        protected LLVMLoadDoubleVectorNode(boolean isRecursive) {
+            super(isRecursive);
+        }
 
-        @Specialization(guards = "!isAutoDerefHandle(language, addr)")
+        LLVMLoadDoubleVectorNode createRecursive() {
+            return LLVMLoadDoubleVectorNodeGen.create(true, null, getVectorLength());
+        }
+
+        public abstract LLVMDoubleVector executeWithTarget(LLVMManagedPointer managed);
+
+        @Specialization(guards = "!isAutoDerefHandle(addr)")
         @ExplodeLoop
-        protected LLVMDoubleVector doDoubleVectorNative(LLVMNativePointer addr,
-                        @CachedLanguage LLVMLanguage language) {
-            LLVMMemory memory = language.getLLVMMemory();
+        protected LLVMDoubleVector doDoubleVectorNative(LLVMNativePointer addr) {
+            LLVMMemory memory = getLanguage().getLLVMMemory();
             double[] vector = new double[getVectorLength()];
             long currentPtr = addr.asNative();
             for (int i = 0; i < vector.length; i++) {
-                vector[i] = memory.getDouble(currentPtr);
+                vector[i] = memory.getDouble(this, currentPtr);
                 currentPtr += DOUBLE_SIZE_IN_BYTES;
             }
             return LLVMDoubleVector.create(vector);
         }
 
-        @Specialization(guards = "isAutoDerefHandle(language, addr)")
+        @Specialization(guards = {"!isRecursive", "isAutoDerefHandle(addr)"})
         protected LLVMDoubleVector doDoubleVector(LLVMNativePointer addr,
                         @Cached LLVMDerefHandleGetReceiverNode getReceiver,
-                        @CachedLanguage @SuppressWarnings("unused") LLVMLanguage language,
+
                         @Cached("createRecursive()") LLVMLoadDoubleVectorNode load) {
-            return load.executeManaged(getReceiver.execute(addr));
+            return load.executeWithTarget(getReceiver.execute(addr));
         }
 
         @Specialization(limit = "3")
         @ExplodeLoop
+        @GenerateAOT.Exclude
         protected LLVMDoubleVector doForeign(LLVMManagedPointer addr,
                         @CachedLibrary("addr.getObject()") LLVMManagedReadLibrary nativeRead) {
             double[] vector = new double[getVectorLength()];

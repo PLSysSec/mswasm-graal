@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2018, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -37,6 +37,7 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.CompareExchange
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.CompareInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ExtractElementInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ExtractValueInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.FreezeInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.GetElementPointerInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.InsertElementInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.InsertValueInstruction;
@@ -47,6 +48,8 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.PhiInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ReadModifyWriteInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.SelectInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ShuffleVectorInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.UnaryOperationInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.VaArgInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ValueInstruction;
 
 public abstract class ValueInstructionVisitor implements SymbolVisitor {
@@ -60,6 +63,11 @@ public abstract class ValueInstructionVisitor implements SymbolVisitor {
 
     @Override
     public void visit(BinaryOperationInstruction operation) {
+        visitValueInstruction(operation);
+    }
+
+    @Override
+    public void visit(UnaryOperationInstruction operation) {
         visitValueInstruction(operation);
     }
 
@@ -99,6 +107,11 @@ public abstract class ValueInstructionVisitor implements SymbolVisitor {
     }
 
     @Override
+    public void visit(FreezeInstruction freeze) {
+        visitValueInstruction(freeze);
+    }
+
+    @Override
     public void visit(GetElementPointerInstruction gep) {
         visitValueInstruction(gep);
     }
@@ -116,6 +129,11 @@ public abstract class ValueInstructionVisitor implements SymbolVisitor {
     @Override
     public void visit(LoadInstruction load) {
         visitValueInstruction(load);
+    }
+
+    @Override
+    public void visit(VaArgInstruction vaArg) {
+        visitValueInstruction(vaArg);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -72,6 +72,8 @@ public interface ArithmeticLIRGeneratorTool {
 
     Value emitXor(Value a, Value b);
 
+    Value emitXorFP(Value a, Value b);
+
     Value emitShl(Value a, Value b);
 
     Value emitShr(Value a, Value b);
@@ -92,6 +94,10 @@ public interface ArithmeticLIRGeneratorTool {
 
     Value emitMathSqrt(Value input);
 
+    Value emitMathSignum(Value input);
+
+    Value emitMathCopySign(Value magnitude, Value sign);
+
     Value emitBitCount(Value operand);
 
     Value emitBitScanForward(Value operand);
@@ -100,7 +106,11 @@ public interface ArithmeticLIRGeneratorTool {
 
     Variable emitLoad(LIRKind kind, Value address, LIRFrameState state);
 
+    Variable emitVolatileLoad(LIRKind kind, Value address, LIRFrameState state);
+
     void emitStore(ValueKind<?> kind, Value address, Value input, LIRFrameState state);
+
+    void emitVolatileStore(ValueKind<?> kind, Value address, Value input, LIRFrameState state);
 
     @SuppressWarnings("unused")
     default Value emitFusedMultiplyAdd(Value a, Value b, Value c) {
@@ -135,6 +145,34 @@ public interface ArithmeticLIRGeneratorTool {
     @SuppressWarnings("unused")
     default Value emitMathPow(Value x, Value y) {
         throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    @SuppressWarnings("unused")
+    default Value emitMathMax(Value x, Value y) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    @SuppressWarnings("unused")
+    default Value emitMathMin(Value x, Value y) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    @SuppressWarnings("unused")
+    default Value emitRound(Value operand, RoundingMode mode) {
+        throw GraalError.unimplemented("No specialized implementation available");
+    }
+
+    enum RoundingMode {
+        NEAREST(0),
+        DOWN(1),
+        UP(2),
+        TRUNCATE(3);
+
+        public final int encoding;
+
+        RoundingMode(int encoding) {
+            this.encoding = encoding;
+        }
     }
 
 }

@@ -1,7 +1,7 @@
 suite = {
     "name": "vm",
-    "version" : "20.1.0",
-    "mxversion" : "5.256.0",
+    "version" : "22.0.0",
+    "mxversion" : "5.309.2",
     "release" : False,
     "groupId" : "org.graalvm",
 
@@ -39,7 +39,7 @@ suite = {
                 "name": "graal-nodejs",
                 "subdir": True,
                 "dynamic": True,
-                "version": "77e978faa9c3885d4df54cb8da438cf9929585da",
+                "version": "7d65741ec44fb70fc73e480d6177ddb5e7d74fba",
                 "urls" : [
                     {"url" : "https://github.com/graalvm/graaljs.git", "kind" : "git"},
                     {"url": "https://curio.ssw.jku.at/nexus/content/repositories/snapshots", "kind": "binary"},
@@ -49,7 +49,7 @@ suite = {
                 "name": "graal-js",
                 "subdir": True,
                 "dynamic": True,
-                "version": "77e978faa9c3885d4df54cb8da438cf9929585da",
+                "version": "7d65741ec44fb70fc73e480d6177ddb5e7d74fba",
                 "urls": [
                     {"url": "https://github.com/graalvm/graaljs.git", "kind" : "git"},
                     {"url": "https://curio.ssw.jku.at/nexus/content/repositories/snapshots", "kind": "binary"},
@@ -57,31 +57,16 @@ suite = {
             },
             {
                 "name": "truffleruby",
-                "version": "0a8ca9cbc2285da22d7cb2e61e0457301f730313",
+                "version": "f709b810385454a589febfb6ecd25f89932a3543",
                 "dynamic": True,
                 "urls": [
                     {"url": "https://github.com/oracle/truffleruby.git", "kind": "git"},
                     {"url": "https://curio.ssw.jku.at/nexus/content/repositories/snapshots", "kind": "binary"},
-                ],
-                "os_arch": {
-                    "linux": {
-                        "sparcv9": {
-                            "ignore": True
-                        },
-                        "<others>": {
-                            "ignore": False
-                        }
-                    },
-                    "<others>": {
-                        "<others>": {
-                            "ignore": False
-                        }
-                    }
-                }
+                ]
             },
             {
                 "name": "fastr",
-                "version": "5b7d871e4cf96b22954e119667b11e7a4849d4f4",
+                "version": "6d255f6297919fddf653ea5c42112917c9c93290",
                 "dynamic": True,
                 "urls": [
                     {"url": "https://github.com/oracle/fastr.git", "kind": "git"},
@@ -90,7 +75,7 @@ suite = {
             },
             {
                 "name": "graalpython",
-                "version": "00a086bdff5888f6d9eec74dc01839e76c5c53fb",
+                "version": "f57597943a3e3577652a2e8fc556e27d66920cb1",
                 "dynamic": True,
                 "urls": [
                     {"url": "https://github.com/graalvm/graalpython.git", "kind": "git"},
@@ -106,9 +91,10 @@ suite = {
             "sourceDirs" : ["src"],
             "javaCompliance" : "1.8+",
             "license" : "GPLv2-CPE",
-            "checkstyleVersion" : "8.8",
+            "checkstyleVersion" : "8.36.1",
             "dependencies": [
                 "sdk:LAUNCHER_COMMON",
+                "truffle:TruffleJSON",
             ],
         },
         "org.graalvm.component.installer.test" : {
@@ -122,6 +108,51 @@ suite = {
             "checkstyle": "org.graalvm.component.installer",
             "license" : "GPLv2-CPE",
         },
+        "org.graalvm.polybench" : {
+            "subDir" : "src",
+            "sourceDirs" : ["src"],
+            "javaCompliance" : "1.8+",
+            "license" : "GPLv2-CPE",
+            "checkstyle": "org.graalvm.component.installer",
+            "dependencies": [
+                "sdk:LAUNCHER_COMMON",
+            ],
+        },
+        "org.graalvm.polybench.micro" : {
+            "subDir" : "src",
+            "sourceDirs" : ["src"],
+            "javaCompliance" : "1.8+",
+            "license" : "GPLv2-CPE",
+            "checkstyle": "org.graalvm.component.installer",
+            "dependencies": [
+                "truffle:TRUFFLE_API",
+            ],
+            "annotationProcessors": [
+                "truffle:TRUFFLE_DSL_PROCESSOR",
+            ],
+        },
+        "nfi-native" : {
+            "subDir" : "benchmarks",
+            "native" : "shared_lib",
+            "deliverable" : "microbench",
+            "buildDependencies" : [
+                "truffle:TRUFFLE_NFI_GRAALVM_SUPPORT",
+            ],
+            "cflags" : [
+                "-I<path:truffle:TRUFFLE_NFI_GRAALVM_SUPPORT>/include",
+            ],
+            "testProject" : True,
+            "defaultBuild": False,
+        },
+    },
+
+    "libraries" : {
+        # Note: small warmup benchmarks can be placed directly under `graal/vm/benchmarks/warmup`
+        # and uncomment the corresponding line for the `layout` of `POLYBENCH_BENCHMARKS` in current suite.
+        "WARMUP_BENCHMARKS" : {
+            "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/polybench/warmup-benchmarks-0.1.tar.gz"],
+            "sha1" : "4e4a81c096ecc4ba7c4de9ab8ca5180e93c85e60"
+        }
     },
 
     "distributions": {
@@ -133,6 +164,9 @@ suite = {
             ],
             "distDependencies": [
                 "sdk:LAUNCHER_COMMON",
+            ],
+            "exclude" : [
+                "truffle:TruffleJSON"
             ],
             "maven" : False,
         },
@@ -166,6 +200,67 @@ suite = {
                 "THIRD_PARTY_LICENSE.txt": "file:THIRD_PARTY_LICENSE_CE.txt",
             },
             "maven": False,
+        },
+        "POLYBENCH": {
+            "subDir": "src",
+            "mainClass": "org.graalvm.polybench.PolyBenchLauncher",
+            "dependencies": [
+                "org.graalvm.polybench",
+            ],
+            "distDependencies": [
+                "sdk:LAUNCHER_COMMON",
+            ],
+            "maven" : False,
+        },
+        "PMH": {
+            "subDir": "src",
+            "dependencies": [
+                "org.graalvm.polybench.micro",
+            ],
+            "distDependencies": [
+                "truffle:TRUFFLE_API",
+            ],
+            "maven" : False,
+        },
+        "PMH_SUPPORT": {
+            "native": True,
+            "layout": {
+                "native-image.properties": "file:mx.vm/language-pmh.properties",
+            },
+            "maven": False,
+        },
+        "POLYBENCH_BENCHMARKS": {
+            "native": True,
+            "description": "Distribution for polybench benchmarks",
+            # llvm bitcode is platform dependent
+            "platformDependent": True,
+            "layout": {
+                # The layout may be modified via mx_vm.mx_register_dynamic_suite_constituents() to include dynamic projects.
+                "./interpreter/": [
+                    "file:benchmarks/interpreter/*.js",
+                    "file:benchmarks/interpreter/*.rb",
+                    "file:benchmarks/interpreter/*.py",
+                ],
+                "./interpreter/dependencies/": [
+                    "file:benchmarks/interpreter/dependencies/*",
+                ],
+                "./compiler/": [
+                    "file:benchmarks/compiler/*",
+                ],
+                "./warmup/": [
+                    # "file:benchmarks/warmup/*.js",
+                    # "file:benchmarks/warmup/*.rb",
+                    # "file:benchmarks/warmup/*.py",
+                    "extracted-dependency:WARMUP_BENCHMARKS/*"
+                ],
+                "./nfi/": [
+                    "file:benchmarks/nfi/*.pmh",
+                ],
+                "./nfi-native/": [
+                    "dependency:nfi-native",
+                ],
+            },
+            "defaultBuild": False,
         },
     },
 }

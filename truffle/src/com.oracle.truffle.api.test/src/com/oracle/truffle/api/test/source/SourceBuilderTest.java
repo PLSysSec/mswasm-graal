@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -544,7 +544,9 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
         setupEnv();
         URL resource = new URL("http://example.org/test/File.html");
         Source s = Source.newBuilder("TestJS", resource).content("Empty").build();
-        assertEquals(resource, s.getURL());
+        // The URL is converted into URI before comparison to skip the expensive hostname
+        // normalization.
+        assertEquals(resource.toURI(), s.getURL().toURI());
         assertEquals(resource.toURI(), s.getURI());
         assertEquals("File.html", s.getName());
         assertEquals("/test/File.html", s.getPath());
@@ -552,7 +554,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
     }
 
     @Test
-    public void testBuiltFromSourceLiteral() {
+    public void testBuiltFromSourceLiteral() throws URISyntaxException {
         final String code = "test code";
         final String description = "test description";
         for (int cached = 0; cached <= 1; cached++) {
@@ -568,7 +570,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
     }
 
     @Test
-    public void testBuiltFromBinarySource() {
+    public void testBuiltFromBinarySource() throws URISyntaxException {
         setupEnv();
         ByteSequence bytes = ByteSequence.create(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
         Source source1 = Source.newBuilder("Lang", bytes, "testName").build();
@@ -578,7 +580,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
     }
 
     @Test
-    public void testBuiltFromSourceReader() throws IOException {
+    public void testBuiltFromSourceReader() throws IOException, URISyntaxException {
         setupEnv();
         StringReader reader = new StringReader("test\ncode");
         Source source1 = Source.newBuilder("Lang", reader, "testName").build();
@@ -588,7 +590,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
     }
 
     @Test
-    public void testBuiltFromSourceFile() {
+    public void testBuiltFromSourceFile() throws URISyntaxException {
         setupEnv();
         File file = new File("some.tjs");
         final TruffleFile truffleFile = languageEnv.getPublicTruffleFile(file.getAbsolutePath());
@@ -599,7 +601,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
     }
 
     @Test
-    public void testBuiltFromSourceURL() throws IOException {
+    public void testBuiltFromSourceURL() throws IOException, URISyntaxException {
         setupEnv();
         URL resource = new URL("http://example.org/test/File.html");
         Source source1 = Source.newBuilder("Lang", resource).content("Empty").build();
@@ -609,7 +611,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
     }
 
     @Test
-    public void testBuiltFromNoContentSource() {
+    public void testBuiltFromNoContentSource() throws URISyntaxException {
         setupEnv();
         // Relative file
         TruffleFile truffleFile = languageEnv.getPublicTruffleFile("some/path");
@@ -619,7 +621,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
         assertNewSourceChanged(source1);
     }
 
-    private static void assertSameProperties(Source s1, Source s2) {
+    private static void assertSameProperties(Source s1, Source s2) throws URISyntaxException {
         assertEquals(s1.hasBytes(), s2.hasBytes());
         assertEquals(s1.hasCharacters(), s2.hasCharacters());
         if (s1.hasCharacters()) {
@@ -635,7 +637,11 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
         assertEquals(s1.getName(), s2.getName());
         assertEquals(s1.getPath(), s2.getPath());
         assertEquals(s1.getURI(), s2.getURI());
-        assertEquals(s1.getURL(), s2.getURL());
+        URL url1 = s1.getURL();
+        URL url2 = s2.getURL();
+        // The URL is converted into URI before comparison to skip the expensive hostname
+        // normalization.
+        assertEquals(url1 == null ? null : url1.toURI(), url2 == null ? null : url2.toURI());
         assertEquals(s1.isInteractive(), s2.isInteractive());
         assertEquals(s1.isInternal(), s2.isInternal());
     }
@@ -738,13 +744,15 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
         TruffleFile file = languageEnv.getPublicTruffleFile(testFile.getPath());
         Source src = Source.newBuilder("lang", file).encoding(StandardCharsets.UTF_16LE).build();
         assertEquals(content, src.getCharacters().toString());
+        src = Source.newBuilder("TestTxt", file).encoding(StandardCharsets.UTF_16LE).build();
+        assertEquals(content, src.getCharacters().toString());
 
         testFile = File.createTempFile("test", ".xml").getAbsoluteFile();
         try (FileOutputStream out = new FileOutputStream(testFile)) {
             out.write(xmlContent.getBytes(Charset.forName("windows-1250")));
         }
         file = languageEnv.getPublicTruffleFile(testFile.getPath());
-        src = Source.newBuilder("lang", file).build();
+        src = Source.newBuilder("TestFooXML", file).build();
         assertEquals(xmlContent, src.getCharacters().toString());
 
         testFile = File.createTempFile("test", ".txt").getAbsoluteFile();
@@ -752,7 +760,7 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
             out.write(content.getBytes(StandardCharsets.UTF_8));
         }
         file = languageEnv.getPublicTruffleFile(testFile.getPath());
-        src = Source.newBuilder("lang", file).build();
+        src = Source.newBuilder("TestTxt", file).build();
         assertEquals(content, src.getCharacters().toString());
     }
 
@@ -769,19 +777,21 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
         }
         Source src = Source.newBuilder("lang", testFile.toURI().toURL()).encoding(StandardCharsets.UTF_16LE).build();
         assertEquals(content, src.getCharacters().toString());
+        src = Source.newBuilder("TestTxt", testFile.toURI().toURL()).encoding(StandardCharsets.UTF_16LE).build();
+        assertEquals(content, src.getCharacters().toString());
 
         testFile = File.createTempFile("test", ".xml").getAbsoluteFile();
         try (FileOutputStream out = new FileOutputStream(testFile)) {
             out.write(xmlContent.getBytes(Charset.forName("windows-1250")));
         }
-        src = Source.newBuilder("lang", testFile.toURI().toURL()).build();
+        src = Source.newBuilder("TestFooXML", testFile.toURI().toURL()).build();
         assertEquals(xmlContent, src.getCharacters().toString());
 
         testFile = File.createTempFile("test", ".txt").getAbsoluteFile();
         try (FileOutputStream out = new FileOutputStream(testFile)) {
             out.write(content.getBytes(StandardCharsets.UTF_8));
         }
-        src = Source.newBuilder("lang", testFile.toURI().toURL()).build();
+        src = Source.newBuilder("TestTxt", testFile.toURI().toURL()).build();
         assertEquals(content, src.getCharacters().toString());
     }
 
@@ -926,44 +936,8 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
     public static class TestJSLanguage extends ProxyLanguage {
     }
 
-    @Registration(id = "TestTxt", name = "", byteMimeTypes = "text/plain", fileTypeDetectors = CommonMIMETypeTestDetector.class)
+    @Registration(id = "TestTxt", name = "", characterMimeTypes = "text/plain", fileTypeDetectors = CommonMIMETypeTestDetector.class)
     public static class TestTxtLanguage extends ProxyLanguage {
-    }
-
-    @SuppressWarnings("deprecation")
-    @Test
-    public void testLegacyEquivalence() throws IOException, RuntimeException {
-        setupEnv();
-
-        File file = File.createTempFile("ChangeMe", ".java");
-        file.deleteOnExit();
-
-        String text;
-        try (FileWriter w = new FileWriter(file)) {
-            text = "// Hello";
-            w.write(text);
-        }
-        String path = file.getPath();
-        File compareFile = new File(path);
-
-        final TruffleFile truffleFile = languageEnv.getPublicTruffleFile(path);
-
-        String name = "foobar";
-        String mimeType = "text/x-java";
-        String lang = "TestJava";
-        boolean internal = true;
-
-        final Source.Builder<IOException, RuntimeException, RuntimeException> builder = Source.newBuilder(compareFile).language(lang).name(name.intern()).mimeType(mimeType);
-        final Source source1;
-
-        if (internal) {
-            source1 = builder.internal().build();
-        } else {
-            source1 = builder.build();
-        }
-        final Source source2 = Source.newBuilder(lang, truffleFile).name(name.intern()).mimeType(mimeType).internal(internal).build();
-
-        assertTrue(source1.equals(source2));
     }
 
     @Test
@@ -1038,6 +1012,100 @@ public class SourceBuilderTest extends AbstractPolyglotTest {
             fail("Expected SecurityException");
         } catch (SecurityException se) {
             // expected SecurityException
+        }
+    }
+
+    @Test
+    public void testCanonicalizedSourcePathByDefault() throws IOException {
+        Assume.assumeFalse("Link creation requires a special privilege on Windows", OSUtils.isWindows());
+        setupEnv();
+        TruffleFile tempDir = languageEnv.createTempDirectory(null, "sourcePathCanonicalizationDefault").getCanonicalFile();
+        try {
+            TruffleFile sourceFile = tempDir.resolve("sourceFile");
+            sourceFile.createFile();
+
+            TruffleFile symlink = tempDir.resolve("symlink");
+            symlink.createSymbolicLink(sourceFile);
+
+            Source source = Source.newBuilder("TestJava", symlink).content("hello").build();
+            assertEquals(sourceFile.getPath(), source.getPath());
+        } finally {
+            for (TruffleFile f : tempDir.list()) {
+                f.delete();
+            }
+            tempDir.delete();
+        }
+    }
+
+    @Test
+    public void testNotCanonicalizedSymlinkSourcePath() throws IOException {
+        Assume.assumeFalse("Link creation requires a special privilege on Windows", OSUtils.isWindows());
+        setupEnv();
+        TruffleFile tempDir = languageEnv.createTempDirectory(null, "sourcePathCanonicalizationSymlink").getCanonicalFile();
+        try {
+            TruffleFile sourceFile = tempDir.resolve("sourceFile");
+            sourceFile.createFile();
+
+            TruffleFile symlink = tempDir.resolve("symlink");
+            symlink.createSymbolicLink(sourceFile);
+
+            Source source = Source.newBuilder("TestJava", symlink).canonicalizePath(false).content("hello").build();
+            assertEquals(symlink.getPath(), source.getPath());
+        } finally {
+            for (TruffleFile f : tempDir.list()) {
+                f.delete();
+            }
+            tempDir.delete();
+        }
+    }
+
+    @Test
+    public void testNotCanonicalizedSymlinkRelativeSourcePath() throws IOException {
+        Assume.assumeFalse("Link creation requires a special privilege on Windows", OSUtils.isWindows());
+        setupEnv();
+        TruffleFile oldCWD = languageEnv.getCurrentWorkingDirectory();
+        TruffleFile tempDir = languageEnv.createTempDirectory(null, "sourcePathCanonicalizationRelative").getCanonicalFile();
+        try {
+            languageEnv.setCurrentWorkingDirectory(tempDir);
+
+            TruffleFile sourceFile = languageEnv.getInternalTruffleFile("sourceFile");
+            sourceFile.createFile();
+
+            TruffleFile symlink = languageEnv.getInternalTruffleFile("symlink");
+            symlink.createSymbolicLink(sourceFile);
+
+            Source source = Source.newBuilder("TestJava", symlink).canonicalizePath(false).content("hello").build();
+            assertEquals("symlink", source.getPath());
+        } finally {
+            languageEnv.setCurrentWorkingDirectory(oldCWD);
+            for (TruffleFile f : tempDir.list()) {
+                f.delete();
+            }
+            tempDir.delete();
+        }
+    }
+
+    @Test
+    public void testNotCanonicalizedNotExistingSourcePath() throws IOException {
+        Assume.assumeFalse("Link creation requires a special privilege on Windows", OSUtils.isWindows());
+        setupEnv();
+        TruffleFile tempDir = languageEnv.createTempDirectory(null, "sourcePathCanonicalizationNotExist").getCanonicalFile();
+        try {
+            TruffleFile sourceFile = tempDir.resolve("sourceFile");
+
+            TruffleFile symlink = tempDir.resolve("symlink");
+            symlink.createSymbolicLink(sourceFile);
+
+            Assert.assertFalse(sourceFile.exists());
+            Assert.assertFalse(symlink.exists());
+
+            Source source = Source.newBuilder("TestJava", symlink).canonicalizePath(false).content("hello").build();
+            assertEquals(symlink.getPath(), source.getPath());
+        } finally {
+            for (TruffleFile f : tempDir.list()) {
+                f.delete();
+            }
+            tempDir.delete();
         }
     }
 

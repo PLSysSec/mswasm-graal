@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -30,7 +30,7 @@
 package com.oracle.truffle.llvm.runtime.interop.convert;
 
 import com.oracle.truffle.api.dsl.Cached;
-import com.oracle.truffle.api.dsl.Fallback;
+import com.oracle.truffle.api.dsl.GenerateAOT;
 import com.oracle.truffle.api.dsl.GenerateUncached;
 import com.oracle.truffle.api.dsl.ImportStatic;
 import com.oracle.truffle.api.dsl.Specialization;
@@ -38,6 +38,7 @@ import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.library.CachedLibrary;
 import com.oracle.truffle.llvm.runtime.CommonNodeFactory;
+import com.oracle.truffle.llvm.runtime.except.LLVMPolyglotException;
 import com.oracle.truffle.llvm.runtime.interop.LLVMTypedForeignObject;
 import com.oracle.truffle.llvm.runtime.interop.access.LLVMInteropType;
 import com.oracle.truffle.llvm.runtime.interop.convert.ForeignToLLVM.ForeignToLLVMType;
@@ -46,6 +47,7 @@ import com.oracle.truffle.llvm.runtime.nodes.api.LLVMTypesGen;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMManagedPointer;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMNativePointer;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMPointer;
+import com.oracle.truffle.llvm.spi.NativeTypeLibrary;
 
 /**
  * Converts value to the target type. For fast path code, targetType will typically be constant in
@@ -98,10 +100,23 @@ public abstract class ToLLVM extends LLVMNode {
             return pointer;
         }
 
-        @Fallback
-        LLVMPointer doOther(Object value, LLVMInteropType.Structured type) {
-            LLVMTypedForeignObject typed = LLVMTypedForeignObject.create(value, type);
-            return LLVMManagedPointer.create(typed);
+        static boolean isPointer(Object value) {
+            return LLVMPointer.isInstance(value);
+        }
+
+        @Specialization(limit = "3", guards = {"!isPointer(value)", "type != null", "!nativeTypes.hasNativeType(value)"})
+        @GenerateAOT.Exclude
+        LLVMPointer doTyped(Object value, LLVMInteropType.Structured type,
+                        @SuppressWarnings("unused") @CachedLibrary("value") NativeTypeLibrary nativeTypes) {
+            return LLVMManagedPointer.create(LLVMTypedForeignObject.create(value, type));
+        }
+
+        @Specialization(limit = "3", guards = {"!isPointer(value)", "type == null || nativeTypes.hasNativeType(value)"})
+        @GenerateAOT.Exclude
+        LLVMPointer doUntyped(Object value, LLVMInteropType.Structured type,
+                        @CachedLibrary("value") NativeTypeLibrary nativeTypes) {
+            assert type == null || nativeTypes.hasNativeType(value);
+            return LLVMManagedPointer.create(value);
         }
     }
 
@@ -111,7 +126,8 @@ public abstract class ToLLVM extends LLVMNode {
 
         protected abstract Object execute(Object value, LLVMInteropType.Value incomingType) throws UnsupportedMessageException;
 
-        @Specialization(limit = "3", guards = "incomingType.getKind() == I1")
+        @Specialization(limit = "3", guards = "incomingType.kind == I1")
+        @GenerateAOT.Exclude
         static boolean doI1(Object value, @SuppressWarnings("unused") LLVMInteropType.Value incomingType,
                         @CachedLibrary("value") InteropLibrary interop) throws UnsupportedMessageException {
             if (!interop.isBoolean(value)) {
@@ -120,7 +136,8 @@ public abstract class ToLLVM extends LLVMNode {
             return interop.asBoolean(value);
         }
 
-        @Specialization(limit = "3", guards = "incomingType.getKind() == I8")
+        @Specialization(limit = "3", guards = "incomingType.kind == I8")
+        @GenerateAOT.Exclude
         static byte doI8(Object value, @SuppressWarnings("unused") LLVMInteropType.Value incomingType,
                         @CachedLibrary("value") InteropLibrary interop) throws UnsupportedMessageException {
             if (!interop.fitsInByte(value)) {
@@ -129,7 +146,8 @@ public abstract class ToLLVM extends LLVMNode {
             return interop.asByte(value);
         }
 
-        @Specialization(limit = "3", guards = "incomingType.getKind() == I16")
+        @Specialization(limit = "3", guards = "incomingType.kind == I16")
+        @GenerateAOT.Exclude
         static short doI16(Object value, @SuppressWarnings("unused") LLVMInteropType.Value incomingType,
                         @CachedLibrary("value") InteropLibrary interop) throws UnsupportedMessageException {
             if (!interop.fitsInShort(value)) {
@@ -138,7 +156,8 @@ public abstract class ToLLVM extends LLVMNode {
             return interop.asShort(value);
         }
 
-        @Specialization(limit = "3", guards = "incomingType.getKind() == I32")
+        @Specialization(limit = "3", guards = "incomingType.kind == I32")
+        @GenerateAOT.Exclude
         static int doI32(Object value, @SuppressWarnings("unused") LLVMInteropType.Value incomingType,
                         @CachedLibrary("value") InteropLibrary interop) throws UnsupportedMessageException {
             if (!interop.fitsInInt(value)) {
@@ -147,7 +166,8 @@ public abstract class ToLLVM extends LLVMNode {
             return interop.asInt(value);
         }
 
-        @Specialization(limit = "3", guards = "incomingType.getKind() == I64")
+        @Specialization(limit = "3", guards = "incomingType.kind == I64")
+        @GenerateAOT.Exclude
         static long doI64(Object value, @SuppressWarnings("unused") LLVMInteropType.Value incomingType,
                         @CachedLibrary("value") InteropLibrary interop) throws UnsupportedMessageException {
             if (!interop.fitsInLong(value)) {
@@ -156,7 +176,8 @@ public abstract class ToLLVM extends LLVMNode {
             return interop.asLong(value);
         }
 
-        @Specialization(limit = "3", guards = "incomingType.getKind() == FLOAT")
+        @Specialization(limit = "3", guards = "incomingType.kind == FLOAT")
+        @GenerateAOT.Exclude
         static float doFloat(Object value, @SuppressWarnings("unused") LLVMInteropType.Value incomingType,
                         @CachedLibrary("value") InteropLibrary interop) throws UnsupportedMessageException {
             if (!interop.fitsInFloat(value)) {
@@ -165,7 +186,8 @@ public abstract class ToLLVM extends LLVMNode {
             return interop.asFloat(value);
         }
 
-        @Specialization(limit = "3", guards = "incomingType.getKind() == DOUBLE")
+        @Specialization(limit = "3", guards = "incomingType.kind == DOUBLE")
+        @GenerateAOT.Exclude
         static double doDouble(Object value, @SuppressWarnings("unused") LLVMInteropType.Value incomingType,
                         @CachedLibrary("value") InteropLibrary interop) throws UnsupportedMessageException {
             if (!interop.fitsInDouble(value)) {
@@ -174,10 +196,10 @@ public abstract class ToLLVM extends LLVMNode {
             return interop.asDouble(value);
         }
 
-        @Specialization(guards = "incomingType.getKind() == POINTER")
+        @Specialization(guards = "incomingType.kind == POINTER")
         static LLVMPointer doPointer(Object value, LLVMInteropType.Value incomingType,
                         @Cached WrapPointer wrap) {
-            return wrap.execute(value, incomingType.getBaseType());
+            return wrap.execute(value, incomingType.baseType);
         }
     }
 
@@ -234,7 +256,7 @@ public abstract class ToLLVM extends LLVMNode {
 
         @Specialization(guards = "targetType == FLOAT")
         static float doFloat(int value, @SuppressWarnings("unused") ForeignToLLVMType targetType) {
-            return Float.floatToIntBits(value);
+            return Float.intBitsToFloat(value);
         }
 
         @Specialization(guards = "targetType == DOUBLE")
@@ -244,7 +266,12 @@ public abstract class ToLLVM extends LLVMNode {
 
         @Specialization(guards = "targetType == DOUBLE")
         static double doDouble(long value, @SuppressWarnings("unused") ForeignToLLVMType targetType) {
-            return Double.doubleToRawLongBits(value);
+            return Double.longBitsToDouble(value);
+        }
+
+        @Specialization(guards = "targetType == DOUBLE")
+        double doDouble(@SuppressWarnings("unused") LLVMPointer value, ForeignToLLVMType targetType) {
+            throw new LLVMPolyglotException(this, "Cannot convert a pointer to %s", targetType);
         }
 
         @Specialization(guards = "targetType == POINTER")
@@ -256,6 +283,11 @@ public abstract class ToLLVM extends LLVMNode {
         static LLVMPointer doPointer(long value, @SuppressWarnings("unused") ForeignToLLVMType targetType) {
             return LLVMNativePointer.create(value);
         }
+
+        @Specialization(guards = "targetType == POINTER")
+        LLVMPointer doPointer(@SuppressWarnings("unused") double value, ForeignToLLVMType targetType) {
+            throw new LLVMPolyglotException(this, "Cannot convert a double to %s", targetType);
+        }
     }
 
     @GenerateUncached
@@ -266,49 +298,49 @@ public abstract class ToLLVM extends LLVMNode {
 
         @Specialization(guards = "isI1(targetType)")
         static boolean toI1(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToI1()") ForeignToLLVM toI1) {
+                        @Cached(value = "createToI1()", uncached = "getSlowPath()") ForeignToLLVM toI1) {
             return LLVMTypesGen.asBoolean(toI1.executeWithForeignToLLVMType(value, null, targetType));
         }
 
         @Specialization(guards = "isI8(targetType)")
         static byte toI8(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToI8()") ForeignToLLVM toI8) {
+                        @Cached(value = "createToI8()", uncached = "getSlowPath()") ForeignToLLVM toI8) {
             return LLVMTypesGen.asByte(toI8.executeWithForeignToLLVMType(value, null, targetType));
         }
 
         @Specialization(guards = "isI16(targetType)")
         static short toI16(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToI16()") ForeignToLLVM toI16) {
+                        @Cached(value = "createToI16()", uncached = "getSlowPath()") ForeignToLLVM toI16) {
             return LLVMTypesGen.asShort(toI16.executeWithForeignToLLVMType(value, null, targetType));
         }
 
         @Specialization(guards = "isI32(targetType)")
         static int toI32(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToI32()") ForeignToLLVM toI32) {
+                        @Cached(value = "createToI32()", uncached = "getSlowPath()") ForeignToLLVM toI32) {
             return LLVMTypesGen.asInteger(toI32.executeWithForeignToLLVMType(value, null, targetType));
         }
 
         @Specialization(guards = "isI64(targetType)")
         static Object toI64(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToI64()") ForeignToLLVM toI64) {
+                        @Cached(value = "createToI64()", uncached = "getSlowPath()") ForeignToLLVM toI64) {
             return toI64.executeWithForeignToLLVMType(value, null, targetType);
         }
 
         @Specialization(guards = "isFloat(targetType)")
         static float toFloat(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToFloat()") ForeignToLLVM toFloat) {
+                        @Cached(value = "createToFloat()", uncached = "getSlowPath()") ForeignToLLVM toFloat) {
             return LLVMTypesGen.asFloat(toFloat.executeWithForeignToLLVMType(value, null, targetType));
         }
 
         @Specialization(guards = "isDouble(targetType)")
         static double toDouble(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToDouble()") ForeignToLLVM toDouble) {
+                        @Cached(value = "createToDouble()", uncached = "getSlowPath()") ForeignToLLVM toDouble) {
             return LLVMTypesGen.asDouble(toDouble.executeWithForeignToLLVMType(value, null, targetType));
         }
 
         @Specialization(guards = "isPointer(targetType)")
         static Object toPointer(Object value, ForeignToLLVMType targetType,
-                        @Cached("createToPointer()") ForeignToLLVM toPointer) {
+                        @Cached(value = "createToPointer()", uncached = "getSlowPath()") ForeignToLLVM toPointer) {
             return toPointer.executeWithForeignToLLVMType(value, null, targetType);
         }
 

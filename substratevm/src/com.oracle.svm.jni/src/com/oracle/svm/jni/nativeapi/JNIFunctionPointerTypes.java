@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -60,6 +60,16 @@ public final class JNIFunctionPointerTypes {
         JNIObjectHandle invoke(JNIEnvironment env, JNIObjectHandle obj);
     }
 
+    public interface IsInstanceOfFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        boolean invoke(JNIEnvironment env, JNIObjectHandle obj, JNIObjectHandle clazz);
+    }
+
+    public interface CallVoidMethodAFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        void invoke(JNIEnvironment env, JNIObjectHandle objOrClass, JNIMethodId methodId, JNIValue args);
+    }
+
     public interface CallObjectMethodAFunctionPointer extends CFunctionPointer {
         @InvokeCFunctionPointer
         JNIObjectHandle invoke(JNIEnvironment env, JNIObjectHandle objOrClass, JNIMethodId methodID, JNIValue args);
@@ -73,6 +83,11 @@ public final class JNIFunctionPointerTypes {
     public interface CallLongMethodAFunctionPointer extends CFunctionPointer {
         @InvokeCFunctionPointer
         long invoke(JNIEnvironment env, JNIObjectHandle objOrClass, JNIMethodId methodID, JNIValue args);
+    }
+
+    public interface CallIntMethodAFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        int invoke(JNIEnvironment env, JNIObjectHandle objOrClass, JNIMethodId methodId, JNIValue args);
     }
 
     public interface NewObjectAFunctionPointer extends CFunctionPointer {
@@ -183,6 +198,53 @@ public final class JNIFunctionPointerTypes {
     public interface RegisterNativesFunctionPointer extends CFunctionPointer {
         @InvokeCFunctionPointer
         int invoke(JNIEnvironment env, JNIObjectHandle clazz, JNINativeMethod methods, int nMethods);
+    }
+
+    public interface NewByteArrayFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        JNIObjectHandle invoke(JNIEnvironment env, int length);
+    }
+
+    public interface GetByteArrayElementsFunctionPointer extends CFunctionPointer {
+        // isCopy is actually a boolean
+        @InvokeCFunctionPointer
+        CCharPointer invoke(JNIEnvironment env, JNIObjectHandle byteArray, CCharPointer isCopy);
+    }
+
+    public interface ReleaseByteArrayElementsFunctionPointer extends CFunctionPointer {
+        // isCopy is actually a boolean
+        @InvokeCFunctionPointer
+        CCharPointer invoke(JNIEnvironment env, JNIObjectHandle byteArray, CCharPointer elements, int mode);
+    }
+
+    public interface GetObjectFieldFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        JNIObjectHandle invoke(JNIEnvironment env, JNIObjectHandle obj, JNIFieldId fieldId);
+    }
+
+    public interface GetBooleanFieldFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        boolean invoke(JNIEnvironment env, JNIObjectHandle obj, JNIFieldId fieldId);
+    }
+
+    public interface CallStaticObjectMethodAFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        JNIObjectHandle invoke(JNIEnvironment env, JNIObjectHandle clazz, JNIMethodId methodID, JNIValue args);
+    }
+
+    public interface GetStaticObjectFieldFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        JNIObjectHandle invoke(JNIEnvironment env, JNIObjectHandle clazz, JNIFieldId fieldID);
+    }
+
+    public interface CallStaticLongMethodAFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        long invoke(JNIEnvironment env, JNIObjectHandle clazz, JNIMethodId methodID, JNIValue args);
+    }
+
+    public interface IsSameObjectFunctionPointer extends CFunctionPointer {
+        @InvokeCFunctionPointer
+        boolean invoke(JNIEnvironment env, JNIObjectHandle obj1, JNIObjectHandle obj2);
     }
 
     private JNIFunctionPointerTypes() {

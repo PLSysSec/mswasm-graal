@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,17 +27,19 @@ package com.oracle.svm.core.graal.phases;
 import org.graalvm.compiler.nodes.ReturnNode;
 import org.graalvm.compiler.nodes.SafepointNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
-import org.graalvm.compiler.phases.Phase;
+import org.graalvm.compiler.phases.BasePhase;
+import org.graalvm.compiler.phases.tiers.MidTierContext;
 import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.nativeimage.c.function.InvokeCFunctionPointer;
+import org.graalvm.util.DirectAnnotationAccess;
 
-import com.oracle.svm.core.annotate.Uninterruptible;
+import com.oracle.svm.core.graal.code.SubstrateBackend;
 import com.oracle.svm.core.meta.SharedMethod;
 
 /**
  * Adds safepoints to loops.
  */
-public class MethodSafepointInsertionPhase extends Phase {
+public class MethodSafepointInsertionPhase extends BasePhase<MidTierContext> {
 
     @Override
     public boolean checkContract() {
@@ -46,28 +48,27 @@ public class MethodSafepointInsertionPhase extends Phase {
         return false;
     }
 
-    @Override
-    protected void run(StructuredGraph graph) {
+    public static boolean needSafepointCheck(SharedMethod method) {
+        if (method.isUninterruptible()) {
+            /* Uninterruptible methods must not have a safepoint inserted. */
+            return false;
+        }
+        if (DirectAnnotationAccess.isAnnotationPresent(method, CFunction.class) || DirectAnnotationAccess.isAnnotationPresent(method, InvokeCFunctionPointer.class)) {
+            /*
+             * Methods transferring from Java to C have an implicit safepoint check as part of the
+             * transition from C back to Java. So no explicit end-of-method safepoint check needs to
+             * be inserted. This is a performance optimization, the annotated methods are not
+             * uninterruptible unless the C function is marked as NO_TRANSITION.
+             */
+            return false;
+        }
+        return true;
+    }
 
-        if (graph.method().getAnnotation(Uninterruptible.class) != null) {
-            /*
-             * If a method is annotated with {@link Uninterruptible}, then I do not want a test for
-             * a safepoint at the return.
-             */
-            return;
-        }
-        if (graph.method().getAnnotation(CFunction.class) != null || graph.method().getAnnotation(InvokeCFunctionPointer.class) != null) {
-            /*
-             * If a method transfers from Java to C, then the return transition (if any) contains
-             * the safepoint test and one is not needed at the return of the transferring method.
-             */
-            return;
-        }
-        if (((SharedMethod) graph.method()).isEntryPoint()) {
-            /*
-             * If a method is transferring from C to Java, then no safepoint test is needed at the
-             * return of the transferring method.
-             */
+    @Override
+    protected void run(StructuredGraph graph, MidTierContext context) {
+        SharedMethod method = (SharedMethod) graph.method();
+        if (((SubstrateBackend) context.getTargetProvider()).safepointCheckedInEpilogue(method) || !needSafepointCheck(method)) {
             return;
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -124,6 +124,14 @@ public class GraphEncoder {
      * The orderId of the first actual node after the {@link StructuredGraph#start() start node}.
      */
     public static final int FIRST_NODE_ORDER_ID = 2;
+    /**
+     * Maximum unsigned integer fitting on 1 byte.
+     */
+    public static final int MAX_INDEX_1_BYTE = 1 << 8 - 1;
+    /**
+     * Maximum unsigned integer fitting on 2 bytes.
+     */
+    public static final int MAX_INDEX_2_BYTES = 1 << 16 - 1;
 
     /**
      * The known offset between the orderId of a {@link AbstractBeginNode} and its
@@ -181,20 +189,24 @@ public class GraphEncoder {
      * Must be invoked before {@link #finishPrepare()} and {@link #encode}.
      */
     public void prepare(StructuredGraph graph) {
-        objects.addObject(graph.getGuardsStage());
+        addObject(graph.getGuardsStage());
         for (Node node : graph.getNodes()) {
             NodeClass<? extends Node> nodeClass = node.getNodeClass();
             nodeClasses.addObject(nodeClass);
-            objects.addObject(node.getNodeSourcePosition());
+            addObject(node.getNodeSourcePosition());
             for (int i = 0; i < nodeClass.getData().getCount(); i++) {
                 if (!nodeClass.getData().getType(i).isPrimitive()) {
-                    objects.addObject(nodeClass.getData().get(node, i));
+                    addObject(nodeClass.getData().get(node, i));
                 }
             }
             if (node instanceof Invoke) {
-                objects.addObject(((Invoke) node).getContextType());
+                addObject(((Invoke) node).getContextType());
             }
         }
+    }
+
+    protected void addObject(Object object) {
+        objects.addObject(object);
     }
 
     public void finishPrepare() {
@@ -282,7 +294,6 @@ public class GraphEncoder {
                     InvokeWithExceptionNode invokeWithExcpetion = (InvokeWithExceptionNode) invoke;
                     ExceptionObjectNode exceptionEdge = (ExceptionObjectNode) invokeWithExcpetion.exceptionEdge();
 
-                    writeOrderId(invokeWithExcpetion.next().next(), nodeOrder);
                     writeOrderId(invokeWithExcpetion.exceptionEdge(), nodeOrder);
                     writeOrderId(exceptionEdge.stateAfter(), nodeOrder);
                     writeOrderId(exceptionEdge.next(), nodeOrder);
@@ -296,11 +307,11 @@ public class GraphEncoder {
          */
         int metadataStart = TypeConversion.asS4(writer.getBytesWritten());
         writer.putUV(nodeOrder.maxFixedNodeOrderId);
+        writeObjectId(graph.getGuardsStage());
         writer.putUV(nodeCount);
         for (int i = 0; i < nodeCount; i++) {
             writer.putUV(metadataStart - nodeStartOffsets[i]);
         }
-        writeObjectId(graph.getGuardsStage());
 
         /* Check that the decoding of the encode graph is the same as the input. */
         assert verifyEncoding(graph, new EncodedGraph(getEncoding(), metadataStart, getObjects(), getNodeClasses(), graph));
@@ -435,7 +446,14 @@ public class GraphEncoder {
     }
 
     protected void writeOrderId(Node node, NodeOrder nodeOrder) {
-        writer.putUV(node == null ? NULL_ORDER_ID : nodeOrder.orderIds.get(node));
+        int id = node == null ? NULL_ORDER_ID : nodeOrder.orderIds.get(node);
+        if (nodeOrder.nextOrderId <= MAX_INDEX_1_BYTE) {
+            writer.putU1(id);
+        } else if (nodeOrder.nextOrderId <= MAX_INDEX_2_BYTES) {
+            writer.putU2(id);
+        } else {
+            writer.putS4(id);
+        }
     }
 
     protected void writeObjectId(Object object) {

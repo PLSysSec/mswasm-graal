@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,7 +43,6 @@ import org.graalvm.compiler.truffle.runtime.OptimizedCallTarget;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 import org.junit.After;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.oracle.truffle.api.CompilerAsserts;
@@ -59,7 +58,10 @@ import com.oracle.truffle.api.nodes.NodeCost;
 import com.oracle.truffle.api.nodes.NodeVisitor;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
-import com.oracle.truffle.sl.SLLanguage;
+import com.oracle.truffle.api.source.Source;
+import com.oracle.truffle.api.source.SourceSection;
+import com.oracle.truffle.api.test.polyglot.ProxyLanguage;
+import com.oracle.truffle.sl.runtime.SLContext;
 
 public class OptimizedBlockNodeTest {
 
@@ -70,11 +72,67 @@ public class OptimizedBlockNodeTest {
             setup(blockSize);
             OptimizedBlockNode<?> block = createBlock(blockSize, 1);
             OptimizedCallTarget target = createTest(block);
+            target.computeBlockCompilations();
             target.call();
             target.compile(true);
             // should not trigger and block compilation
             assertNull(block.getPartialBlocks());
             blockSize = blockSize * 2;
+        }
+    }
+
+    @Test
+    public void testFirstBlockElementExceedsLimit() {
+        setup(1);
+        OptimizedBlockNode<TestElement> block = createBlock(2, 1, null, new TestElementExecutor(), 5);
+        OptimizedCallTarget target = createTest(block);
+        target.computeBlockCompilations();
+        target.call();
+        target.compile(true);
+
+        // should not trigger and block compilation
+        PartialBlocks<TestElement> partialBlocks = block.getPartialBlocks();
+        assertNotNull(partialBlocks);
+        assertNotNull(partialBlocks.getBlockRanges());
+        assertEquals(1, partialBlocks.getBlockRanges().length);
+        assertEquals(1, partialBlocks.getBlockRanges()[0]);
+        assertNotNull(partialBlocks.getBlockTargets());
+        assertEquals(2, partialBlocks.getBlockTargets().length);
+        assertTrue(partialBlocks.getBlockTargets()[0].isValid());
+        assertTrue(partialBlocks.getBlockTargets()[1].isValid());
+
+        assertEquals(1, target.call());
+    }
+
+    @Test
+    public void testBoundaryBlockSize() {
+        /*
+         * Internal blockRanges and blockSizes arrays grow during partial blocks computation as
+         * needed. This test tests that the growth of the arrays works correctly.
+         */
+        for (int blockSize = 2; blockSize < 20; blockSize++) {
+            setup(1);
+            OptimizedBlockNode<TestElement> block = createBlock(blockSize, 1);
+            OptimizedCallTarget target = createTest(block);
+            target.computeBlockCompilations();
+            target.call();
+            target.compile(true);
+
+            // should not trigger and block compilation
+            PartialBlocks<TestElement> partialBlocks = block.getPartialBlocks();
+            assertNotNull(partialBlocks);
+            assertNotNull(partialBlocks.getBlockRanges());
+            assertEquals(blockSize - 1, partialBlocks.getBlockRanges().length);
+            for (int i = 0; i < (blockSize - 1); i++) {
+                assertEquals(i + 1, partialBlocks.getBlockRanges()[i]);
+            }
+            assertNotNull(partialBlocks.getBlockTargets());
+            assertEquals(blockSize, partialBlocks.getBlockTargets().length);
+            for (int i = 0; i < blockSize; i++) {
+                assertTrue(partialBlocks.getBlockTargets()[i].isValid());
+            }
+
+            assertEquals(blockSize - 1, target.call());
         }
     }
 
@@ -86,6 +144,7 @@ public class OptimizedBlockNodeTest {
             OptimizedBlockNode<TestElement> block = createBlock(groupSize + 1, 1);
             OptimizedCallTarget target = createTest(block);
             assertNull(block.getPartialBlocks());
+            target.computeBlockCompilations();
             target.call();
             target.compile(true);
 
@@ -108,12 +167,12 @@ public class OptimizedBlockNodeTest {
             assertTrue(partialBlocks.getBlockTargets()[1].isValid());
 
             // test explicit invalidations
-            partialBlocks.getBlockTargets()[0].invalidate(null, "test invalidation");
+            partialBlocks.getBlockTargets()[0].invalidate("test invalidation");
             assertTrue(target.isValid());
             assertFalse(partialBlocks.getBlockTargets()[0].isValid());
             assertTrue(partialBlocks.getBlockTargets()[1].isValid());
 
-            target.invalidate(null, "test invalidation");
+            target.invalidate("test invalidation");
             assertFalse(target.isValid());
             assertFalse(partialBlocks.getBlockTargets()[0].isValid());
             assertTrue(partialBlocks.getBlockTargets()[1].isValid());
@@ -151,6 +210,7 @@ public class OptimizedBlockNodeTest {
         target = createTest(block);
         expectedResult = groupSize * 3 - 1;
         assertEquals(expectedResult, target.call());
+        target.computeBlockCompilations();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
 
@@ -229,6 +289,7 @@ public class OptimizedBlockNodeTest {
         target = createTest(block);
         expectedResult = 8;
         assertEquals(expectedResult, target.call());
+        target.computeBlockCompilations();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
         assertValid(target, partialBlocks);
@@ -245,6 +306,7 @@ public class OptimizedBlockNodeTest {
         block = createBlock(13, 1, expectedResult);
         target = createTest(block);
         assertEquals(expectedResult, target.call());
+        target.computeBlockCompilations();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
         assertValid(target, partialBlocks);
@@ -261,6 +323,7 @@ public class OptimizedBlockNodeTest {
         block = createBlock(12, 1, expectedResult);
         target = createTest(block);
         assertEquals(expectedResult, target.call());
+        target.computeBlockCompilations();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
         assertValid(target, partialBlocks);
@@ -277,6 +340,7 @@ public class OptimizedBlockNodeTest {
         block = createBlock(7, 1, expectedResult);
         target = createTest(block);
         assertEquals(expectedResult, target.call());
+        target.computeBlockCompilations();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
         assertValid(target, partialBlocks);
@@ -300,11 +364,12 @@ public class OptimizedBlockNodeTest {
 
         setup(2);
 
-        block = createBlock(5, 1, null, new StartsWithExecutor());
+        block = createBlock(5, 1, null, new StartsWithExecutor(), 0);
         target = createTest(block);
         elementExecuted = ((TestRootNode) block.getRootNode()).elementExecuted;
         expectedResult = 4;
         assertEquals(expectedResult, target.call(0));
+        target.computeBlockCompilations();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
         assertValid(target, partialBlocks);
@@ -356,6 +421,7 @@ public class OptimizedBlockNodeTest {
 
         block = createBlock(5, 2, null);
         target = createTest(block);
+        target.computeBlockCompilations();
         target.call();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
@@ -366,6 +432,7 @@ public class OptimizedBlockNodeTest {
 
         block = createBlock(5, 3, null);
         target = createTest(block);
+        target.computeBlockCompilations();
         target.call();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
@@ -384,6 +451,7 @@ public class OptimizedBlockNodeTest {
         setup(50);
         block = createBlock(10, 4, null);
         target = createTest(block);
+        target.computeBlockCompilations();
         target.call();
         target.compile(true);
         partialBlocks = block.getPartialBlocks();
@@ -401,6 +469,7 @@ public class OptimizedBlockNodeTest {
             setup(blockSize);
             OptimizedBlockNode<?> block = createBlock(blockSize + 1, 1);
             OptimizedCallTarget target = createTest(block);
+            target.computeBlockCompilations();
             target.compile(true);
             assertValid(target, block.getPartialBlocks());
             target.call();
@@ -425,8 +494,8 @@ public class OptimizedBlockNodeTest {
 
         int statements = Math.floorDiv(((testBlockSize * targetBlocks) - (blockOverhead)), singleStatementNodeCount);
         OptimizedCallTarget target = generateSLFunction(context, "test", statements);
+        target.computeBlockCompilations();
         assertEquals((statements - 1) * singleStatementNodeCount + singleNodeCount, target.getNonTrivialNodeCount());
-
         Value v = context.getBindings("sl").getMember("test");
 
         // make it compile with threshold
@@ -453,28 +522,87 @@ public class OptimizedBlockNodeTest {
         assertEquals(targetBlocks, partialBlocks.getBlockTargets().length);
     }
 
+    @Test
+    public void testBlockCompilationTrigger() {
+        // the number 200 for the maximum compile limit is heavily dependent
+        // on implementation details and might need to be updated the future.
+        setup(10, 200);
+
+        // test not triggering the limit
+        OptimizedBlockNode<?> block = createBlock(1, 1);
+        OptimizedCallTarget target = createTest(block);
+        target.compile(true);
+        assertNull(block.getPartialBlocks());
+
+        block = createBlock(10 + 1, 1);
+        target = createTest(block);
+        target.compile(true);
+        assertNotNull(block.getPartialBlocks());
+    }
+
+    @Test
+    public void testSourceSectionsOutOfOrder() {
+        setup(3);
+
+        OptimizedBlockNode<TestElement> block = createBlock(5, 1, null);
+        OptimizedCallTarget target = createTest(block);
+
+        TestElement[] elements = block.getElements();
+        assertEquals(5, elements.length);
+        Source source = Source.newBuilder(ProxyLanguage.ID, "a;\nb;\nc;\nd;\ne;", "test source").build();
+        elements[0].sourceSection = source.createSection(2);
+        elements[1].sourceSection = source.createSection(3);
+        elements[2].sourceSection = source.createSection(1);
+        elements[3].sourceSection = source.createSection(4);
+        elements[4].sourceSection = source.createSection(5);
+
+        target.computeBlockCompilations();
+        target.call();
+        target.compile(true);
+
+        PartialBlocks<TestElement> partialBlocks = block.getPartialBlocks();
+        assertEquals(2, partialBlocks.getBlockTargets().length);
+        assertEquals(1, partialBlocks.getBlockRanges().length);
+        assertEquals(3, partialBlocks.getBlockRanges()[0]);
+
+        assertEquals(2, partialBlocks.getBlockTargets()[0].getRootNode().getSourceSection().getStartLine());
+        assertEquals(2, partialBlocks.getBlockTargets()[0].getRootNode().getSourceSection().getEndLine());
+        assertEquals(4, partialBlocks.getBlockTargets()[1].getRootNode().getSourceSection().getStartLine());
+        assertEquals(5, partialBlocks.getBlockTargets()[1].getRootNode().getSourceSection().getEndLine());
+    }
+
     private static OptimizedBlockNode<TestElement> createBlock(int blockSize, int depth) {
         return createBlock(blockSize, depth, null);
     }
 
     private static OptimizedBlockNode<TestElement> createBlock(int blockSize, int depth, Object returnValue) {
-        return createBlock(blockSize, depth, returnValue, new TestElementExecutor());
+        return createBlock(blockSize, depth, returnValue, new TestElementExecutor(), 0);
     }
 
-    private static OptimizedBlockNode<TestElement> createBlock(int blockSize, int depth, Object returnValue, ElementExecutor<TestElement> executor) {
+    private static OptimizedBlockNode<TestElement> createBlock(int blockSize, int depth, Object returnValue, ElementExecutor<TestElement> executor, int extraChildrenOfFirstElement) {
         if (depth == 0) {
             return null;
         }
         TestElement[] elements = new TestElement[blockSize];
         for (int i = 0; i < blockSize; i++) {
-            elements[i] = new TestElement(createBlock(blockSize, depth - 1, returnValue), returnValue == null ? i : returnValue, i);
+            Node[] extraDummyChildren;
+            if (i == 0 && extraChildrenOfFirstElement > 0) {
+                extraDummyChildren = new Node[extraChildrenOfFirstElement];
+                for (int j = 0; j < extraDummyChildren.length; j++) {
+                    extraDummyChildren[j] = new Node() {
+                    };
+                }
+            } else {
+                extraDummyChildren = new Node[0];
+            }
+            elements[i] = new TestElement(createBlock(blockSize, depth - 1, returnValue), returnValue == null ? i : returnValue, i, extraDummyChildren);
         }
         return (OptimizedBlockNode<TestElement>) BlockNode.create(elements, executor);
     }
 
     private static OptimizedCallTarget createTest(BlockNode<?> block) {
         TestRootNode root = new TestRootNode(block, "Block[" + block.getElements().length + "]");
-        OptimizedCallTarget target = (OptimizedCallTarget) Truffle.getRuntime().createCallTarget(root);
+        OptimizedCallTarget target = (OptimizedCallTarget) root.getCallTarget();
         root.accept(new NodeVisitor() {
             @Override
             public boolean visit(Node node) {
@@ -503,7 +631,10 @@ public class OptimizedBlockNodeTest {
         context.getBindings("sl").getMember(name).execute();
         context.enter();
         try {
-            return ((OptimizedCallTarget) SLLanguage.getCurrentContext().getFunctionRegistry().getFunction(name).getCallTarget());
+            OptimizedCallTarget target = ((OptimizedCallTarget) SLContext.get(null).getFunctionRegistry().getFunction(name).getCallTarget());
+            // we invalidate to make sure the call counts are updated.
+            target.invalidate("invalidate for test");
+            return target;
         } finally {
             context.leave();
         }
@@ -530,17 +661,6 @@ public class OptimizedBlockNodeTest {
         fail("expected unexpected result but no exception was thrown");
     }
 
-    @BeforeClass
-    public static void beforeClass() {
-        /*
-         * Do some dummy compilation to make sure everything is resolved.
-         */
-        OptimizedBlockNode<?> block = createBlock(10, 1);
-        OptimizedCallTarget target = createTest(block);
-        target.call();
-        target.compile(true);
-    }
-
     private Context context;
 
     @After
@@ -554,11 +674,17 @@ public class OptimizedBlockNodeTest {
     private static final int TEST_COMPILATION_THRESHOLD = 10;
 
     private void setup(int blockCompilationSize) {
+        setup(blockCompilationSize, 10000);
+    }
+
+    private void setup(int blockCompilationSize, int maxGraalNodeCount) {
         clearContext();
         context = Context.newBuilder().allowAllAccess(true)//
                         .option("engine.BackgroundCompilation", "false") //
+                        .option("engine.MultiTier", "false") //
                         .option("engine.PartialBlockCompilationSize", String.valueOf(blockCompilationSize))//
-                        .option("engine.CompilationThreshold", String.valueOf(TEST_COMPILATION_THRESHOLD)).build();
+                        .option("engine.MaximumGraalNodeCount", String.valueOf(maxGraalNodeCount))//
+                        .option("engine.SingleTierCompilationThreshold", String.valueOf(TEST_COMPILATION_THRESHOLD)).build();
         context.enter();
     }
 
@@ -616,17 +742,19 @@ public class OptimizedBlockNodeTest {
 
         @Child BlockNode<?> childBlock;
         @Child ElementChildNode childNode = new ElementChildNode();
+        @Children Node[] extraDummyChildren;
 
         final Object returnValue;
-
         final int childIndex;
 
         @CompilationFinal TestRootNode root;
+        SourceSection sourceSection;
 
-        TestElement(BlockNode<?> childBlock, Object returnValue, int childIndex) {
+        TestElement(BlockNode<?> childBlock, Object returnValue, int childIndex, Node[] extraDummyChildren) {
             this.childBlock = childBlock;
             this.returnValue = returnValue;
             this.childIndex = childIndex;
+            this.extraDummyChildren = extraDummyChildren;
         }
 
         void onAdopt() {
@@ -643,6 +771,11 @@ public class OptimizedBlockNodeTest {
                 return childBlock.executeGeneric(frame, BlockNode.NO_ARGUMENT);
             }
             return returnValue;
+        }
+
+        @Override
+        public SourceSection getSourceSection() {
+            return sourceSection;
         }
 
     }

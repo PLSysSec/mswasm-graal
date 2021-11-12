@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -62,7 +62,7 @@ public final class TRegexNFAExecutorLocals extends TRegexExecutorLocals {
     private int[] curStates;
     /**
      * A buffer of the paths that we will be considering in the next step. Every path in this array
-     * was created by taking a path from {@link #curStates} and following the transition labelled
+     * was created by taking a path from {@link #curStates} and following the transition labeled
      * with the current character.
      */
     private int[] nextStates;
@@ -133,14 +133,13 @@ public final class TRegexNFAExecutorLocals extends TRegexExecutorLocals {
         nextStatesLength += frameSize;
     }
 
-    public void nextChar() {
+    public void nextState() {
         int[] tmp = curStates;
         curStates = nextStates;
         nextStates = tmp;
         curStatesLength = nextStatesLength;
         nextStatesLength = 0;
         iCurStates = 0;
-        incIndex(1);
         Arrays.fill(marks, 0);
         resultPushed = false;
     }

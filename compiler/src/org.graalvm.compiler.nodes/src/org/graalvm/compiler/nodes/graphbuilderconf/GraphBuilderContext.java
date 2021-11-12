@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,12 +25,13 @@
 package org.graalvm.compiler.nodes.graphbuilderconf;
 
 import static jdk.vm.ci.meta.DeoptimizationAction.InvalidateReprofile;
-import static jdk.vm.ci.meta.DeoptimizationReason.NullCheckException;
+import static org.graalvm.compiler.core.common.GraalOptions.StrictDeoptInsertionChecks;
 import static org.graalvm.compiler.core.common.type.StampFactory.objectNonNull;
 
 import org.graalvm.compiler.bytecode.Bytecode;
 import org.graalvm.compiler.bytecode.BytecodeProvider;
 import org.graalvm.compiler.core.common.type.AbstractPointerStamp;
+import org.graalvm.compiler.core.common.type.IntegerStamp;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.core.common.type.StampPair;
@@ -42,19 +43,29 @@ import org.graalvm.compiler.nodes.CallTargetNode;
 import org.graalvm.compiler.nodes.CallTargetNode.InvokeKind;
 import org.graalvm.compiler.nodes.ConstantNode;
 import org.graalvm.compiler.nodes.DynamicPiNode;
+import org.graalvm.compiler.nodes.EndNode;
 import org.graalvm.compiler.nodes.FixedGuardNode;
+import org.graalvm.compiler.nodes.FixedWithNextNode;
+import org.graalvm.compiler.nodes.FrameState;
 import org.graalvm.compiler.nodes.IfNode;
 import org.graalvm.compiler.nodes.Invoke;
 import org.graalvm.compiler.nodes.LogicNode;
+import org.graalvm.compiler.nodes.MergeNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.PiNode;
+import org.graalvm.compiler.nodes.PluginReplacementNode;
+import org.graalvm.compiler.nodes.PluginReplacementWithExceptionNode;
+import org.graalvm.compiler.nodes.ProfileData.BranchProbabilityData;
 import org.graalvm.compiler.nodes.StateSplit;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.calc.IntegerEqualsNode;
+import org.graalvm.compiler.nodes.calc.IntegerLessThanNode;
 import org.graalvm.compiler.nodes.calc.IsNullNode;
 import org.graalvm.compiler.nodes.calc.NarrowNode;
 import org.graalvm.compiler.nodes.calc.SignExtendNode;
 import org.graalvm.compiler.nodes.calc.ZeroExtendNode;
+import org.graalvm.compiler.nodes.extended.BranchProbabilityNode;
 import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode.BytecodeExceptionKind;
 import org.graalvm.compiler.nodes.extended.GuardingNode;
 import org.graalvm.compiler.nodes.java.InstanceOfDynamicNode;
@@ -100,8 +111,8 @@ public interface GraphBuilderContext extends GraphBuilderTool {
      * immediately. If the node is a {@link StateSplit} with a null
      * {@linkplain StateSplit#stateAfter() frame state} , the frame state is initialized.
      *
-     * @param value the value to add to the graph and push to the stack. The
-     *            {@code value.getJavaKind()} kind is used when type checking this operation.
+     * @param value the value to add to the graph. The {@code value.getJavaKind()} kind is used when
+     *            type checking this operation.
      * @return a node equivalent to {@code value} in the graph
      */
     default <T extends ValueNode> T add(T value) {
@@ -222,6 +233,10 @@ public interface GraphBuilderContext extends GraphBuilderTool {
      */
     int bci();
 
+    default boolean bciCanBeDuplicated() {
+        return false;
+    }
+
     /**
      * Gets the kind of invocation currently being parsed.
      */
@@ -252,6 +267,20 @@ public interface GraphBuilderContext extends GraphBuilderTool {
     }
 
     /**
+     * Computes the recursive inlining depth of the provided method, i.e., counts how often the
+     * provided method is already in the {@link #getParent()} chain starting at this context.
+     */
+    default int recursiveInliningDepth(ResolvedJavaMethod method) {
+        int result = 0;
+        for (GraphBuilderContext cur = this; cur != null; cur = cur.getParent()) {
+            if (method.equals(cur.getMethod())) {
+                result++;
+            }
+        }
+        return result;
+    }
+
+    /**
      * Determines if this parsing context is within the bytecode of an intrinsic or a method inlined
      * by an intrinsic.
      */
@@ -273,10 +302,25 @@ public interface GraphBuilderContext extends GraphBuilderTool {
      */
     IntrinsicContext getIntrinsic();
 
+    boolean isParsingInvocationPlugin();
+
     BailoutException bailout(String string);
 
     default ValueNode nullCheckedValue(ValueNode value) {
         return nullCheckedValue(value, InvalidateReprofile);
+    }
+
+    /**
+     * Emit a range check for an intrinsic. This is different from a normal bytecode range check
+     * since it might be checking a range of indexes for an operation on an array body.
+     */
+    default GuardingNode intrinsicRangeCheck(LogicNode condition, boolean negated) {
+        assert isParsingInvocationPlugin();
+        if (needsExplicitException()) {
+            return emitBytecodeExceptionCheck(condition, negated, BytecodeExceptionKind.INTRINSIC_OUT_OF_BOUNDS);
+        } else {
+            return add(new FixedGuardNode(condition, DeoptimizationReason.BoundsCheckException, DeoptimizationAction.None, !negated));
+        }
     }
 
     /**
@@ -288,23 +332,66 @@ public interface GraphBuilderContext extends GraphBuilderTool {
             LogicNode condition = getGraph().unique(IsNullNode.create(value));
             GuardingNode guardingNode;
             if (needsExplicitException()) {
-                AbstractBeginNode exceptionPath = genExplicitExceptionEdge(BytecodeExceptionKind.NULL_POINTER);
-                IfNode ifNode = append(new IfNode(condition, exceptionPath, null, 0.01));
-                BeginNode nonNullPath = append(new BeginNode());
-                ifNode.setFalseSuccessor(nonNullPath);
-                guardingNode = nonNullPath;
+                guardingNode = emitBytecodeExceptionCheck(condition, false, BytecodeExceptionKind.NULL_POINTER);
             } else {
-                guardingNode = append(new FixedGuardNode(condition, NullCheckException, action, true));
+                guardingNode = append(new FixedGuardNode(condition, DeoptimizationReason.NullCheckException, action, true));
             }
-            ValueNode nonNullReceiver = getGraph().addOrUniqueWithInputs(PiNode.create(value, objectNonNull(), guardingNode.asNode()));
-            // TODO: Propogating the non-null into the frame state would
-            // remove subsequent null-checks on the same value. However,
-            // it currently causes an assertion failure when merging states.
-            //
-            // frameState.replace(value, nonNullReceiver);
-            return nonNullReceiver;
+            return getGraph().addOrUniqueWithInputs(PiNode.create(value, objectNonNull(), guardingNode.asNode()));
         }
         return value;
+    }
+
+    /**
+     * When {@link #needsExplicitException} is true, the method returns a node with a stamp that is
+     * always positive and emits code that throws the provided exceptionKind for a negative length.
+     */
+    default ValueNode maybeEmitExplicitNegativeArraySizeCheck(ValueNode arrayLength, BytecodeExceptionKind exceptionKind) {
+        if (!needsExplicitException() || ((IntegerStamp) arrayLength.stamp(NodeView.DEFAULT)).isPositive()) {
+            return arrayLength;
+        }
+        ConstantNode zero = ConstantNode.defaultForKind(arrayLength.getStackKind());
+        LogicNode condition = append(IntegerLessThanNode.create(getConstantReflection(), getMetaAccess(), getOptions(), null, arrayLength, zero, NodeView.DEFAULT));
+        ValueNode[] arguments = exceptionKind.getNumArguments() == 1 ? new ValueNode[]{arrayLength} : new ValueNode[0];
+        GuardingNode guardingNode = emitBytecodeExceptionCheck(condition, false, exceptionKind, arguments);
+        if (guardingNode == null) {
+            return arrayLength;
+        }
+        return append(PiNode.create(arrayLength, StampFactory.positiveInt(), guardingNode.asNode()));
+    }
+
+    default ValueNode maybeEmitExplicitNegativeArraySizeCheck(ValueNode arrayLength) {
+        return maybeEmitExplicitNegativeArraySizeCheck(arrayLength, BytecodeExceptionKind.NEGATIVE_ARRAY_SIZE);
+    }
+
+    default GuardingNode maybeEmitExplicitDivisionByZeroCheck(ValueNode divisor) {
+        if (!needsExplicitException() || !((IntegerStamp) divisor.stamp(NodeView.DEFAULT)).contains(0)) {
+            return null;
+        }
+        ConstantNode zero = add(ConstantNode.defaultForKind(divisor.getStackKind()));
+        LogicNode condition = add(IntegerEqualsNode.create(getConstantReflection(), getMetaAccess(), getOptions(), null, divisor, zero, NodeView.DEFAULT));
+        return emitBytecodeExceptionCheck(condition, false, BytecodeExceptionKind.DIVISION_BY_ZERO);
+    }
+
+    default AbstractBeginNode emitBytecodeExceptionCheck(LogicNode condition, boolean passingOnTrue, BytecodeExceptionKind exceptionKind, ValueNode... arguments) {
+        if (passingOnTrue ? condition.isTautology() : condition.isContradiction()) {
+            return null;
+        }
+
+        AbstractBeginNode exceptionPath = genExplicitExceptionEdge(exceptionKind, arguments);
+
+        AbstractBeginNode trueSuccessor = passingOnTrue ? null : exceptionPath;
+        AbstractBeginNode falseSuccessor = passingOnTrue ? exceptionPath : null;
+        boolean negate = !passingOnTrue;
+        BranchProbabilityData probability = BranchProbabilityData.injected(BranchProbabilityNode.EXTREMELY_FAST_PATH_PROBABILITY, negate);
+        IfNode ifNode = append(new IfNode(condition, trueSuccessor, falseSuccessor, probability));
+
+        BeginNode passingSuccessor = append(new BeginNode());
+        if (passingOnTrue) {
+            ifNode.setTrueSuccessor(passingSuccessor);
+        } else {
+            ifNode.setFalseSuccessor(passingSuccessor);
+        }
+        return passingSuccessor;
     }
 
     default void genCheckcastDynamic(ValueNode object, ValueNode javaClass) {
@@ -313,14 +400,56 @@ public interface GraphBuilderContext extends GraphBuilderTool {
             addPush(JavaKind.Object, object);
         } else {
             append(condition);
-            FixedGuardNode fixedGuard = add(new FixedGuardNode(condition, DeoptimizationReason.ClassCastException, DeoptimizationAction.InvalidateReprofile, false));
-            addPush(JavaKind.Object, DynamicPiNode.create(getAssumptions(), getConstantReflection(), object, fixedGuard, javaClass));
+            GuardingNode guardingNode;
+            if (needsExplicitException()) {
+                guardingNode = emitBytecodeExceptionCheck(condition, true, BytecodeExceptionKind.CLASS_CAST, object, javaClass);
+            } else {
+                guardingNode = add(new FixedGuardNode(condition, DeoptimizationReason.ClassCastException, DeoptimizationAction.InvalidateReprofile, false));
+            }
+            addPush(JavaKind.Object, DynamicPiNode.create(getAssumptions(), getConstantReflection(), object, guardingNode, javaClass));
         }
     }
 
-    @SuppressWarnings("unused")
-    default void notifyReplacedCall(ResolvedJavaMethod targetMethod, ConstantNode node) {
+    /**
+     * Some {@link InvocationPlugin InvocationPlugins} have to build a {@link MergeNode} to handle
+     * multiple return paths but not all contexts can do this.
+     *
+     * @return false if {@link #getInvocationPluginReturnState(JavaKind, ValueNode)} cannot be
+     *         called (i.e. it unconditionally raises an error)
+     */
+    default boolean canMergeIntrinsicReturns() {
+        assert isParsingInvocationPlugin();
+        return false;
+    }
 
+    /**
+     * Build a FrameState that represents the return from an intrinsic with {@code returnValue} on
+     * the top of stack. Usually this will be a state in the caller after the call site.
+     */
+    @SuppressWarnings("unused")
+    default FrameState getInvocationPluginReturnState(JavaKind returnKind, ValueNode returnValue) {
+        throw new GraalError("Cannot be called on a " + getClass().getName() + " object");
+    }
+
+    /**
+     * Build a FrameState that represents the represents the state before an intrinsic was invoked.
+     */
+    @SuppressWarnings("all")
+    default FrameState getInvocationPluginBeforeState() {
+        throw new GraalError("Cannot be called on a " + getClass().getName() + " object");
+    }
+
+    /**
+     * When this returns false, the parser will report an error if an {@link InvocationPlugin}
+     * inserts a {@link org.graalvm.compiler.nodes.DeoptimizeNode} or {@link FixedGuardNode}.
+     */
+    default boolean allowDeoptInPlugins() {
+        return !StrictDeoptInsertionChecks.getValue(getOptions());
+    }
+
+    @SuppressWarnings("all")
+    default Invoke invokeFallback(FixedWithNextNode predecessor, EndNode end) {
+        throw new GraalError("Cannot be called on a " + getClass().getName() + " object");
     }
 
     /**
@@ -372,10 +501,43 @@ public interface GraphBuilderContext extends GraphBuilderTool {
      * returns true, this method should return non-null begin nodes.
      *
      * @param exceptionKind the type of exception to be created.
+     * @param exceptionArguments the arguments for the exception.
      * @return a begin node that precedes the actual exception instantiation code.
      */
-    default AbstractBeginNode genExplicitExceptionEdge(@SuppressWarnings("ununsed") BytecodeExceptionKind exceptionKind) {
-        return null;
+    default AbstractBeginNode genExplicitExceptionEdge(BytecodeExceptionKind exceptionKind, ValueNode... exceptionArguments) {
+        throw GraalError.unimplemented();
+    }
+
+    /**
+     * Replaces an invocation of a given method by inserting a {@link PluginReplacementNode} that
+     * {@linkplain GraphBuilderContext#shouldDeferPlugin defers} the application of an
+     * {@link InvocationPlugin}.
+     *
+     * @param plugin the {@link InvocationPlugin} that is deferred
+     * @param targetMethod the target of the replacement invocation
+     * @param args the arguments to the replacement invocation
+     * @param replacementFunction the replacement function for deferred application of the
+     *            {@code plugin}
+     */
+    default void replacePlugin(GeneratedInvocationPlugin plugin, ResolvedJavaMethod targetMethod, ValueNode[] args, PluginReplacementNode.ReplacementFunction replacementFunction) {
+        throw GraalError.unimplemented();
+    }
+
+    /**
+     * Replaces an invocation of a given method by inserting a
+     * {@link PluginReplacementWithExceptionNode} that
+     * {@linkplain GraphBuilderContext#shouldDeferPlugin defers} the application of an
+     * {@link InvocationPlugin}.
+     *
+     * @param plugin the {@link InvocationPlugin} that is deferred
+     * @param targetMethod the target of the replacement invocation
+     * @param args the arguments to the replacement invocation
+     * @param replacementFunction the replacement function for deferred application of the
+     *            {@code plugin}
+     */
+    default void replacePluginWithException(GeneratedInvocationPlugin plugin, ResolvedJavaMethod targetMethod, ValueNode[] args,
+                    PluginReplacementWithExceptionNode.ReplacementWithExceptionFunction replacementFunction) {
+        throw GraalError.unimplemented();
     }
 }
 

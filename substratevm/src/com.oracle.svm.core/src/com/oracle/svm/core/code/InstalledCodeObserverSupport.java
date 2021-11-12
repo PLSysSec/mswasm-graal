@@ -39,7 +39,6 @@ import com.oracle.svm.core.c.NonmovableArray;
 import com.oracle.svm.core.c.NonmovableArrays;
 import com.oracle.svm.core.code.InstalledCodeObserver.InstalledCodeObserverHandle;
 import com.oracle.svm.core.meta.SharedMethod;
-import com.oracle.svm.core.snippets.KnownIntrinsics;
 
 public final class InstalledCodeObserverSupport {
     private static final InstalledCodeObserverHandleAction ACTION_ATTACH = h -> getAccessor(h).attachToCurrentIsolate(h);
@@ -53,17 +52,20 @@ public final class InstalledCodeObserverSupport {
     InstalledCodeObserverSupport() {
     }
 
+    @Platforms(Platform.HOSTED_ONLY.class)
     public void addObserverFactory(InstalledCodeObserver.Factory observerFactory) {
         observerFactories.add(observerFactory);
     }
 
-    public InstalledCodeObserver[] createObservers(DebugContext debug, SharedMethod method, CompilationResult compilation, Pointer code) {
-        InstalledCodeObserver[] observers = new InstalledCodeObserver[observerFactories.size()];
-        int index = 0;
+    public InstalledCodeObserver[] createObservers(DebugContext debug, SharedMethod method, CompilationResult compilation, Pointer code, int codeSize) {
+        List<InstalledCodeObserver> observers = new ArrayList<>();
         for (InstalledCodeObserver.Factory factory : observerFactories) {
-            observers[index++] = factory.create(debug, method, compilation, code);
+            InstalledCodeObserver observer = factory.create(debug, method, compilation, code, codeSize);
+            if (observer != null) {
+                observers.add(observer);
+            }
         }
-        return observers;
+        return observers.toArray(new InstalledCodeObserver[0]);
     }
 
     public static NonmovableArray<InstalledCodeObserverHandle> installObservers(InstalledCodeObserver[] observers) {
@@ -80,7 +82,7 @@ public final class InstalledCodeObserverSupport {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     private static InstalledCodeObserver.InstalledCodeObserverHandleAccessor getAccessor(InstalledCodeObserverHandle handle) {
-        return KnownIntrinsics.convertUnknownValue(handle.getAccessor(), InstalledCodeObserver.InstalledCodeObserverHandleAccessor.class);
+        return handle.getAccessor();
     }
 
     public static void activateObservers(NonmovableArray<InstalledCodeObserverHandle> observerHandles) {

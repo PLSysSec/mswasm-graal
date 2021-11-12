@@ -26,92 +26,70 @@ package com.oracle.svm.util;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.module.ModuleFinder;
 import java.lang.module.ModuleReader;
 import java.lang.module.ModuleReference;
 import java.lang.module.ResolvedModule;
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
-import java.util.Locale;
-import java.util.MissingResourceException;
 import java.util.NoSuchElementException;
 import java.util.Optional;
-import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+
 import jdk.internal.module.Modules;
 
-public final class ModuleSupport {
+@Platforms(Platform.HOSTED_ONLY.class)
+public final class ModuleSupport extends ModuleSupportBase {
     private ModuleSupport() {
     }
 
-    /**
-     * It is not possible to open up Module access for resource bundles using a mechanism like
-     * {@link #openModule}. We therefore need to find the correct module that the resource bundle is
-     * in and access the bundle via the module system. See the discussion in JDK-8231694.
-     */
-    public static ResourceBundle getResourceBundle(String bundleName, Locale locale, ClassLoader loader) {
-        Class<?> bundleClass;
-        try {
-            bundleClass = loader.loadClass(bundleName);
-        } catch (ClassNotFoundException ex) {
-            return getResourceBundleFallback(bundleName, locale, loader);
-        }
-        return ResourceBundle.getBundle(bundleName, locale, bundleClass.getModule());
-    }
-
-    private static ResourceBundle getResourceBundleFallback(String bundleName, Locale locale, ClassLoader loader) {
-        /* Try looking through all modules to find a match. */
-        for (Module module : ModuleLayer.boot().modules()) {
-            try {
-                return ResourceBundle.getBundle(bundleName, locale, module);
-            } catch (MissingResourceException e2) {
-                /* Continue the loop. */
-            }
-        }
-
-        /*
-         * This call will most likely throw an exception because it will also not find the bundle
-         * class. But it avoids special and JDK-specific handling here.
-         */
-        return ResourceBundle.getBundle(bundleName, locale, loader);
-    }
-
-    public static List<String> getModuleResources(Collection<String> names) {
-        List<String> result = new ArrayList<>();
-        for (String name : names) {
-            Optional<ModuleReference> moduleReference = ModuleFinder.ofSystem().find(name);
-            if (!moduleReference.isPresent()) {
-                throw new RuntimeException("Unable find ModuleReference for module " + name);
-            }
-            try (ModuleReader moduleReader = moduleReference.get().open()) {
-                result.addAll(moduleReader.list().collect(Collectors.toList()));
-            } catch (IOException e) {
-                throw new RuntimeException("Unable get list of resources in module" + name, e);
-            }
-        }
-        return result;
-    }
-
-    static void openModule(Class<?> declaringClass, Class<?> accessingClass) {
+    public static void openModuleByClass(Class<?> declaringClass, Class<?> accessingClass) {
         Module declaringModule = declaringClass.getModule();
         String packageName = declaringClass.getPackageName();
-        Module accessingModule = accessingClass.getModule();
-        if (accessingModule.isNamed()) {
+        Module namedAccessingModule = null;
+        if (accessingClass != null) {
+            Module accessingModule = accessingClass.getModule();
+            if (accessingModule.isNamed()) {
+                namedAccessingModule = accessingModule;
+            }
+        }
+        if (namedAccessingModule != null ? declaringModule.isOpen(packageName, namedAccessingModule) : declaringModule.isOpen(packageName)) {
+            return;
+        }
+        if (namedAccessingModule != null) {
+            Modules.addOpens(declaringModule, packageName, namedAccessingModule);
+        } else {
+            Modules.addOpensToAllUnnamed(declaringModule, packageName);
+        }
+    }
+
+    /**
+     * Exports and opens a single package {@code packageName} in the module named {@code moduleName}
+     * to all unnamed modules.
+     */
+    @SuppressWarnings("unused")
+    public static void exportAndOpenPackageToClass(String moduleName, String packageName, boolean optional, Class<?> accessingClass) {
+        Optional<Module> value = ModuleLayer.boot().findModule(moduleName);
+        if (value.isEmpty()) {
+            if (!optional) {
+                throw new NoSuchElementException(moduleName);
+            }
+            return;
+        }
+        Module declaringModule = value.get();
+        Module accessingModule = accessingClass == null ? null : accessingClass.getModule();
+        if (accessingModule != null && accessingModule.isNamed()) {
             if (!declaringModule.isOpen(packageName, accessingModule)) {
                 Modules.addOpens(declaringModule, packageName, accessingModule);
             }
         } else {
             Modules.addOpensToAllUnnamed(declaringModule, packageName);
         }
-    }
 
-    public static ClassLoader getPlatformClassLoader() {
-        return ClassLoader.getPlatformClassLoader();
     }
 
     /**

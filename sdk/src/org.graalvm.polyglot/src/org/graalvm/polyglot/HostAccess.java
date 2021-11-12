@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,11 @@
  */
 package org.graalvm.polyglot;
 
+import org.graalvm.collections.EconomicMap;
+import org.graalvm.collections.EconomicSet;
+import org.graalvm.collections.Equivalence;
+import org.graalvm.collections.MapCursor;
+
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -51,15 +56,12 @@ import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
-
-import org.graalvm.collections.EconomicMap;
-import org.graalvm.collections.EconomicSet;
-import org.graalvm.collections.Equivalence;
-import org.graalvm.collections.MapCursor;
 
 /**
  * Represents the host access policy of a polyglot context. The host access policy specifies which
@@ -70,6 +72,9 @@ import org.graalvm.collections.MapCursor;
  * <ul>
  * <li>{@link #EXPLICIT} - Java host methods or fields, must be public and be annotated with
  * {@link Export @Export} to make them accessible to the guest language.
+ * <li>{@link #SCOPED} - Java host methods or fields, must be public and be annotated with
+ * {@link Export @Export} to make them accessible to the guest language. Guest-to-host callback
+ * parameter validity is scoped to the duration of the callback by default.
  * <li>{@link #NONE} - Does not allow any access to methods or fields of host objects. Java host
  * objects may still be passed into a context, but they cannot be accessed.
  * <li>{@link #ALL} - Does allow full unrestricted access to public methods or fields of host
@@ -91,12 +96,20 @@ public final class HostAccess {
     private final EconomicSet<Class<?>> implementableTypes;
     private final List<Object> targetMappings;
     private final boolean allowPublic;
-    private final boolean allowAllImplementations;
+    private final boolean allowAllInterfaceImplementations;
+    private final boolean allowAllClassImplementations;
     final boolean allowArrayAccess;
     final boolean allowListAccess;
+    final boolean allowBufferAccess;
+    final boolean allowIterableAccess;
+    final boolean allowIteratorAccess;
+    final boolean allowMapAccess;
+    private final boolean methodScopingDefault;
+    private final EconomicSet<Class<? extends Annotation>> disableMethodScopingAnnotations;
+    private final EconomicSet<Executable> disableMethodScoping;
     volatile Object impl;
 
-    private static final HostAccess EMPTY = new HostAccess(null, null, null, null, null, null, null, false, false, false, false);
+    private static final HostAccess EMPTY = new HostAccess(null, null, null, null, null, null, null, false, false, false, false, false, false, false, false, false, false, null, null);
 
     /**
      * Predefined host access policy that allows access to public host methods or fields that were
@@ -120,6 +133,30 @@ public final class HostAccess {
                     name("HostAccess.EXPLICIT").build();
 
     /**
+     * Predefined host access policy that is the same as EXPLICIT and enables method scoping of
+     * callback parameter values on top. Methods that are annotated with
+     * {@link HostAccess.DisableMethodScoping} are exempt from scoping.
+     * <p>
+     * Equivalent of using the following builder configuration:
+     *
+     * <pre>
+     * HostAccess.newBuilder().allowAccessAnnotatedBy(HostAccess.Export.class).//
+     *                 allowImplementationsAnnotatedBy(HostAccess.Implementable.class).//
+     *                 methodScoping(true).//
+     *                 disableMethodScopingAnnotatedBy(HostAccess.DisableMethodScoping.class).build();
+     * </pre>
+     *
+     * @since 21.3
+     */
+    public static final HostAccess SCOPED = newBuilder().//
+                    allowAccessAnnotatedBy(HostAccess.Export.class).//
+                    allowImplementationsAnnotatedBy(HostAccess.Implementable.class).//
+                    allowImplementationsAnnotatedBy(FunctionalInterface.class).//
+                    methodScoping(true).//
+                    disableMethodScopingAnnotatedBy(HostAccess.DisableMethodScoping.class).//
+                    name("HostAccess.SCOPED").build();
+
+    /**
      * Predefined host access policy that allows full unrestricted access to public methods or
      * fields of public host classes. Note that this policy allows unrestricted access to
      * reflection. It is highly discouraged from using this policy in environments where the guest
@@ -129,13 +166,26 @@ public final class HostAccess {
      * Equivalent of using the following builder configuration:
      *
      * <pre>
-     * HostAccess.newBuilder().allowPublicAccess(true).allowAllImplementations(true).//
-     *                 allowArrayAccess(true).allowListAccess(true).build();
+     * <code>
+     * HostAccess.newBuilder()
+     *           .allowPublicAccess(true)
+     *           .allowAllImplementations(true)
+     *           .allowAllClassImplementations(true)
+     *           .allowArrayAccess(true)
+     *           .allowListAccess(true)
+     *           .build();
+     * </code>
      * </pre>
      *
      * @since 19.0
      */
-    public static final HostAccess ALL = newBuilder().allowPublicAccess(true).allowAllImplementations(true).allowArrayAccess(true).allowListAccess(true).name("HostAccess.ALL").build();
+    public static final HostAccess ALL = newBuilder().//
+                    allowPublicAccess(true).//
+                    allowAllImplementations(true).//
+                    allowAllClassImplementations(true).//
+                    allowArrayAccess(true).allowListAccess(true).allowBufferAccess(true).//
+                    allowIterableAccess(true).allowIteratorAccess(true).allowMapAccess(true).//
+                    name("HostAccess.ALL").build();
 
     /**
      * Predefined host access policy that disallows any access to public host methods or fields.
@@ -154,7 +204,9 @@ public final class HostAccess {
                     EconomicSet<Class<? extends Annotation>> implementableAnnotations,
                     EconomicSet<Class<?>> implementableTypes, List<Object> targetMappings,
                     String name,
-                    boolean allowPublic, boolean allowAllImplementations, boolean allowArrayAccess, boolean allowListAccess) {
+                    boolean allowPublic, boolean allowAllImplementations, boolean allowAllClassImplementations, boolean allowArrayAccess, boolean allowListAccess, boolean allowBufferAccess,
+                    boolean allowIterableAccess, boolean allowIteratorAccess, boolean allowMapAccess,
+                    boolean methodScopingDefault, EconomicSet<Class<? extends Annotation>> disableMethodScopingAnnotations, EconomicSet<Executable> disableMethodScoping) {
         // create defensive copies
         this.accessAnnotations = copySet(annotations, Equivalence.IDENTITY);
         this.excludeTypes = copyMap(excludeTypes, Equivalence.IDENTITY);
@@ -164,9 +216,130 @@ public final class HostAccess {
         this.targetMappings = targetMappings != null ? new ArrayList<>(targetMappings) : null;
         this.name = name;
         this.allowPublic = allowPublic;
-        this.allowAllImplementations = allowAllImplementations;
+        this.allowAllInterfaceImplementations = allowAllImplementations;
+        this.allowAllClassImplementations = allowAllClassImplementations;
         this.allowArrayAccess = allowArrayAccess;
         this.allowListAccess = allowListAccess;
+        this.allowBufferAccess = allowBufferAccess;
+        this.allowIterableAccess = allowListAccess || allowIterableAccess;
+        this.allowMapAccess = allowMapAccess;
+        this.allowIteratorAccess = allowListAccess || allowIterableAccess || allowMapAccess || allowIteratorAccess;
+        this.methodScopingDefault = methodScopingDefault;
+        this.disableMethodScopingAnnotations = disableMethodScopingAnnotations;
+        this.disableMethodScoping = disableMethodScoping;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @since 20.3
+     */
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof HostAccess)) {
+            return false;
+        }
+        HostAccess other = (HostAccess) obj;
+        return allowPublic == other.allowPublic//
+                        && allowAllInterfaceImplementations == other.allowAllInterfaceImplementations//
+                        && allowAllClassImplementations == other.allowAllClassImplementations//
+                        && allowArrayAccess == other.allowArrayAccess//
+                        && allowListAccess == other.allowListAccess//
+                        && allowIterableAccess == other.allowIterableAccess//
+                        && allowIteratorAccess == other.allowIteratorAccess//
+                        && allowMapAccess == other.allowMapAccess//
+                        && equalsMap(excludeTypes, other.excludeTypes)//
+                        && equalsSet(members, other.members)//
+                        && equalsSet(implementableAnnotations, other.implementableAnnotations)//
+                        && equalsSet(implementableTypes, other.implementableTypes)//
+                        && Objects.equals(targetMappings, other.targetMappings)//
+                        && equalsSet(accessAnnotations, other.accessAnnotations);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @since 20.3
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(allowPublic,
+                        allowAllInterfaceImplementations,
+                        allowAllClassImplementations,
+                        allowArrayAccess,
+                        allowListAccess,
+                        allowIterableAccess,
+                        allowIteratorAccess,
+                        allowMapAccess,
+                        hashMap(excludeTypes),
+                        hashSet(members),
+                        hashSet(implementableAnnotations),
+                        hashSet(implementableTypes),
+                        hashSet(members),
+                        targetMappings,
+                        hashSet(accessAnnotations));
+    }
+
+    private static <T, V> int hashMap(EconomicMap<T, V> map) {
+        int h = 0;
+        if (map != null) {
+            MapCursor<T, V> cursor = map.getEntries();
+            while (cursor.advance()) {
+                h += Objects.hashCode(cursor.getKey()) ^
+                                Objects.hashCode(cursor.getValue());
+            }
+        }
+        return h;
+    }
+
+    private static <V> int hashSet(EconomicSet<V> set) {
+        int h = 0;
+        if (set != null) {
+            for (V v : set) {
+                if (v != null) {
+                    h += v.hashCode();
+                }
+            }
+        }
+        return h;
+    }
+
+    private static <T, V> boolean equalsMap(EconomicMap<T, V> map0, EconomicMap<T, V> map1) {
+        if (Objects.equals(map0, map1)) {
+            return true;
+        } else if (map0 == null) {
+            return false;
+        } else if (map0.size() != map1.size()) {
+            return false;
+        }
+        MapCursor<T, V> cursor = map0.getEntries();
+        while (cursor.advance()) {
+            if (!map1.containsKey(cursor.getKey())) {
+                return false;
+            }
+            V v0 = cursor.getValue();
+            V v1 = map1.get(cursor.getKey());
+            if (!Objects.equals(v0, v1)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static <T> boolean equalsSet(EconomicSet<T> set0, EconomicSet<T> set1) {
+        if (Objects.equals(set0, set1)) {
+            return true;
+        } else if (set0 == null) {
+            return false;
+        } else if (set0.size() != set1.size()) {
+            return false;
+        }
+        for (T v : set0) {
+            if (!set1.contains(v)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static <T> EconomicSet<T> copySet(EconomicSet<T> values, Equivalence equivalence) {
@@ -211,7 +384,9 @@ public final class HostAccess {
     }
 
     boolean allowsImplementation(Class<?> type) {
-        if (allowAllImplementations) {
+        if (allowAllInterfaceImplementations && type.isInterface()) {
+            return true;
+        } else if (allowAllClassImplementations && !type.isInterface()) {
             return true;
         }
         if (implementableTypes != null && implementableTypes.contains(type)) {
@@ -259,6 +434,29 @@ public final class HostAccess {
             }
         }
         return false;
+    }
+
+    boolean isMethodScoped(Executable e) {
+        if (!isMethodScopingEnabled()) {
+            return false;
+        }
+        if (disableMethodScoping != null) {
+            if (disableMethodScoping.contains(e)) {
+                return false;
+            }
+        }
+        if (disableMethodScopingAnnotations != null) {
+            for (Class<? extends Annotation> ann : disableMethodScopingAnnotations) {
+                if (e.getAnnotation(ann) != null) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    boolean isMethodScopingEnabled() {
+        return methodScopingDefault;
     }
 
     /**
@@ -354,6 +552,77 @@ public final class HostAccess {
     }
 
     /**
+     * If {@link HostAccess#SCOPED} is used, placing this annotation on an exported host function
+     * excludes it from parameter scoping, i.e. parameters will not be released after invocation of
+     * a callback.
+     *
+     * @see HostAccess#SCOPED
+     * @since 21.3
+     *
+     */
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target({ElementType.CONSTRUCTOR, ElementType.METHOD})
+    public @interface DisableMethodScoping {
+    }
+
+    /**
+     * Represents the precedence of a target type mapping. The precedence influences target type
+     * mappings in two ways:
+     * <ul>
+     * <li>The conversion order in which target mappings are performed. {@link #HIGHEST Highest} and
+     * {@link #HIGH high} precedences are invoked before all {@link Value#as(Class) default
+     * mappings}. {@link #LOW Low} after all loss less conversions and {@link #LOWEST lowest} after
+     * all other default mappings.
+     * <li>To disambiguate multiple selected overloads on method invocation. The overload precedence
+     * defines which method has precedence over other applicable methods. {@link #HIGHEST Highest}
+     * have higher and {@link #HIGH high} have the same precedence as the default loss-less mapping.
+     * The precedence {@link #LOW low} declares equal precedence than all lossy coercions and
+     * {@link #LOWEST lowest} defines precedence lower than all default mappings.
+     * </ul>
+     *
+     * @see Value#as(Class) for detailed information on conversion order.
+     * @since 20.3
+     */
+    public enum TargetMappingPrecedence {
+
+        /**
+         * Defines higher precedence and conversion order as all default mappings and target type
+         * mappings with lower precedence.
+         *
+         * @since 20.3
+         */
+        HIGHEST,
+
+        /**
+         * Defines high or default precedence and conversion order for a target type mapping. This
+         * precedence makes mappings be used before all other default mappings and treated with
+         * equal overload precedence as default loss less mappings like primitive coercions.
+         *
+         * @since 20.3
+         */
+        HIGH,
+
+        /**
+         * Defines low precedence and conversion order for a target type mapping. This precedence
+         * makes mappings be used before all other default lossy mappings and treated with equal
+         * overload precedence as default lossy mappings, like mappings to Map.
+         *
+         * @since 20.3
+         */
+        LOW,
+
+        /**
+         * Defines lowest precedence and conversion order for a target type mapping. This precedence
+         * makes mappings be used after all other default mappings and treated with lower overload
+         * precedence as all default mappings or other target type mappings.
+         *
+         * @since 20.3
+         */
+        LOWEST
+
+    }
+
+    /**
      * Builder to create a custom {@link HostAccess host access policy}.
      *
      * @since 19.0
@@ -366,9 +635,17 @@ public final class HostAccess {
         private EconomicSet<AnnotatedElement> members;
         private List<Object> targetMappings;
         private boolean allowPublic;
-        private boolean allowListAccess;
         private boolean allowArrayAccess;
+        private boolean allowListAccess;
+        private boolean allowBufferAccess;
+        private boolean allowIterableAccess;
+        private boolean allowIteratorAccess;
+        private boolean allowMapAccess;
         private boolean allowAllImplementations;
+        private boolean allowAllClassImplementations;
+        private boolean methodScopingDefault;
+        private EconomicSet<Class<? extends Annotation>> disableMethodScopingAnnotations;
+        private EconomicSet<Executable> disableMethodScoping;
         private String name;
 
         Builder() {
@@ -382,12 +659,18 @@ public final class HostAccess {
             this.implementableTypes = copySet(access.implementableTypes, Equivalence.IDENTITY);
             this.targetMappings = access.targetMappings != null ? new ArrayList<>(access.targetMappings) : null;
             this.excludeTypes = access.excludeTypes;
-            this.members = access.members;
-            this.targetMappings = access.targetMappings;
             this.allowPublic = access.allowPublic;
             this.allowListAccess = access.allowListAccess;
             this.allowArrayAccess = access.allowArrayAccess;
-            this.allowAllImplementations = access.allowAllImplementations;
+            this.allowBufferAccess = access.allowBufferAccess;
+            this.allowIterableAccess = access.allowIterableAccess;
+            this.allowIteratorAccess = access.allowIteratorAccess;
+            this.allowMapAccess = access.allowMapAccess;
+            this.allowAllImplementations = access.allowAllInterfaceImplementations;
+            this.allowAllClassImplementations = access.allowAllClassImplementations;
+            this.methodScopingDefault = access.methodScopingDefault;
+            this.disableMethodScopingAnnotations = copySet(access.disableMethodScopingAnnotations, Equivalence.IDENTITY);
+            this.disableMethodScoping = copySet(access.disableMethodScoping, Equivalence.IDENTITY);
         }
 
         /**
@@ -478,8 +761,14 @@ public final class HostAccess {
 
         /**
          * Allow guest languages to implement any Java interface.
+         * <p>
+         * Note that implementations implicitly export all their methods, i.e., allowing
+         * implementations of a type implies allowing access its methods via its implementations,
+         * regardless of whether the methods have been explicitly exported.
          *
          * @see HostAccess#ALL
+         * @see #allowImplementations(Class)
+         * @see #allowImplementationsAnnotatedBy(Class)
          * @since 19.0
          */
         public Builder allowAllImplementations(boolean allow) {
@@ -488,11 +777,36 @@ public final class HostAccess {
         }
 
         /**
+         * Allow guest languages to implement (extend) any Java class. Note that the default host
+         * type mappings and {@link Value#as(Class)} only implement abstract classes.
+         * <p>
+         * Note that implementations implicitly export all their methods, i.e., allowing
+         * implementations of a type implies allowing access its methods via its implementations,
+         * regardless of whether the methods have been explicitly exported.
+         *
+         * @see HostAccess#ALL
+         * @see #allowImplementations(Class)
+         * @see #allowImplementationsAnnotatedBy(Class)
+         * @see #allowAllImplementations(boolean)
+         * @since 20.3.0
+         */
+        public Builder allowAllClassImplementations(boolean allow) {
+            this.allowAllClassImplementations = allow;
+            return this;
+        }
+
+        /**
          * Allow implementations of types annotated with the given annotation. For the
          * {@link HostAccess#EXPLICIT explicit} host access present the {@link Implementable}
-         * annotation is configured for this purpose.
+         * annotation is configured for this purpose. Applies to interfaces and classes.
+         * <p>
+         * Note that implementations implicitly export all their methods, i.e., allowing
+         * implementations of a type implies allowing access its methods via its implementations,
+         * regardless of whether the methods have been explicitly exported.
          *
          * @see HostAccess.Implementable
+         * @see #allowImplementations(Class)
+         * @see Value#as(Class)
          * @since 19.0
          */
         public Builder allowImplementationsAnnotatedBy(Class<? extends Annotation> annotation) {
@@ -506,15 +820,22 @@ public final class HostAccess {
 
         /**
          * Allow implementations of this type by the guest language.
+         * <p>
+         * Note that implementations implicitly export all their methods, i.e., allowing
+         * implementations of a type implies allowing access its methods via its implementations,
+         * regardless of whether the methods have been explicitly exported.
          *
+         * @param type an interface that may be implemented or a class that may be extended.
+         * @see #allowImplementationsAnnotatedBy(Class)
+         * @see Value#as(Class)
          * @since 19.0
          */
-        public Builder allowImplementations(Class<?> interfaceClass) {
-            Objects.requireNonNull(interfaceClass);
+        public Builder allowImplementations(Class<?> type) {
+            Objects.requireNonNull(type);
             if (implementableTypes == null) {
                 implementableTypes = EconomicSet.create(Equivalence.IDENTITY);
             }
-            implementableTypes.add(interfaceClass);
+            implementableTypes.add(type);
             return this;
         }
 
@@ -532,14 +853,82 @@ public final class HostAccess {
 
         /**
          * Allows the guest application to access lists as values with
-         * {@link Value#hasArrayElements() array elements}. By default no array access is allowed.
+         * {@link Value#hasArrayElements() array elements} and {@link Value#hasIterator()
+         * iterators}. By default no array access is allowed. Allowing list access implies also
+         * allowing of {@link #allowIterableAccess(boolean) iterables} and
+         * {@link #allowIteratorAccess(boolean) iterators}.
          *
          * @see Value#hasArrayElements()
+         * @see Value#hasIterator()
          * @since 19.0
          */
         public Builder allowListAccess(boolean listAccess) {
             this.allowListAccess = listAccess;
             return this;
+        }
+
+        /**
+         * Allows the guest application to access {@link Iterable iterables} as values with
+         * {@link Value#hasIterator() iterators}. By default no iterable access is allowed. Allowing
+         * iterable access implies also allowing of {@link #allowIteratorAccess(boolean) iterators}.
+         *
+         * @see Value#hasIterator()
+         * @since 21.1
+         */
+        public Builder allowIterableAccess(boolean iterableAccess) {
+            this.allowIterableAccess = iterableAccess;
+            return this;
+        }
+
+        /**
+         * Allows the guest application to access {@link Iterator iterators} as
+         * {@link Value#isIterator() iterator} values. By default no iterator access is allowed.
+         *
+         * @see Value#isIterator()
+         * @see Value#hasIteratorNextElement()
+         * @see Value#getIteratorNextElement()
+         * @since 21.1
+         */
+        public Builder allowIteratorAccess(boolean iteratorAccess) {
+            this.allowIteratorAccess = iteratorAccess;
+            return this;
+        }
+
+        /**
+         * Allows the guest application to access {@link Map map} as {@link Value#hasHashEntries()
+         * hash} values. By default no map access is allowed. Allowing map access implies also
+         * allowing of {@link #allowIteratorAccess(boolean) iterators}.
+         *
+         * @see Value#hasHashEntries()
+         * @since 21.1
+         */
+        public Builder allowMapAccess(boolean mapAccess) {
+            this.allowMapAccess = mapAccess;
+            return this;
+        }
+
+        /**
+         * Allows the guest application to access {@link java.nio.ByteBuffer}s as values with
+         * {@link Value#hasBufferElements() buffer elements}. By default no buffer access is
+         * allowed.
+         *
+         * @see Value#hasBufferElements()
+         * @since 21.1
+         */
+        public Builder allowBufferAccess(boolean bufferAccess) {
+            this.allowBufferAccess = bufferAccess;
+            return this;
+        }
+
+        /**
+         * Adds a custom source to target type mapping for Java host calls, host field assignments
+         * and {@link Value#as(Class) explicit value conversions}. Method is equivalent to calling
+         * the targetTypeMapping method with precedence {@link TargetMappingPrecedence#HIGH}.
+         *
+         * @since 19.0
+         */
+        public <S, T> Builder targetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> accepts, Function<S, T> converter) {
+            return targetTypeMapping(sourceType, targetType, accepts, converter, TargetMappingPrecedence.HIGH);
         }
 
         /**
@@ -570,11 +959,31 @@ public final class HostAccess {
          * value the {@link Value} should be used as source type.
          * <p>
          * Multiple mappings may be added for a source or target class. Multiple mappings are
-         * applied in the order they were added. The first mapping that accepts the source value
-         * will be used. Custom target type mappings all use the same precedence when an overloaded
-         * method is selected. This means that if two methods with a custom target type mapping are
-         * applicable for a set of arguments, an {@link IllegalArgumentException} is thrown at
-         * runtime.
+         * applied in the order they were added, grouped by the {@link TargetMappingPrecedence
+         * priority} where the highest priority group is applied first. See {@link Value#as(Class)}
+         * for a detailed ordered list of the conversion order used. The first mapping that accepts
+         * the source value will be used. If the {@link TargetMappingPrecedence#HIGH default
+         * priority} is used then all custom target type mappings use the same precedence when an
+         * overloaded method is selected. This means that if two methods with a custom target type
+         * mapping are applicable for a set of arguments, an {@link IllegalArgumentException} is
+         * thrown at runtime. Using a non-default priority for the mapping allows to configure
+         * whether the method will be prioritized or deprioritized depending on the precedence.
+         * <p>
+         * For example take a configured target mapping from <code>String</code> to <code>int</code>
+         * and two overloaded methods that takes an int or a {@link String} parameter. If this
+         * method is invoked with a <code>String</code> value then there are three possible outcomes
+         * depending on the precedence that was used for the custom mapping:
+         * <ul>
+         * <li>{@link TargetMappingPrecedence#HIGHEST}: The int method overload will be selected and
+         * invoked as the target mapping has a higher precedence than default.
+         * <li>{@link TargetMappingPrecedence#HIGH}: The execution fails with an error as all
+         * overloads have equivalent precedence.
+         * <li>{@link TargetMappingPrecedence#LOW} or {@link TargetMappingPrecedence#LOWEST}: The
+         * String method overload will be selected and invoked as the target mapping has a lower
+         * precedence than default.
+         * <li>In this example the outcome of low and lowest are equivalent. There are differences
+         * between low and lowest. See {@link TargetMappingPrecedence} for details.
+         * </ul>
          * <p>
          * Primitive boxed target types will be applied to the primitive and boxed values. It is
          * therefore enough to specify a target mapping to {@link Integer} to also map to the target
@@ -642,20 +1051,24 @@ public final class HostAccess {
          * @param converter a function that produces the converted value of the mapping. May return
          *            <code>null</code>. May throw {@link ClassCastException} if the source value is
          *            not convertible.
+         * @param precedence the precedence of the defined mapping which influences conversion order
+         *            and precedence with default mappings and other target type mappings.
          * @throws IllegalArgumentException for primitive target types.
-         * @since 19.0
+         * @since 20.3
          */
-        public <S, T> Builder targetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> accepts, Function<S, T> converter) {
+        public <S, T> Builder targetTypeMapping(Class<S> sourceType, Class<T> targetType,
+                        Predicate<S> accepts, Function<S, T> converter, TargetMappingPrecedence precedence) {
             Objects.requireNonNull(sourceType);
             Objects.requireNonNull(targetType);
             Objects.requireNonNull(converter);
+            Objects.requireNonNull(precedence);
             if (targetType.isPrimitive()) {
-                throw new IllegalArgumentException("Primitive target type is not supported as target mapping.");
+                throw new IllegalArgumentException("Primitive target type is not supported as target mapping. Use boxed primitives instead.");
             }
             if (targetMappings == null) {
                 targetMappings = new ArrayList<>();
             }
-            targetMappings.add(Engine.getImpl().newTargetTypeMapping(sourceType, targetType, accepts, converter));
+            targetMappings.add(Engine.getImpl().newTargetTypeMapping(sourceType, targetType, accepts, converter, precedence));
             return this;
         }
 
@@ -665,13 +1078,55 @@ public final class HostAccess {
         }
 
         /**
+         * Sets the default scoping of callback function parameters. Parameters escape from the
+         * scope of a function, if a reference to them is kept after the function returns. To use a
+         * value beyond the method scope {@link Value#pin()} may be used.
+         *
+         * @see Value#pin()
+         * @since 21.3
+         */
+        public Builder methodScoping(boolean scopingDefault) {
+            methodScopingDefault = scopingDefault;
+            return this;
+        }
+
+        /**
+         * Function parameters of a method annotated with the specified annotation are not scoped.
+         *
+         * @since 21.3
+         */
+        public Builder disableMethodScopingAnnotatedBy(Class<? extends Annotation> annotation) {
+            Objects.requireNonNull(annotation);
+            if (disableMethodScopingAnnotations == null) {
+                disableMethodScopingAnnotations = EconomicSet.create(Equivalence.IDENTITY);
+            }
+            disableMethodScopingAnnotations.add(annotation);
+            return this;
+        }
+
+        /**
+         * Function parameters of the specified executable escape the executable's scope.
+         *
+         * @since 21.3
+         */
+        public Builder disableMethodScoping(Executable e) {
+            Objects.requireNonNull(e);
+            if (disableMethodScoping == null) {
+                disableMethodScoping = EconomicSet.create(Equivalence.IDENTITY);
+            }
+            disableMethodScoping.add(e);
+            return this;
+        }
+
+        /**
          * Creates an instance of the custom host access configuration.
          *
          * @since 19.0
          */
         public HostAccess build() {
-            return new HostAccess(accessAnnotations, excludeTypes, members, implementationAnnotations, implementableTypes, targetMappings, name, allowPublic, allowAllImplementations, allowArrayAccess,
-                            allowListAccess);
+            return new HostAccess(accessAnnotations, excludeTypes, members, implementationAnnotations, implementableTypes, targetMappings, name, allowPublic,
+                            allowAllImplementations, allowAllClassImplementations, allowArrayAccess, allowListAccess, allowBufferAccess, allowIterableAccess,
+                            allowIteratorAccess, allowMapAccess, methodScopingDefault, disableMethodScopingAnnotations, disableMethodScoping);
         }
     }
 

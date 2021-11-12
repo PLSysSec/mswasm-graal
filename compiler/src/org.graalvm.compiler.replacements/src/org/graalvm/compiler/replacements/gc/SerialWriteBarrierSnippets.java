@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -69,7 +69,7 @@ public abstract class SerialWriteBarrierSnippets extends WriteBarrierSnippets im
     }
 
     @Snippet
-    public void serialArrayRangeWriteBarrier(Address address, int length, @ConstantParameter int elementStride) {
+    public void serialArrayRangeWriteBarrier(Address address, long length, @ConstantParameter int elementStride) {
         if (probability(NOT_FREQUENT_PROBABILITY, length == 0)) {
             return;
         }
@@ -94,7 +94,7 @@ public abstract class SerialWriteBarrierSnippets extends WriteBarrierSnippets im
         Word base = cardTableAddress().add(ptr.unsignedShiftRight(cardTableShift()));
         if (verifyOnly) {
             byte cardValue = base.readByte(0, GC_CARD_LOCATION);
-            AssertionNode.assertion(false, cardValue == dirtyCardValue(), "card must be dirty");
+            AssertionNode.dynamicAssert(cardValue == dirtyCardValue(), "card must be dirty");
         } else {
             base.writeByte(0, dirtyCardValue(), GC_CARD_LOCATION);
         }
@@ -128,16 +128,16 @@ public abstract class SerialWriteBarrierSnippets extends WriteBarrierSnippets im
             args.addConst("counters", counters);
             args.addConst("verifyOnly", barrier.getVerifyOnly());
 
-            templates.template(barrier, args).instantiate(templates.getProviders().getMetaAccess(), barrier, DEFAULT_REPLACER, args);
+            templates.template(barrier, args).instantiate(templates.getMetaAccess(), barrier, DEFAULT_REPLACER, args);
         }
 
         public void lower(AbstractTemplates templates, SnippetInfo snippet, SerialArrayRangeWriteBarrier barrier, LoweringTool tool) {
             Arguments args = new Arguments(snippet, barrier.graph().getGuardsStage(), tool.getLoweringStage());
             args.add("address", barrier.getAddress());
-            args.add("length", barrier.getLength());
+            args.add("length", barrier.getLengthAsLong());
             args.addConst("elementStride", barrier.getElementStride());
 
-            templates.template(barrier, args).instantiate(templates.getProviders().getMetaAccess(), barrier, DEFAULT_REPLACER, args);
+            templates.template(barrier, args).instantiate(templates.getMetaAccess(), barrier, DEFAULT_REPLACER, args);
         }
     }
 }

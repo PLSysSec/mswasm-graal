@@ -72,9 +72,6 @@ public final class CEntryPointErrors {
     @Description("Locating the image file failed.") //
     public static final int LOCATE_IMAGE_FAILED = 6;
 
-    @Description("Locating the image file failed.") //
-    public static final int LOCATE_IMAGE_IDENTITY_MISMATCH = 601;
-
     @Description("Opening the located image file failed.") //
     public static final int OPEN_IMAGE_FAILED = 7;
 
@@ -122,6 +119,9 @@ public final class CEntryPointErrors {
 
     @Description("Releasing the isolate's image heap memory failed.") //
     public static final int FREE_IMAGE_HEAP_FAILED = 20;
+
+    @Description("The auxiliary image was built from a different primary image.") //
+    public static final int AUX_IMAGE_PRIMARY_IMAGE_MISMATCH = 21;
 
     public static String getDescription(int code) {
         String result = null;

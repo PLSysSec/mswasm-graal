@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,7 +29,6 @@
  */
 package com.oracle.truffle.llvm.runtime.interop.export;
 
-import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Fallback;
 import com.oracle.truffle.api.dsl.GenerateUncached;
@@ -46,12 +45,12 @@ public abstract class LLVMForeignGetIndexPointerNode extends LLVMNode {
 
     public abstract LLVMPointer execute(LLVMInteropType type, LLVMPointer pointer, long index) throws UnsupportedMessageException, InvalidArrayIndexException;
 
-    @Specialization(guards = "array.getElementType() == elementType")
+    @Specialization(guards = "array.elementType == elementType")
     static LLVMPointer doCached(LLVMInteropType.Array array, LLVMPointer pointer, long idx,
-                    @Cached("array.getElementSize()") long elementSize,
-                    @Cached("array.getElementType()") LLVMInteropType elementType,
+                    @Cached("array.elementSize") long elementSize,
+                    @Cached("array.elementType") LLVMInteropType elementType,
                     @Cached BranchProfile exception) throws InvalidArrayIndexException {
-        if (Long.compareUnsigned(idx, array.getLength()) >= 0) {
+        if (Long.compareUnsigned(idx, array.length) >= 0) {
             exception.enter();
             throw InvalidArrayIndexException.create(idx);
         }
@@ -61,13 +60,17 @@ public abstract class LLVMForeignGetIndexPointerNode extends LLVMNode {
     @Specialization(replaces = "doCached")
     static LLVMPointer doGeneric(LLVMInteropType.Array array, LLVMPointer pointer, long idx,
                     @Cached BranchProfile exception) throws InvalidArrayIndexException {
-        return doCached(array, pointer, idx, array.getElementSize(), array.getElementType(), exception);
+        return doCached(array, pointer, idx, array.elementSize, array.elementType, exception);
     }
 
+    /**
+     * @param type
+     * @param object
+     * @param idx
+     * @see #execute(LLVMInteropType, LLVMPointer, long)
+     */
     @Fallback
-    @SuppressWarnings("unused")
     static LLVMPointer doError(LLVMInteropType type, LLVMPointer object, long idx) throws UnsupportedMessageException {
-        CompilerDirectives.transferToInterpreter();
         throw UnsupportedMessageException.create();
     }
 }

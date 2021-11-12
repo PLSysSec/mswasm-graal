@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -55,7 +55,7 @@ import org.graalvm.compiler.truffle.runtime.OptimizedCallTarget;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
-import com.oracle.truffle.api.Truffle;
+
 import com.oracle.truffle.api.nodes.RootNode;
 
 import jdk.vm.ci.runtime.JVMCICompilerFactory;
@@ -90,7 +90,7 @@ public class LazyClassLoadingTest extends TestWithPolyglotOptions {
     @Test
     public void testClassLoading() throws IOException, InterruptedException {
         setupContext();
-        OptimizedCallTarget target = (OptimizedCallTarget) Truffle.getRuntime().createCallTarget(RootNode.createConstantNode(0));
+        OptimizedCallTarget target = (OptimizedCallTarget) RootNode.createConstantNode(0).getCallTarget();
         Assume.assumeFalse(target.getOptionValue(CompileImmediately));
         List<String> vmCommandLine = getVMCommandLine();
         Assume.assumeFalse("Explicitly enables JVMCI compiler", vmCommandLine.contains("-XX:+UseJVMCINativeLibrary") || vmCommandLine.contains("-XX:+UseJVMCICompiler"));
@@ -190,7 +190,7 @@ public class LazyClassLoadingTest extends TestWithPolyglotOptions {
     }
 
     private List<String> filterGraalCompilerClasses(List<String> loadedGraalClassNames) {
-        HashSet<Class<?>> whitelist = new HashSet<>();
+        HashSet<Class<?>> allowList = new HashSet<>();
         List<Class<?>> loadedGraalClasses = new ArrayList<>();
 
         for (String name : loadedGraalClassNames) {
@@ -205,7 +205,7 @@ public class LazyClassLoadingTest extends TestWithPolyglotOptions {
             }
         }
         /*
-         * Look for all loaded OptionDescriptors classes, and whitelist the classes that declare the
+         * Look for all loaded OptionDescriptors classes, and allow the classes that declare the
          * options. They may be loaded by the option parsing code.
          */
         for (Class<?> cls : loadedGraalClasses) {
@@ -213,20 +213,20 @@ public class LazyClassLoadingTest extends TestWithPolyglotOptions {
                 try {
                     OptionDescriptors optionDescriptors = cls.asSubclass(OptionDescriptors.class).getDeclaredConstructor().newInstance();
                     for (OptionDescriptor option : optionDescriptors) {
-                        whitelist.add(option.getDeclaringClass());
-                        whitelist.add(option.getOptionValueType());
-                        whitelist.add(option.getOptionType().getDeclaringClass());
+                        allowList.add(option.getDeclaringClass());
+                        allowList.add(option.getOptionValueType());
+                        allowList.add(option.getOptionType().getDeclaringClass());
                     }
                 } catch (ReflectiveOperationException e) {
                 }
             }
         }
 
-        whitelist.add(Cancellable.class);
+        allowList.add(Cancellable.class);
 
         List<String> forbiddenClasses = new ArrayList<>();
         for (Class<?> cls : loadedGraalClasses) {
-            if (whitelist.contains(cls)) {
+            if (allowList.contains(cls)) {
                 continue;
             }
 

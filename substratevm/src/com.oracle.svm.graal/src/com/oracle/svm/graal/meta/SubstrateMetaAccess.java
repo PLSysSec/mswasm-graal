@@ -25,7 +25,6 @@
 package com.oracle.svm.graal.meta;
 
 import static com.oracle.svm.core.config.ConfigurationValues.getObjectLayout;
-import static com.oracle.svm.core.snippets.KnownIntrinsics.convertUnknownValue;
 import static com.oracle.svm.core.util.VMError.unimplemented;
 
 import java.lang.reflect.Executable;
@@ -39,7 +38,6 @@ import com.oracle.svm.core.deopt.Deoptimizer;
 import com.oracle.svm.core.deopt.SubstrateSpeculationLog.SubstrateSpeculation;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.meta.SubstrateObjectConstant;
-import com.oracle.svm.core.util.Replaced;
 
 import jdk.vm.ci.meta.DeoptimizationAction;
 import jdk.vm.ci.meta.DeoptimizationReason;
@@ -54,7 +52,7 @@ import jdk.vm.ci.meta.SpeculationLog;
 import jdk.vm.ci.meta.SpeculationLog.Speculation;
 import jdk.vm.ci.meta.SpeculationLog.SpeculationReason;
 
-public class SubstrateMetaAccess implements MetaAccessProvider, Replaced {
+public class SubstrateMetaAccess implements MetaAccessProvider {
 
     public static SubstrateMetaAccess singleton() {
         return ImageSingletons.lookup(SubstrateMetaAccess.class);
@@ -153,7 +151,7 @@ public class SubstrateMetaAccess implements MetaAccessProvider, Replaced {
 
     @Override
     public Speculation decodeSpeculation(JavaConstant constant, SpeculationLog speculationLog) {
-        return new SubstrateSpeculation((SpeculationReason) convertUnknownValue(SubstrateObjectConstant.asObject(constant), Object.class));
+        return new SubstrateSpeculation((SpeculationReason) SubstrateObjectConstant.asObject(constant));
     }
 
     @Override

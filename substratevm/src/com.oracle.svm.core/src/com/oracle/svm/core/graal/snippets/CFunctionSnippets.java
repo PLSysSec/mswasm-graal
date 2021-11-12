@@ -47,11 +47,14 @@ import org.graalvm.compiler.replacements.SnippetTemplate.Arguments;
 import org.graalvm.compiler.replacements.SnippetTemplate.SnippetInfo;
 import org.graalvm.compiler.replacements.Snippets;
 import org.graalvm.nativeimage.c.struct.SizeOf;
+import org.graalvm.word.LocationIdentity;
 
+import com.oracle.svm.core.FrameAccess;
 import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.annotate.AutomaticFeature;
 import com.oracle.svm.core.graal.GraalFeature;
 import com.oracle.svm.core.graal.meta.RuntimeConfiguration;
+import com.oracle.svm.core.graal.nodes.KillMemoryNode;
 import com.oracle.svm.core.graal.nodes.VerificationMarkerNode;
 import com.oracle.svm.core.graal.stackvalue.StackValueNode;
 import com.oracle.svm.core.graal.stackvalue.StackValueNode.StackSlotIdentity;
@@ -96,12 +99,12 @@ public final class CFunctionSnippets extends SubstrateTemplates implements Snipp
      * A unique object that identifies the frame anchor stack value. Multiple C function calls
      * inlined into the same Java method share the stack slots for the frame anchor.
      */
-    private static final StackSlotIdentity frameAnchorIdentity = new StackSlotIdentity("CFunctionSnippets.frameAnchorIdentifier");
+    private static final StackSlotIdentity frameAnchorIdentity = new StackSlotIdentity("CFunctionSnippets.frameAnchorIdentifier", true);
 
     @Snippet
     private static CPrologueData prologueSnippet(@ConstantParameter int newThreadStatus) {
         /* Push a JavaFrameAnchor to the thread-local linked list. */
-        JavaFrameAnchor anchor = (JavaFrameAnchor) StackValueNode.stackValue(1, SizeOf.get(JavaFrameAnchor.class), frameAnchorIdentity);
+        JavaFrameAnchor anchor = (JavaFrameAnchor) StackValueNode.stackValue(SizeOf.get(JavaFrameAnchor.class), FrameAccess.wordSize(), frameAnchorIdentity);
         JavaFrameAnchors.pushFrameAnchor(anchor);
 
         /*
@@ -133,6 +136,13 @@ public final class CFunctionSnippets extends SubstrateTemplates implements Snipp
 
         /* The thread is now back in the Java state, it is safe to pop the JavaFrameAnchor. */
         JavaFrameAnchors.popFrameAnchor();
+
+        /*
+         * Ensure that no floating reads are scheduled before we are done with the transition. All
+         * memory dependencies of the replaced CEntryPointEpilogueNode are re-wired to this
+         * KillMemoryNode since this is the last kill-all node of the snippet.
+         */
+        KillMemoryNode.killMemory(LocationIdentity.ANY_LOCATION);
     }
 
     private CFunctionSnippets(OptionValues options, Iterable<DebugHandlersFactory> factories, Providers providers, SnippetReflectionProvider snippetReflection,

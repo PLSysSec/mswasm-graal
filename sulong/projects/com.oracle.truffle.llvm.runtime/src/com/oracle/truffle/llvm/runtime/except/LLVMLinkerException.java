@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,11 +29,17 @@
  */
 package com.oracle.truffle.llvm.runtime.except;
 
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.interop.ExceptionType;
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.Node;
 
 /**
  * Exception during resolving or linking of external symbols.
  */
+@ExportLibrary(InteropLibrary.class)
 public final class LLVMLinkerException extends LLVMException {
 
     private static final long serialVersionUID = 1L;
@@ -46,8 +52,14 @@ public final class LLVMLinkerException extends LLVMException {
         super(location, message);
     }
 
-    @Override
-    public boolean isSyntaxError() {
-        return true;
+    @TruffleBoundary
+    public LLVMLinkerException(Node location, String message, Object... args) {
+        this(location, String.format(message, args));
+    }
+
+    @ExportMessage
+    @SuppressWarnings("static-method")
+    ExceptionType getExceptionType() {
+        return ExceptionType.PARSE_ERROR;
     }
 }

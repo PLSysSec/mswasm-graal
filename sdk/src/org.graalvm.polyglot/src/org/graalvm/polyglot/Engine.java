@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -44,8 +44,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.Reader;
 import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URL;
@@ -53,16 +53,18 @@ import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceLoader;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -74,18 +76,20 @@ import org.graalvm.home.HomeFinder;
 import org.graalvm.nativeimage.ImageInfo;
 import org.graalvm.options.OptionDescriptor;
 import org.graalvm.options.OptionDescriptors;
+import org.graalvm.polyglot.HostAccess.TargetMappingPrecedence;
 import org.graalvm.polyglot.PolyglotException.StackFrame;
 import org.graalvm.polyglot.impl.AbstractPolyglotImpl;
-import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractContextImpl;
-import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractEngineImpl;
-import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractExceptionImpl;
-import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractInstrumentImpl;
-import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractLanguageImpl;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractContextDispatch;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractEngineDispatch;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractExceptionDispatch;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractInstrumentDispatch;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractLanguageDispatch;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractSourceDispatch;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractSourceSectionDispatch;
 import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractStackFrameImpl;
-import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractValueImpl;
-import org.graalvm.polyglot.io.ByteSequence;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractValueDispatch;
+import org.graalvm.polyglot.io.FileSystem;
 import org.graalvm.polyglot.io.MessageTransport;
-import org.graalvm.polyglot.management.ExecutionEvent;
 
 /**
  * An execution engine for Graal {@linkplain Language guest languages} that allows to inspect the
@@ -104,20 +108,37 @@ import org.graalvm.polyglot.management.ExecutionEvent;
  */
 public final class Engine implements AutoCloseable {
 
-    final AbstractEngineImpl impl;
+    private static volatile Throwable initializationException;
 
-    Engine(AbstractEngineImpl impl) {
-        this.impl = impl;
+    final AbstractEngineDispatch dispatch;
+    final Object receiver;
+    final Engine currentAPI;
+
+    @SuppressWarnings("unchecked")
+    <T> Engine(AbstractEngineDispatch dispatch, T receiver) {
+        this.dispatch = dispatch;
+        this.receiver = receiver;
+        this.currentAPI = new Engine(this);
+        if (dispatch != null) {
+            dispatch.setAPI(receiver, this);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> Engine(Engine engine) {
+        this.dispatch = engine.dispatch;
+        this.receiver = engine.receiver;
+        this.currentAPI = null;
     }
 
     private static final class ImplHolder {
-        private static final AbstractPolyglotImpl IMPL = initEngineImpl();
+        private static AbstractPolyglotImpl IMPL = initEngineImpl();
 
         /**
          * Performs context pre-initialization.
          *
          * NOTE: this method is called reflectively by downstream projects
-         * (com.oracle.svm.truffle.TruffleFeature).
+         * (com.oracle.svm.truffle.TruffleBaseFeature).
          */
         @SuppressWarnings("unused")
         private static void preInitializeEngine() {
@@ -128,7 +149,7 @@ public final class Engine implements AutoCloseable {
          * Clears the pre-initialized engine.
          *
          * NOTE: this method is called reflectively by downstream projects
-         * (com.oracle.svm.truffle.TruffleFeature).
+         * (com.oracle.svm.truffle.TruffleBaseFeature).
          */
         @SuppressWarnings("unused")
         private static void resetPreInitializedEngine() {
@@ -156,7 +177,7 @@ public final class Engine implements AutoCloseable {
      * @since 19.0
      */
     public Map<String, Language> getLanguages() {
-        return impl.getLanguages();
+        return dispatch.getLanguages(receiver);
     }
 
     /**
@@ -169,7 +190,7 @@ public final class Engine implements AutoCloseable {
      * @since 19.0
      */
     public Map<String, Instrument> getInstruments() {
-        return impl.getInstruments();
+        return dispatch.getInstruments(receiver);
     }
 
     /**
@@ -189,7 +210,7 @@ public final class Engine implements AutoCloseable {
      * @since 19.0
      */
     public OptionDescriptors getOptions() {
-        return impl.getOptions();
+        return dispatch.getOptions(receiver);
     }
 
     /**
@@ -199,12 +220,7 @@ public final class Engine implements AutoCloseable {
      */
     @SuppressWarnings("static-method")
     public String getVersion() {
-        String version = HomeFinder.getInstance().getVersion();
-        if (version.equals("snapshot")) {
-            return "Development Build";
-        } else {
-            return version;
-        }
+        return dispatch.getVersion(receiver);
     }
 
     /**
@@ -220,7 +236,10 @@ public final class Engine implements AutoCloseable {
      * @since 19.0
      */
     public void close(boolean cancelIfExecuting) {
-        impl.close(this, cancelIfExecuting);
+        if (currentAPI == null) {
+            throw new IllegalStateException("Engine instances that were indirectly received using Context.getCurrent() cannot be closed.");
+        }
+        dispatch.close(receiver, this, cancelIfExecuting);
     }
 
     /**
@@ -247,7 +266,7 @@ public final class Engine implements AutoCloseable {
      * @since 19.0
      */
     public String getImplementationName() {
-        return impl.getImplementationName();
+        return dispatch.getImplementationName(receiver);
     }
 
     /**
@@ -283,8 +302,36 @@ public final class Engine implements AutoCloseable {
         return HomeFinder.getInstance().getHomeFolder();
     }
 
+    /**
+     * Returns the sources previously cached by this engine. Only sources may be returned that allow
+     * {@link Source.Builder#cached(boolean) caching} (default on). The source cache of the engine
+     * is using weak references to refer to the source objects. Calling this method will result in a
+     * strong reference to all cached sources of this engine until the returned set is no longer
+     * referenced. This method is useful to find out which sources very already evaluated by this
+     * engine. This method only returns sources that were evaluated using
+     * {@link Context#eval(Source)}. Sources evaluated by the guest application will not be
+     * returned. The return set is never <code>null</code> and not modifiable.
+     *
+     * @since 20.3
+     */
+    public Set<Source> getCachedSources() {
+        return dispatch.getCachedSources(receiver);
+    }
+
     static AbstractPolyglotImpl getImpl() {
-        return ImplHolder.IMPL;
+        try {
+            return ImplHolder.IMPL;
+        } catch (NoClassDefFoundError e) {
+            // Workaround for https://bugs.openjdk.java.net/browse/JDK-8048190
+            Throwable cause = initializationException;
+            if (cause != null && e.getCause() == null) {
+                e.initCause(cause);
+            }
+            throw e;
+        } catch (Throwable e) {
+            initializationException = e;
+            throw e;
+        }
     }
 
     /*
@@ -298,11 +345,12 @@ public final class Engine implements AutoCloseable {
      * Used internally to find all active engines. Do not hold on to the returned collection
      * permanently as this may cause memory leaks.
      */
+    @SuppressWarnings("unchecked")
     static Collection<Engine> findActiveEngines() {
-        return getImpl().findActiveEngines();
+        return (Collection<Engine>) getImpl().findActiveEngines();
     }
 
-    private static final Engine EMPTY = new Engine(null);
+    private static final Engine EMPTY = new Engine(null, null);
 
     /**
      *
@@ -522,104 +570,131 @@ public final class Engine implements AutoCloseable {
          * @since 19.0
          */
         public Engine build() {
-            AbstractPolyglotImpl loadedImpl = getImpl();
-            if (loadedImpl == null) {
+            AbstractPolyglotImpl polyglot = getImpl();
+            if (polyglot == null) {
                 throw new IllegalStateException("The Polyglot API implementation failed to load.");
             }
-            return loadedImpl.buildEngine(out, err, in, options, 0, null,
-                            false, 0, useSystemProperties, allowExperimentalOptions, boundEngine, messageTransport, customLogHandler,
-                            null);
+            Engine engine = polyglot.buildEngine(out, err, in, options, useSystemProperties, allowExperimentalOptions,
+                            boundEngine, messageTransport, customLogHandler, polyglot.createHostLanguage(polyglot.createHostAccess()), false);
+            return engine;
         }
 
     }
 
     static class APIAccessImpl extends AbstractPolyglotImpl.APIAccess {
 
+        private static final APIAccessImpl INSTANCE = new APIAccessImpl();
+
         APIAccessImpl() {
         }
 
         @Override
-        public AbstractContextImpl getImpl(Context context) {
-            return context.impl;
+        public Context newContext(AbstractContextDispatch dispatch, Object receiver, Engine engine) {
+            return new Context(dispatch, receiver, engine);
         }
 
         @Override
-        public Engine newEngine(AbstractEngineImpl impl) {
-            return new Engine(impl);
+        public Engine newEngine(AbstractEngineDispatch dispatch, Object receiver) {
+            return new Engine(dispatch, receiver);
         }
 
         @Override
-        public AbstractExceptionImpl getImpl(PolyglotException value) {
-            return value.impl;
+        public Language newLanguage(AbstractLanguageDispatch dispatch, Object receiver) {
+            return new Language(dispatch, receiver);
         }
 
         @Override
-        public Context newContext(AbstractContextImpl impl) {
-            return new Context(impl);
+        public Instrument newInstrument(AbstractInstrumentDispatch dispatch, Object receiver) {
+            return new Instrument(dispatch, receiver);
         }
 
         @Override
-        public PolyglotException newLanguageException(String message, AbstractExceptionImpl impl) {
-            return new PolyglotException(message, impl);
+        public Object getReceiver(Instrument instrument) {
+            return instrument.receiver;
         }
 
         @Override
-        public Language newLanguage(AbstractLanguageImpl impl) {
-            return new Language(impl);
+        public Object getContext(Value value) {
+            return value.context;
         }
 
         @Override
-        public Instrument newInstrument(AbstractInstrumentImpl impl) {
-            return new Instrument(impl);
+        public Value newValue(AbstractValueDispatch dispatch, Object context, Object receiver) {
+            return new Value(dispatch, context, receiver);
         }
 
         @Override
-        public Value newValue(Object value, AbstractValueImpl impl) {
-            return new Value(impl, value);
+        public Source newSource(AbstractSourceDispatch dispatch, Object receiver) {
+            return new Source(dispatch, receiver);
         }
 
         @Override
-        public Source newSource(String language, Object impl) {
-            return new Source(language, impl);
+        public SourceSection newSourceSection(Source source, AbstractSourceSectionDispatch dispatch, Object receiver) {
+            return new SourceSection(source, dispatch, receiver);
         }
 
         @Override
-        public SourceSection newSourceSection(Source source, Object impl) {
-            return new SourceSection(source, impl);
+        public AbstractValueDispatch getDispatch(Value value) {
+            return value.dispatch;
         }
 
         @Override
-        public AbstractEngineImpl getImpl(Engine value) {
-            return value.impl;
+        public AbstractInstrumentDispatch getDispatch(Instrument value) {
+            return value.dispatch;
         }
 
         @Override
-        public AbstractValueImpl getImpl(Value value) {
-            return value.impl;
+        public AbstractContextDispatch getDispatch(Context context) {
+            return context.dispatch;
         }
 
         @Override
-        public AbstractInstrumentImpl getImpl(Instrument value) {
-            return value.impl;
+        public AbstractEngineDispatch getDispatch(Engine engine) {
+            return engine.dispatch;
         }
 
         @Override
-        public ResourceLimitEvent newResourceLimitsEvent(Object impl) {
-            return new ResourceLimitEvent(impl);
+        public AbstractSourceDispatch getDispatch(Source source) {
+            return source.dispatch;
         }
 
         @Override
-        public AbstractLanguageImpl getImpl(Language value) {
-            return value.impl;
+        public AbstractSourceSectionDispatch getDispatch(SourceSection sourceSection) {
+            return sourceSection.dispatch;
         }
 
         @Override
-        public Object getImpl(ResourceLimits value) {
-            return value.impl;
+        public ResourceLimitEvent newResourceLimitsEvent(Context context) {
+            return new ResourceLimitEvent(context);
         }
 
         @Override
-        public AbstractStackFrameImpl getImpl(StackFrame value) {
+        public AbstractLanguageDispatch getDispatch(Language value) {
+            return value.dispatch;
+        }
+
+        @Override
+        public Object getReceiver(ResourceLimits value) {
+            return value.receiver;
+        }
+
+        @Override
+        public Object getReceiver(Source source) {
+            return source.receiver;
+        }
+
+        @Override
+        public Object getReceiver(SourceSection sourceSection) {
+            return sourceSection.receiver;
+        }
+
+        @Override
+        public PolyglotException newLanguageException(String message, AbstractExceptionDispatch dispatch, Object receiver) {
+            return new PolyglotException(message, dispatch, receiver);
+        }
+
+        @Override
+        public AbstractStackFrameImpl getDispatch(StackFrame value) {
             return value.impl;
         }
 
@@ -629,8 +704,23 @@ public final class Engine implements AutoCloseable {
         }
 
         @Override
-        public StackFrame newPolyglotStackTraceElement(PolyglotException e, AbstractStackFrameImpl impl) {
-            return e.new StackFrame(impl);
+        public Object getReceiver(Context context) {
+            return context.receiver;
+        }
+
+        @Override
+        public Object getReceiver(Engine engine) {
+            return engine.receiver;
+        }
+
+        @Override
+        public Object getReceiver(PolyglotException polyglot) {
+            return polyglot.impl;
+        }
+
+        @Override
+        public StackFrame newPolyglotStackTraceElement(AbstractStackFrameImpl dispatch, Object receiver) {
+            return ((PolyglotException) receiver).new StackFrame(dispatch);
         }
 
         @Override
@@ -641,6 +731,16 @@ public final class Engine implements AutoCloseable {
         @Override
         public boolean allowsImplementation(HostAccess access, Class<?> type) {
             return access.allowsImplementation(type);
+        }
+
+        @Override
+        public boolean isMethodScopingEnabled(HostAccess access) {
+            return access.isMethodScopingEnabled();
+        }
+
+        @Override
+        public boolean isMethodScoped(HostAccess access, Executable e) {
+            return access.isMethodScoped(e);
         }
 
         @Override
@@ -656,6 +756,26 @@ public final class Engine implements AutoCloseable {
         @Override
         public boolean isListAccessible(HostAccess access) {
             return access.allowListAccess;
+        }
+
+        @Override
+        public boolean isBufferAccessible(HostAccess access) {
+            return access.allowBufferAccess;
+        }
+
+        @Override
+        public boolean isIterableAccessible(HostAccess access) {
+            return access.allowIterableAccess;
+        }
+
+        @Override
+        public boolean isIteratorAccessible(HostAccess access) {
+            return access.allowIteratorAccess;
+        }
+
+        @Override
+        public boolean isMapAccessible(HostAccess access) {
+            return access.allowMapAccess;
         }
 
         @Override
@@ -682,18 +802,18 @@ public final class Engine implements AutoCloseable {
         public String validatePolyglotAccess(PolyglotAccess access, UnmodifiableEconomicSet<String> languages) {
             return access.validate(languages);
         }
-
     }
 
     private static final boolean JDK8_OR_EARLIER = System.getProperty("java.specification.version").compareTo("1.9") < 0;
 
+    @SuppressWarnings({"unchecked", "deprecation"})
     private static AbstractPolyglotImpl initEngineImpl() {
         return AccessController.doPrivileged(new PrivilegedAction<AbstractPolyglotImpl>() {
             public AbstractPolyglotImpl run() {
-                AbstractPolyglotImpl engine = null;
+                AbstractPolyglotImpl polyglot = null;
                 Class<?> servicesClass = null;
                 if (Boolean.getBoolean("graalvm.ForcePolyglotInvalid")) {
-                    engine = createInvalidPolyglotImpl();
+                    polyglot = loadAndValidateProviders(createInvalidPolyglotImpl());
                 } else {
                     if (JDK8_OR_EARLIER) {
                         try {
@@ -702,8 +822,8 @@ public final class Engine implements AutoCloseable {
                         }
                         if (servicesClass != null) {
                             try {
-                                Method m = servicesClass.getDeclaredMethod("loadSingle", Class.class, boolean.class);
-                                engine = (AbstractPolyglotImpl) m.invoke(null, AbstractPolyglotImpl.class, false);
+                                Method m = servicesClass.getDeclaredMethod("load", Class.class);
+                                polyglot = loadAndValidateProviders(((Iterable<? extends AbstractPolyglotImpl>) m.invoke(null, AbstractPolyglotImpl.class)).iterator());
                             } catch (Throwable e) {
                                 // Fail fast for other errors
                                 throw new InternalError(e);
@@ -712,29 +832,39 @@ public final class Engine implements AutoCloseable {
                     }
                 }
 
-                if (engine == null) {
+                if (polyglot == null) {
                     // >= JDK 9.
-                    engine = searchServiceLoader();
+                    polyglot = loadAndValidateProviders(searchServiceLoader());
                 }
-                if (engine == null) {
-                    engine = createInvalidPolyglotImpl();
+                if (polyglot == null) {
+                    polyglot = loadAndValidateProviders(createInvalidPolyglotImpl());
                 }
-                if (engine != null) {
-                    engine.setConstructors(new APIAccessImpl());
-                }
-                return engine;
+                return polyglot;
             }
 
-            private AbstractPolyglotImpl searchServiceLoader() throws InternalError {
-                Iterator<AbstractPolyglotImpl> providers = ServiceLoader.load(AbstractPolyglotImpl.class).iterator();
-                if (providers.hasNext()) {
+            private Iterator<? extends AbstractPolyglotImpl> searchServiceLoader() throws InternalError {
+                return ServiceLoader.load(AbstractPolyglotImpl.class).iterator();
+            }
+
+            private AbstractPolyglotImpl loadAndValidateProviders(Iterator<? extends AbstractPolyglotImpl> providers) throws AssertionError {
+                List<AbstractPolyglotImpl> impls = new ArrayList<>();
+                while (providers.hasNext()) {
                     AbstractPolyglotImpl found = providers.next();
-                    if (providers.hasNext()) {
-                        throw new InternalError(String.format("Multiple %s providers found", AbstractPolyglotImpl.class.getName()));
+                    for (AbstractPolyglotImpl impl : impls) {
+                        if (impl.getClass().getName().equals(found.getClass().getName())) {
+                            throw new AssertionError("Same polyglot impl found twice on the classpath.");
+                        }
                     }
-                    return found;
+                    impls.add(found);
                 }
-                return null;
+                Collections.sort(impls, Comparator.comparing(AbstractPolyglotImpl::getPriority));
+                AbstractPolyglotImpl prev = null;
+                for (AbstractPolyglotImpl impl : impls) {
+                    impl.setNext(prev);
+                    impl.setConstructors(APIAccessImpl.INSTANCE);
+                    prev = impl;
+                }
+                return prev;
             }
         });
     }
@@ -743,13 +873,11 @@ public final class Engine implements AutoCloseable {
      * Use static factory method with AbstractPolyglotImpl to avoid class loading of the
      * PolyglotInvalid class by the Java verifier.
      */
-    static AbstractPolyglotImpl createInvalidPolyglotImpl() {
-        return new PolyglotInvalid();
+    static Iterator<? extends AbstractPolyglotImpl> createInvalidPolyglotImpl() {
+        return Arrays.asList(new PolyglotInvalid()).iterator();
     }
 
     private static class PolyglotInvalid extends AbstractPolyglotImpl {
-
-        private final EmptySource source = new EmptySource(this);
 
         /**
          * Forces ahead-of-time initialization.
@@ -759,6 +887,7 @@ public final class Engine implements AutoCloseable {
         static boolean AOT;
 
         static {
+            @SuppressWarnings("deprecation")
             Boolean aot = AccessController.doPrivileged(new PrivilegedAction<Boolean>() {
                 public Boolean run() {
                     return Boolean.getBoolean("com.oracle.graalvm.isaot");
@@ -768,85 +897,34 @@ public final class Engine implements AutoCloseable {
         }
 
         @Override
+        public int getPriority() {
+            return Integer.MIN_VALUE;
+        }
+
+        @Override
         public Context getCurrentContext() {
             throw noPolyglotImplementationFound();
         }
 
         @Override
-        public Engine buildEngine(OutputStream out, OutputStream err, InputStream in, Map<String, String> arguments, long timeout, TimeUnit timeoutUnit, boolean sandbox,
-                        long maximumAllowedAllocationBytes, boolean useSystemProperties, boolean allowExperimentalOptions, boolean boundEngine, MessageTransport messageInterceptor,
-                        Object logHandlerOrStream,
-                        HostAccess conf) {
+        public Engine buildEngine(OutputStream out, OutputStream err, InputStream in, Map<String, String> arguments, boolean useSystemProperties, boolean allowExperimentalOptions, boolean boundEngine,
+                        MessageTransport messageInterceptor, Object logHandlerOrStream, Object hostLanguage, boolean hostLanguageOnly) {
             throw noPolyglotImplementationFound();
         }
 
         @Override
-        public Object buildLimits(long statementLimit, Predicate<Source> statementLimitSourceFilter, Duration timeLimit, Duration timeLimitAccuracy, Consumer<ResourceLimitEvent> onLimit) {
+        public Object createHostLanguage(AbstractHostAccess access) {
             throw noPolyglotImplementationFound();
         }
 
         @Override
-        public Context getLimitEventContext(Object impl) {
+        public Object buildLimits(long statementLimit, Predicate<Source> statementLimitSourceFilter, Consumer<ResourceLimitEvent> onLimit) {
             throw noPolyglotImplementationFound();
         }
 
         @Override
-        public AbstractManagementImpl getManagementImpl() {
-            return new AbstractManagementImpl(this) {
-
-                @Override
-                public boolean isExecutionEventStatement(Object impl) {
-                    return false;
-                }
-
-                @Override
-                public boolean isExecutionEventRoot(Object impl) {
-                    return false;
-                }
-
-                @Override
-                public boolean isExecutionEventExpression(Object impl) {
-                    return false;
-                }
-
-                @Override
-                public String getExecutionEventRootName(Object impl) {
-                    throw noPolyglotImplementationFound();
-                }
-
-                @Override
-                public PolyglotException getExecutionEventException(Object impl) {
-                    throw noPolyglotImplementationFound();
-                }
-
-                @Override
-                public Value getExecutionEventReturnValue(Object impl) {
-                    throw noPolyglotImplementationFound();
-                }
-
-                @Override
-                public SourceSection getExecutionEventLocation(Object impl) {
-                    throw noPolyglotImplementationFound();
-                }
-
-                @Override
-                public List<Value> getExecutionEventInputValues(Object impl) {
-                    throw noPolyglotImplementationFound();
-                }
-
-                @Override
-                public void closeExecutionListener(Object impl) {
-                    throw noPolyglotImplementationFound();
-                }
-
-                @Override
-                public Object attachExecutionListener(Engine engine, Consumer<ExecutionEvent> onEnter, Consumer<ExecutionEvent> onReturn, boolean expressions, boolean statements,
-                                boolean roots,
-                                Predicate<Source> sourceFilter, Predicate<String> rootFilter, boolean collectInputValues, boolean collectReturnValues, boolean collectErrors) {
-                    throw noPolyglotImplementationFound();
-                }
-
-            };
+        public AbstractHostAccess createHostAccess() {
+            throw noPolyglotImplementationFound();
         }
 
         private static RuntimeException noPolyglotImplementationFound() {
@@ -857,16 +935,6 @@ public final class Engine implements AutoCloseable {
                 suggestion = "Make sure the truffle-api.jar is on the classpath.";
             }
             return new IllegalStateException("No language and polyglot implementation was found on the classpath. " + suggestion);
-        }
-
-        @Override
-        public AbstractSourceImpl getSourceImpl() {
-            return source;
-        }
-
-        @Override
-        public AbstractSourceSectionImpl getSourceSectionImpl() {
-            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -892,163 +960,45 @@ public final class Engine implements AutoCloseable {
             throw noPolyglotImplementationFound();
         }
 
-        static class EmptySource extends AbstractSourceImpl {
-
-            protected EmptySource(AbstractPolyglotImpl engineImpl) {
-                super(engineImpl);
-            }
-
-            @Override
-            public Source build(String language, Object origin, URI uri, String name, String mimeType, Object content, boolean interactive, boolean internal, boolean cached, Charset encoding)
-                            throws IOException {
-                throw noPolyglotImplementationFound();
-            }
-
-            @Override
-            public String findLanguage(File file) throws IOException {
-                return null;
-            }
-
-            @Override
-            public String findLanguage(URL url) throws IOException {
-                return null;
-            }
-
-            @Override
-            public String findMimeType(File file) throws IOException {
-                return null;
-            }
-
-            @Override
-            public String findMimeType(URL url) throws IOException {
-                return null;
-            }
-
-            @Override
-            public String getMimeType(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public String findLanguage(String mimeType) {
-                return null;
-            }
-
-            @Override
-            public String getName(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public String getPath(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public boolean isInteractive(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public URL getURL(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public URI getURI(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public Reader getReader(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public InputStream getInputStream(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int getLength(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public CharSequence getCode(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public CharSequence getCode(Object impl, int lineNumber) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int getLineCount(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int getLineNumber(Object impl, int offset) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int getColumnNumber(Object impl, int offset) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int getLineStartOffset(Object impl, int lineNumber) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int getLineLength(Object impl, int lineNumber) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public String toString(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public int hashCode(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public boolean equals(Object impl, Object otherImpl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public boolean isInternal(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public ByteSequence getBytes(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public boolean hasCharacters(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public boolean hasBytes(Object impl) {
-                throw new UnsupportedOperationException();
-            }
-
+        @Override
+        public FileSystem newDefaultFileSystem() {
+            throw noPolyglotImplementationFound();
         }
 
         @Override
-        public <S, T> Object newTargetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> acceptsValue, Function<S, T> convertValue) {
+        public <S, T> Object newTargetTypeMapping(Class<S> sourceType, Class<T> targetType, Predicate<S> acceptsValue, Function<S, T> convertValue, TargetMappingPrecedence precedence) {
             return new Object();
+        }
+
+        @Override
+        public Source build(String language, Object origin, URI uri, String name, String mimeType, Object content, boolean interactive, boolean internal, boolean cached, Charset encoding)
+                        throws IOException {
+            throw noPolyglotImplementationFound();
+        }
+
+        @Override
+        public String findLanguage(File file) throws IOException {
+            return null;
+        }
+
+        @Override
+        public String findLanguage(URL url) throws IOException {
+            return null;
+        }
+
+        @Override
+        public String findMimeType(File file) throws IOException {
+            return null;
+        }
+
+        @Override
+        public String findMimeType(URL url) throws IOException {
+            return null;
+        }
+
+        @Override
+        public String findLanguage(String mimeType) {
+            return null;
         }
 
     }

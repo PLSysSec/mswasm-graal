@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,10 +31,17 @@ import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.NamedLocationIdentity;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.spi.Lowerable;
-import org.graalvm.compiler.nodes.spi.LoweringTool;
 import org.graalvm.compiler.replacements.nodes.BasicArrayCopyNode;
 import org.graalvm.word.LocationIdentity;
 
+/**
+ * This node intrinsifies {@link System#arraycopy}.
+ *
+ * Lowering is implemented in the platform/VM specific
+ * {@link org.graalvm.compiler.nodes.spi.LoweringProvider LoweringProvider}. Most of them eventually
+ * go through
+ * {@link ArrayCopySnippets.Templates#lower(ArrayCopyNode, boolean, org.graalvm.compiler.nodes.spi.LoweringTool)}.
+ */
 @NodeInfo
 public final class ArrayCopyNode extends BasicArrayCopyNode implements Lowerable {
 
@@ -50,7 +57,7 @@ public final class ArrayCopyNode extends BasicArrayCopyNode implements Lowerable
         super(TYPE, src, srcPos, dst, dstPos, length, null, bci);
         this.forceAnyLocation = forceAnyLocation;
         if (!forceAnyLocation) {
-            elementKind = ArrayCopySnippets.Templates.selectComponentKind(this);
+            elementKind = selectComponentKind(this);
         } else {
             assert elementKind == null;
         }
@@ -59,17 +66,12 @@ public final class ArrayCopyNode extends BasicArrayCopyNode implements Lowerable
     @Override
     public LocationIdentity getKilledLocationIdentity() {
         if (!forceAnyLocation && elementKind == null) {
-            elementKind = ArrayCopySnippets.Templates.selectComponentKind(this);
+            elementKind = selectComponentKind(this);
         }
         if (elementKind != null) {
             return NamedLocationIdentity.getArrayLocation(elementKind);
         }
         return any();
-    }
-
-    @Override
-    public void lower(LoweringTool tool) {
-        tool.getLowerer().lower(this, tool);
     }
 
     public boolean killsAnyLocation() {

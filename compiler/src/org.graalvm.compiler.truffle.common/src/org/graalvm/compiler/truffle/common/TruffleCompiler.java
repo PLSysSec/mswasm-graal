@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,9 +38,15 @@ public interface TruffleCompiler {
     /**
      * Initializes the compiler before the first compilation.
      *
+     * @param options the options for initialization
+     * @param compilation the Truffle AST that triggered the initialization
+     * @param firstInitialization first initialization. For a multi-isolate compiler the
+     *            {@code firstInitialization} must be {@code true} for an initialization in the
+     *            first isolate and {@code false} for an initialization in the following isolates.
+     *
      * @since 20.0.0
      */
-    void initialize(Map<String, Object> options);
+    void initialize(Map<String, Object> options, CompilableTruffleAST compilation, boolean firstInitialization);
 
     /**
      * Opens a new compilation for {@code compilable}. Each call results in a new compilation
@@ -72,13 +78,11 @@ public interface TruffleCompiler {
      *            {@link #openCompilation(org.graalvm.compiler.truffle.common.CompilableTruffleAST)
      *            openCompilation} to be used for the compilation
      * @param options option values relevant to compilation
-     * @param inlining a guide for Truffle level inlining to be performed during compilation
-     * @param task an object that must be periodically queried during compilation to see if the
-     *            compilation is cancelled
+     * @param task an object that holds information about the compilation process itself (e.g. which
+     *            tier, was the compilation canceled)
      * @param listener a listener receiving events about compilation success or failure
      */
-    void doCompile(TruffleDebugContext debug, TruffleCompilation compilation, Map<String, Object> options, TruffleInliningPlan inlining, TruffleCompilationTask task,
-                    TruffleCompilerListener listener);
+    void doCompile(TruffleDebugContext debug, TruffleCompilation compilation, Map<String, Object> options, TruffleCompilationTask task, TruffleCompilerListener listener);
 
     /**
      * Returns a unique name for the configuration in use by this compiler.
@@ -87,7 +91,7 @@ public interface TruffleCompiler {
 
     /**
      * Notifies this object that it will no longer being used and should thus perform all relevant
-     * finalization tasks.
+     * finalization tasks. This is typically performed when the process exits.
      */
     void shutdown();
 }

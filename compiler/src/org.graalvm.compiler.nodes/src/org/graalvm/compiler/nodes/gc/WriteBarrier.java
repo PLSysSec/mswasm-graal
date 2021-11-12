@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,6 +39,11 @@ public abstract class WriteBarrier extends FixedWithNextNode implements Lowerabl
     public static final NodeClass<WriteBarrier> TYPE = NodeClass.create(WriteBarrier.class);
     @Input(InputType.Association) AddressNode address;
 
+    public enum Kind {
+        PRE_BARRIER,
+        POST_BARRIER
+    }
+
     protected WriteBarrier(NodeClass<? extends WriteBarrier> c, AddressNode address) {
         super(c, StampFactory.forVoid());
         this.address = address;
@@ -53,4 +58,6 @@ public abstract class WriteBarrier extends FixedWithNextNode implements Lowerabl
     public AddressNode getAddress() {
         return address;
     }
+
+    public abstract Kind getKind();
 }

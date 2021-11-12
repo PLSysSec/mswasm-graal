@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,9 +36,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
-import org.graalvm.collections.EconomicSet;
+import org.graalvm.collections.EconomicMap;
+import org.graalvm.collections.Equivalence;
 import org.graalvm.compiler.core.common.CompilationIdentifier;
 import org.graalvm.compiler.graph.NodeSourcePosition;
+import org.graalvm.compiler.options.OptionValues;
+import org.graalvm.compiler.serviceprovider.GraalServices;
 
 import jdk.vm.ci.code.DebugInfo;
 import jdk.vm.ci.code.StackSlot;
@@ -54,7 +57,6 @@ import jdk.vm.ci.code.site.Reference;
 import jdk.vm.ci.code.site.Site;
 import jdk.vm.ci.meta.Assumptions.Assumption;
 import jdk.vm.ci.meta.InvokeTarget;
-import jdk.vm.ci.meta.ResolvedJavaField;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.SpeculationLog;
 
@@ -133,7 +135,7 @@ public class CompilationResult {
 
     /**
      * Describes a table of signed offsets embedded in the code. The offsets are relative to the
-     * starting address of the table. This type of table maybe generated when translating a
+     * starting address of the table. This type of table can be generated when translating a
      * multi-way branch based on a key value from a dense value set (e.g. the {@code tableswitch}
      * JVM instruction).
      *
@@ -141,6 +143,31 @@ public class CompilationResult {
      * inclusive.
      */
     public static final class JumpTable extends CodeAnnotation {
+
+        /**
+         * Constants denoting the format and size of each entry in a jump table.
+         */
+        public enum EntryFormat {
+            /**
+             * Each entry is a 4 byte offset. The base of the offset is platform dependent.
+             */
+            OFFSET(4),
+
+            /**
+             * Each entry is a secondary key value followed by a 4 byte offset. The base of the
+             * offset is platform dependent.
+             */
+            KEY2_OFFSET(8);
+
+            EntryFormat(int size) {
+                this.size = size;
+            }
+
+            /**
+             * Gets the size of an entry in bytes.
+             */
+            public final int size;
+        }
 
         /**
          * The low value in the key range (inclusive).
@@ -155,13 +182,16 @@ public class CompilationResult {
         /**
          * The size (in bytes) of each table entry.
          */
-        public final int entrySize;
+        public final EntryFormat entryFormat;
 
-        public JumpTable(int position, int low, int high, int entrySize) {
+        public JumpTable(int position, int low, int high, EntryFormat entryFormat) {
             super(position);
+            if (high <= low) {
+                throw new IllegalArgumentException(String.format("low (%d) is not less than high(%d)", low, high));
+            }
             this.low = low;
             this.high = high;
-            this.entrySize = entrySize;
+            this.entryFormat = entryFormat;
         }
 
         @Override
@@ -171,7 +201,7 @@ public class CompilationResult {
             }
             if (obj instanceof JumpTable) {
                 JumpTable that = (JumpTable) obj;
-                if (this.getPosition() == that.getPosition() && this.entrySize == that.entrySize && this.low == that.low && this.high == that.high) {
+                if (this.getPosition() == that.getPosition() && this.entryFormat == that.entryFormat && this.low == that.low && this.high == that.high) {
                     return true;
                 }
             }
@@ -194,7 +224,7 @@ public class CompilationResult {
     private final List<SourceMapping> sourceMapping = new ArrayList<>();
     private final List<DataPatch> dataPatches = new ArrayList<>();
     private final List<ExceptionHandler> exceptionHandlers = new ArrayList<>();
-    private final List<Mark> marks = new ArrayList<>();
+    private final List<CodeMark> marks = new ArrayList<>();
 
     private int totalFrameSize = -1;
     private int maxInterpreterFrameSize = -1;
@@ -235,33 +265,17 @@ public class CompilationResult {
      */
     private SpeculationLog speculationLog;
 
-    /**
-     * The list of fields that were accessed from the bytecodes.
-     */
-    private ResolvedJavaField[] fields;
-
     private int bytecodeSize;
 
     private boolean hasUnsafeAccess;
 
-    private boolean isImmutablePIC;
-
     public CompilationResult(CompilationIdentifier compilationId) {
-        this(compilationId, null, false);
+        this(compilationId, null);
     }
 
     public CompilationResult(CompilationIdentifier compilationId, String name) {
-        this(compilationId, name, false);
-    }
-
-    public CompilationResult(CompilationIdentifier compilationId, boolean isImmutablePIC) {
-        this(compilationId, null, isImmutablePIC);
-    }
-
-    public CompilationResult(CompilationIdentifier compilationId, String name, boolean isImmutablePIC) {
         this.compilationId = compilationId;
         this.name = name;
-        this.isImmutablePIC = isImmutablePIC;
     }
 
     public CompilationResult(String name) {
@@ -402,31 +416,6 @@ public class CompilationResult {
         return speculationLog;
     }
 
-    /**
-     * Sets the fields that were referenced from the bytecodes that were used as input to the
-     * compilation.
-     *
-     * @param accessedFields the collected set of fields accessed during compilation
-     */
-    public void setFields(EconomicSet<ResolvedJavaField> accessedFields) {
-        if (accessedFields != null) {
-            fields = accessedFields.toArray(new ResolvedJavaField[accessedFields.size()]);
-        }
-    }
-
-    /**
-     * Gets the fields that were referenced from bytecodes that were used as input to the
-     * compilation.
-     *
-     * The caller must not modify the contents of the returned array.
-     *
-     * @return {@code null} if the compilation did not record fields dependencies otherwise the
-     *         fields that were accessed from bytecodes were used as input to the compilation.
-     */
-    public ResolvedJavaField[] getFields() {
-        return fields;
-    }
-
     public void setBytecodeSize(int bytecodeSize) {
         checkOpen();
         this.bytecodeSize = bytecodeSize;
@@ -469,10 +458,6 @@ public class CompilationResult {
     public void setMaxInterpreterFrameSize(int maxInterpreterFrameSize) {
         checkOpen();
         this.maxInterpreterFrameSize = maxInterpreterFrameSize;
-    }
-
-    public boolean isImmutablePIC() {
-        return this.isImmutablePIC;
     }
 
     /**
@@ -523,11 +508,13 @@ public class CompilationResult {
      * @param target the being called
      * @param debugInfo the debug info for the call
      * @param direct specifies if this is a {@linkplain Call#direct direct} call
+     * @return created call object
      */
-    public void recordCall(int codePos, int size, InvokeTarget target, DebugInfo debugInfo, boolean direct) {
+    public Call recordCall(int codePos, int size, InvokeTarget target, DebugInfo debugInfo, boolean direct) {
         checkOpen();
         final Call call = new Call(target, codePos, size, direct, debugInfo);
         addInfopoint(call);
+        return call;
     }
 
     /**
@@ -580,6 +567,19 @@ public class CompilationResult {
     }
 
     /**
+     * Records an implicit exception in the code array.
+     *
+     * @param codePos the position of the implicit exception in the code array
+     * @param dispatchPos the position to resume execution when an implicit exception occurs.
+     *            Setting it to the same value of {@code codePos} forces a deoptimization, and will
+     *            resume execution at the default deoptimization blob.
+     * @param debugInfo the debug info for the infopoint
+     */
+    public void recordImplicitException(int codePos, int dispatchPos, DebugInfo debugInfo) {
+        addInfopoint(GraalServices.genImplicitException(codePos, dispatchPos, debugInfo));
+    }
+
+    /**
      * Records a custom infopoint in the code section.
      *
      * Compiler implementations can use this method to record non-standard infopoints, which are not
@@ -603,9 +603,9 @@ public class CompilationResult {
      * @param codePos the position in the code that is covered by the handler
      * @param markId the identifier for this mark
      */
-    public Mark recordMark(int codePos, Object markId) {
+    public CodeMark recordMark(int codePos, MarkId markId) {
         checkOpen();
-        Mark mark = new Mark(codePos, markId);
+        CodeMark mark = new CodeMark(codePos, markId);
         marks.add(mark);
         return mark;
     }
@@ -692,9 +692,78 @@ public class CompilationResult {
     }
 
     /**
-     * @return the list of marks
+     * An identified mark in the generated code.
      */
-    public List<Mark> getMarks() {
+    public interface MarkId {
+
+        /**
+         * A human readable name for this mark.
+         */
+        String getName();
+
+        /**
+         * Return the object which should be used in the {@link Mark}. On some platforms that may be
+         * different than this object.
+         */
+        default Object getId() {
+            return this;
+        }
+
+        /**
+         * Indicates whether the mark is intended to identify the end of the last instruction or the
+         * beginning of the next instruction. This information is necessary if the backend needs to
+         * insert instructions after the normal assembly step.
+         */
+        boolean isMarkAfter();
+    }
+
+    /**
+     * An alternative to the existing {@link Mark} which isn't very flexible since it's final. This
+     * enforces some API for the mark object and can be converted into the standard mark for code
+     * installation if necessary.
+     */
+    public static class CodeMark extends Site {
+
+        /**
+         * An object denoting extra semantic information about the machine code position of this
+         * mark.
+         */
+        public final MarkId id;
+
+        /**
+         * Creates a mark that associates {@code id} with the machine code position
+         * {@code pcOffset}.
+         */
+        public CodeMark(int pcOffset, MarkId id) {
+            super(pcOffset);
+            this.id = id;
+            assert id != null : this;
+        }
+
+        @Override
+        public String toString() {
+            return id + "@" + pcOffset;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (obj instanceof CodeMark) {
+                CodeMark that = (CodeMark) obj;
+                if (this.pcOffset == that.pcOffset && Objects.equals(this.id, that.id)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    /**
+     * @return the list of {@link CodeMark code marks}.
+     */
+    public List<CodeMark> getMarks() {
         if (marks.isEmpty()) {
             return emptyList();
         }
@@ -750,6 +819,7 @@ public class CompilationResult {
         if (annotations != null) {
             annotations.clear();
         }
+        callToMark.clear();
     }
 
     public void clearInfopoints() {
@@ -769,11 +839,11 @@ public class CompilationResult {
     /**
      * Closes this compilation result to future updates.
      */
-    public void close() {
+    public void close(OptionValues options) {
         if (closed) {
             throw new IllegalStateException("Cannot re-close compilation result " + this);
         }
-        dataSection.close();
+        dataSection.close(options);
         closed = true;
     }
 
@@ -788,7 +858,7 @@ public class CompilationResult {
         });
         iterateAndReplace(dataPatches, pos, site -> new DataPatch(site.pcOffset + bytesToShift, site.reference, site.note));
         iterateAndReplace(exceptionHandlers, pos, site -> new ExceptionHandler(site.pcOffset + bytesToShift, site.handlerPos));
-        iterateAndReplace(marks, pos, site -> new Mark(site.pcOffset + bytesToShift, site.id));
+        iterateAndReplace(marks, pos, site -> new CodeMark(site.pcOffset + bytesToShift, site.id));
         if (annotations != null) {
             for (CodeAnnotation annotation : annotations) {
                 int annotationPos = annotation.position;
@@ -802,9 +872,29 @@ public class CompilationResult {
     private static <T extends Site> void iterateAndReplace(List<T> sites, int pos, Function<T, T> replacement) {
         for (int i = 0; i < sites.size(); i++) {
             T site = sites.get(i);
+            if (pos == site.pcOffset && site instanceof CodeMark) {
+                CodeMark mark = (CodeMark) site;
+                if (mark.id.isMarkAfter()) {
+                    // The insert point is exactly on the mark but the mark is annotating the end of
+                    // the last instruction, so leave it alone.
+                    continue;
+                }
+            }
             if (pos <= site.pcOffset) {
                 sites.set(i, replacement.apply(site));
             }
         }
+    }
+
+    private final EconomicMap<Call, CodeMark> callToMark = EconomicMap.create(Equivalence.IDENTITY_WITH_SYSTEM_HASHCODE);
+
+    public void recordCallContext(CodeMark mark, Call call) {
+        if (call != null) {
+            callToMark.put(call, mark);
+        }
+    }
+
+    public CodeMark getAssociatedMark(Call call) {
+        return callToMark.get(call);
     }
 }

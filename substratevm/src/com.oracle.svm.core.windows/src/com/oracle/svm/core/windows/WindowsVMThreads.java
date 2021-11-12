@@ -25,7 +25,6 @@
 package com.oracle.svm.core.windows;
 
 import org.graalvm.nativeimage.ImageSingletons;
-import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.nativeimage.StackValue;
@@ -46,9 +45,9 @@ public final class WindowsVMThreads extends VMThreads {
 
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @Override
-    protected OSThreadHandle getCurrentOSThreadHandle() {
-        WinBase.HANDLE pseudoThreadHandle = Process.GetCurrentThread();
-        WinBase.HANDLE pseudoProcessHandle = Process.GetCurrentProcess();
+    public OSThreadHandle getCurrentOSThreadHandle() {
+        WinBase.HANDLE pseudoThreadHandle = Process.NoTransitions.GetCurrentThread();
+        WinBase.HANDLE pseudoProcessHandle = Process.NoTransitions.GetCurrentProcess();
 
         // convert the thread pseudo handle to a real handle using DuplicateHandle
         WinBase.LPHANDLE pointerToResult = StackValue.get(WinBase.LPHANDLE.class);
@@ -62,17 +61,34 @@ public final class WindowsVMThreads extends VMThreads {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     @Override
     protected OSThreadId getCurrentOSThreadId() {
-        return WordFactory.unsigned(Process.GetCurrentThreadId());
+        return WordFactory.unsigned(Process.NoTransitions.GetCurrentThreadId());
     }
 
     @Uninterruptible(reason = "Called from uninterruptible code.")
     @Override
     protected void joinNoTransition(OSThreadHandle osThreadHandle) {
         WinBase.HANDLE handle = (WinBase.HANDLE) osThreadHandle;
-        int status = SynchAPI.WaitForSingleObjectNoTransition(handle, SynchAPI.INFINITE());
+        int status = SynchAPI.NoTransitions.WaitForSingleObject(handle, SynchAPI.INFINITE());
         VMError.guarantee(status == SynchAPI.WAIT_OBJECT_0(), "Joining thread failed.");
         status = WinBase.CloseHandle(handle);
         VMError.guarantee(status != 0, "Closing the thread handle failed.");
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    @Override
+    public void nativeSleep(int milliseconds) {
+        SynchAPI.NoTransitions.Sleep(milliseconds);
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    @Override
+    public void yield() {
+        Process.NoTransitions.SwitchToThread();
+    }
+
+    @Override
+    public boolean supportsPatientSafepoints() {
+        return true;
     }
 
     /**
@@ -86,18 +102,6 @@ public final class WindowsVMThreads extends VMThreads {
          */
         WindowsVMLockSupport.initialize();
         return true;
-    }
-
-    @Uninterruptible(reason = "Thread state not set up.")
-    @Override
-    public IsolateThread allocateIsolateThread(int isolateThreadSize) {
-        return LibC.calloc(WordFactory.unsigned(1), WordFactory.unsigned(isolateThreadSize));
-    }
-
-    @Uninterruptible(reason = "Thread state not set up.")
-    @Override
-    public void freeIsolateThread(IsolateThread thread) {
-        LibC.free(thread);
     }
 
     @Uninterruptible(reason = "Thread state not set up.")

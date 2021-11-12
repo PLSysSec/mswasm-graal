@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -96,7 +96,7 @@ public abstract class LanguageLauncherBase extends Launcher {
 
     static Engine getTempEngine() {
         if (tempEngine == null) {
-            tempEngine = Engine.create();
+            tempEngine = Engine.newBuilder().useSystemProperties(false).build();
         }
         return tempEngine;
     }
@@ -148,8 +148,14 @@ public abstract class LanguageLauncherBase extends Launcher {
     }
 
     void handlePolyglotException(PolyglotException e) {
+        String message = null;
         if (e.getMessage() != null) {
-            System.err.println("ERROR: " + e.getMessage());
+            message = e.getMessage();
+        } else if (e.isInternalError()) {
+            message = "Unknown error";
+        }
+        if (message != null) {
+            System.err.println("ERROR: " + message);
         }
         if (e.isInternalError()) {
             e.printStackTrace();
@@ -191,7 +197,10 @@ public abstract class LanguageLauncherBase extends Launcher {
      */
     protected void printPolyglotVersions() {
         Engine engine = getTempEngine();
-        println("GraalVM Polyglot Engine Version " + engine.getVersion());
+        String mode = isAOT() ? "Native" : "JVM";
+        println(engine.getImplementationName() + " " + mode + " Polyglot Engine Version " + engine.getVersion());
+        println("Java Version " + System.getProperty("java.version"));
+        println("Java VM Version " + System.getProperty("java.vm.version"));
         Path graalVMHome = Engine.findHome();
         if (graalVMHome != null) {
             println("GraalVM Home " + graalVMHome);

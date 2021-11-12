@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -42,7 +42,14 @@ package com.oracle.truffle.object;
 
 import java.util.Iterator;
 
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.dsl.Cached;
+import com.oracle.truffle.api.dsl.Cached.Shared;
+import com.oracle.truffle.api.dsl.Specialization;
+import com.oracle.truffle.api.library.DynamicDispatchLibrary;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.object.DynamicObject;
 import com.oracle.truffle.api.object.LocationFactory;
 import com.oracle.truffle.api.object.Property;
@@ -50,23 +57,18 @@ import com.oracle.truffle.api.object.Shape;
 
 /** @since 0.17 or earlier */
 @SuppressWarnings("deprecation")
+@ExportLibrary(DynamicDispatchLibrary.class)
 public abstract class DynamicObjectImpl extends DynamicObject implements Cloneable {
 
     /** @since 0.17 or earlier */
     protected DynamicObjectImpl(Shape shape) {
-        super(shape.getRoot());
+        super(shape.getRoot(), LayoutImpl.ACCESS);
         initialize(shape);
         setShapeImpl(shape);
 
         if (ObjectStorageOptions.Profile) {
             Debug.trackObject(this);
         }
-    }
-
-    /** @since 0.17 or earlier */
-    @Deprecated
-    public Object getTypeIdentifier() {
-        return getShape();
     }
 
     final ShapeImpl getShapeImpl() {
@@ -124,30 +126,12 @@ public abstract class DynamicObjectImpl extends DynamicObject implements Cloneab
      * Simpler version of {@link #resizeStore} when the object is only increasing in size.
      */
     private void growStore(Shape oldShape, Shape newShape) {
-        growObjectStore(oldShape, newShape);
-        if (((ShapeImpl) newShape).hasPrimitiveArray) {
-            growPrimitiveStore(oldShape, newShape);
-        }
+        DynamicObjectSupport.grow(this, oldShape, newShape);
     }
-
-    /** @since 0.17 or earlier */
-    protected abstract void growObjectStore(Shape oldShape, Shape newShape);
-
-    /** @since 0.17 or earlier */
-    protected abstract void growPrimitiveStore(Shape oldShape, Shape newShape);
 
     protected void resizeStore(Shape oldShape, Shape newShape) {
-        resizeObjectStore(oldShape, newShape);
-        if (((ShapeImpl) newShape).hasPrimitiveArray) {
-            resizePrimitiveStore(oldShape, newShape);
-        }
+        DynamicObjectSupport.resize(this, oldShape, newShape);
     }
-
-    /** @since 0.17 or earlier */
-    protected abstract void resizePrimitiveStore(Shape oldShape, Shape newShape);
-
-    /** @since 0.17 or earlier */
-    protected abstract void resizeObjectStore(Shape oldShape, Shape newShape);
 
     /**
      * Check whether fast transition is valid.
@@ -171,11 +155,7 @@ public abstract class DynamicObjectImpl extends DynamicObject implements Cloneab
     /** @since 0.17 or earlier */
     @Override
     protected final DynamicObject clone() {
-        try {
-            return (DynamicObject) super.clone();
-        } catch (CloneNotSupportedException e) {
-            throw new IllegalStateException();
-        }
+        return LayoutImpl.ACCESS.objectClone(this);
     }
 
     /** @since 0.17 or earlier */
@@ -285,7 +265,7 @@ public abstract class DynamicObjectImpl extends DynamicObject implements Cloneab
     @Override
     @TruffleBoundary
     public void define(Object key, Object value, int flags) {
-        define(key, value, flags, getShapeImpl().getLayout().getStrategy().getDefaultLocationFactory());
+        define(key, value, flags, null);
     }
 
     /** @since 0.17 or earlier */
@@ -322,4 +302,44 @@ public abstract class DynamicObjectImpl extends DynamicObject implements Cloneab
         return cloneWithShape(currentShape);
     }
 
+    static com.oracle.truffle.api.object.ObjectType getObjectType(Shape shape) {
+        return shape.getObjectType();
+    }
+
+    @ExportMessage
+    static class Accepts {
+
+        @Specialization(limit = "1", guards = "cachedShape == receiver.getShape()")
+        @SuppressWarnings("unused")
+        static boolean doCachedShape(DynamicObjectImpl receiver,
+                        @Shared("cachedShape") @Cached("receiver.getShape()") Shape cachedShape,
+                        @Shared("cachedTypeClass") @Cached(value = "getObjectType(receiver.getShape()).getClass()", allowUncached = true) Class<? extends com.oracle.truffle.api.object.ObjectType> typeClass) {
+            return true;
+        }
+
+        @Specialization(replaces = "doCachedShape")
+        static boolean doCachedTypeClass(DynamicObjectImpl receiver,
+                        @Shared("cachedTypeClass") @Cached(value = "getObjectType(receiver.getShape()).getClass()", allowUncached = true) Class<? extends com.oracle.truffle.api.object.ObjectType> typeClass) {
+            return typeClass == receiver.getShape().getObjectType().getClass();
+        }
+    }
+
+    @ExportMessage
+    static class Dispatch {
+
+        @Specialization(limit = "1", guards = "cachedShape == receiver.getShape()")
+        @SuppressWarnings("unused")
+        static Class<?> doCachedShape(DynamicObjectImpl receiver,
+                        @Shared("cachedShape") @Cached("receiver.getShape()") Shape cachedShape,
+                        @Shared("cachedTypeClass") @Cached(value = "getObjectType(receiver.getShape()).getClass()", allowUncached = true) Class<? extends com.oracle.truffle.api.object.ObjectType> typeClass) {
+            return cachedShape.getObjectType().dispatch();
+        }
+
+        @Specialization(replaces = "doCachedShape")
+        static Class<?> doCachedTypeClass(DynamicObjectImpl receiver,
+                        @Shared("cachedTypeClass") @Cached(value = "getObjectType(receiver.getShape()).getClass()", allowUncached = true) Class<? extends com.oracle.truffle.api.object.ObjectType> typeClass) {
+            com.oracle.truffle.api.object.ObjectType objectType = CompilerDirectives.castExact(receiver.getShape().getObjectType(), typeClass);
+            return objectType.dispatch();
+        }
+    }
 }

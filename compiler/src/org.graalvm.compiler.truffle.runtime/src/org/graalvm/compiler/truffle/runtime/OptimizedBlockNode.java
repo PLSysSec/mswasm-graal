@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,13 +24,15 @@
  */
 package org.graalvm.compiler.truffle.runtime;
 
-import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
+
 import com.oracle.truffle.api.Assumption;
+import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
@@ -84,11 +86,7 @@ public final class OptimizedBlockNode<T extends Node> extends BlockNode<T> imple
         if (a == null) {
             if (CompilerDirectives.inInterpreter()) {
                 // no need to deoptimize if the block was never executed
-                if (arg == NO_ARGUMENT) {
-                    alwaysNoArgument = Truffle.getRuntime().createAssumption("Always zero block node argument.");
-                } else {
-                    alwaysNoArgument = NeverValidAssumption.INSTANCE;
-                }
+                alwaysNoArgument = makeAlwaysZeroAssumption(arg == NO_ARGUMENT);
             }
         } else if (a.isValid()) {
             if (arg == NO_ARGUMENT) {
@@ -99,6 +97,14 @@ public final class OptimizedBlockNode<T extends Node> extends BlockNode<T> imple
             }
         }
         return arg;
+    }
+
+    private static Assumption makeAlwaysZeroAssumption(boolean valid) {
+        if (valid) {
+            return Truffle.getRuntime().createAssumption("Always zero block node argument.");
+        } else {
+            return NeverValidAssumption.INSTANCE;
+        }
     }
 
     @Override
@@ -311,15 +317,29 @@ public final class OptimizedBlockNode<T extends Node> extends BlockNode<T> imple
                 if (newBlockSize <= maxBlockSize) {
                     currentBlockSize = newBlockSize;
                 } else {
-                    if (blockRanges == null) {
-                        blockRanges = new int[8];
-                        blockSizes = new int[8];
-                    } else if (currentBlockIndex >= blockRanges.length) {
-                        blockRanges = Arrays.copyOf(blockRanges, blockRanges.length * 2);
-                        blockSizes = Arrays.copyOf(blockSizes, blockSizes.length * 2);
+                    /*
+                     * If the first child already exceeds the limit, there are no previous elements
+                     * to create a partial block from.
+                     */
+                    if (i > 0) {
+                        if (blockRanges == null) {
+                            blockRanges = new int[8];
+                            /*
+                             * blockSizes array needs one more slot than blockRanges because of the
+                             * assignment below the for-loop.
+                             */
+                            blockSizes = new int[blockRanges.length + 1];
+                        } else if (currentBlockIndex >= blockRanges.length) {
+                            blockRanges = Arrays.copyOf(blockRanges, blockRanges.length * 2);
+                            /*
+                             * blockSizes array needs one more slot than blockRanges because of the
+                             * assignment below the for-loop.
+                             */
+                            blockSizes = Arrays.copyOf(blockSizes, blockRanges.length + 1);
+                        }
+                        blockSizes[currentBlockIndex] = currentBlockSize;
+                        blockRanges[currentBlockIndex++] = i;
                     }
-                    blockSizes[currentBlockIndex] = currentBlockSize;
-                    blockRanges[currentBlockIndex++] = i;
                     currentBlockSize = childCount;
                 }
             }
@@ -405,6 +425,26 @@ public final class OptimizedBlockNode<T extends Node> extends BlockNode<T> imple
         return false;
     }
 
+    private void reportBlocksInstalled(CharSequence reason) {
+        // no need to report for current node.
+        Node node = getParent();
+        while (node != null) {
+            boolean consumed = false;
+            if (node instanceof ReplaceObserver) {
+                consumed = ((ReplaceObserver) node).nodeReplaced(this, this, reason);
+            } else if (node instanceof RootNode) {
+                CallTarget target = ((RootNode) node).getCallTarget();
+                if (target instanceof ReplaceObserver) {
+                    consumed = ((ReplaceObserver) target).nodeReplaced(this, this, reason);
+                }
+            }
+            if (consumed) {
+                break;
+            }
+            node = node.getParent();
+        }
+    }
+
     static final class BlockVisitor implements NodeVisitor {
 
         final List<OptimizedCallTarget> blockTargets = new ArrayList<>();
@@ -447,6 +487,7 @@ public final class OptimizedBlockNode<T extends Node> extends BlockNode<T> imple
                         PartialBlocks<T> otherOldBlocks = blockNode.getPartialBlocks();
                         if (otherOldBlocks == null) {
                             blockNode.partialBlocks = newBlocks;
+                            blockNode.reportBlocksInstalled("Partial blocks installed");
                         }
                     }
                 });
@@ -498,7 +539,11 @@ public final class OptimizedBlockNode<T extends Node> extends BlockNode<T> imple
                 SourceSection startSection = elements[startIndex].getSourceSection();
                 SourceSection endSection = elements[endIndex - 1].getSourceSection();
                 if (startSection != null && endSection != null && startSection.getSource().equals(endSection.getSource())) {
-                    section = startSection.getSource().createSection(startSection.getStartLine(), startSection.getStartColumn(), endSection.getEndLine(), endSection.getEndColumn());
+                    if (startSection.getCharIndex() <= endSection.getCharEndIndex()) {
+                        section = startSection.getSource().createSection(startSection.getStartLine(), startSection.getStartColumn(), endSection.getEndLine(), endSection.getEndColumn());
+                    } else {
+                        section = startSection;
+                    }
                 } else if (startSection != null) {
                     section = startSection;
                 } else {
@@ -604,13 +649,13 @@ public final class OptimizedBlockNode<T extends Node> extends BlockNode<T> imple
                 }
 
                 PartialBlockRootNode<T> partialRootNode = new PartialBlockRootNode<>(new FrameDescriptor(), block, startIndex, endIndex, blockIndex);
-                runtime.getTvmci().applyPolyglotEngine(rootNode, partialRootNode);
+                GraalRuntimeAccessor.NODES.applyPolyglotEngine(rootNode, partialRootNode);
 
-                targets[i] = (OptimizedCallTarget) Truffle.getRuntime().createCallTarget(partialRootNode);
+                targets[i] = (OptimizedCallTarget) partialRootNode.getCallTarget();
                 targets[i].setNonTrivialNodeCount(blockSizes[i]);
                 // we know the parameter types for block compilations. No need to check, lets cast
                 // them unsafely.
-                targets[i].initializeArgumentTypes(new Class<?>[]{materializedFrameClass, Integer.class});
+                targets[i].initializeUnsafeArgumentTypes(new Class<?>[]{materializedFrameClass, Integer.class});
                 // All block compilations share the speculation log of the root compilation.
                 targets[i].setSpeculationLog(rootCompilation.getSpeculationLog());
                 startIndex = endIndex;

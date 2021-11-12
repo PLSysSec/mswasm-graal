@@ -27,6 +27,7 @@ package com.oracle.svm.core.graal.amd64;
 import java.util.function.Consumer;
 
 import org.graalvm.compiler.asm.Assembler;
+import org.graalvm.compiler.asm.amd64.AMD64BaseAssembler.AddressDisplacementAnnotation;
 import org.graalvm.compiler.asm.amd64.AMD64BaseAssembler.OperandDataAnnotation;
 import org.graalvm.compiler.code.CompilationResult;
 import org.graalvm.nativeimage.ImageSingletons;
@@ -37,38 +38,44 @@ import org.graalvm.nativeimage.hosted.Feature;
 import com.oracle.svm.core.annotate.AutomaticFeature;
 import com.oracle.svm.core.graal.code.NativeImagePatcher;
 import com.oracle.svm.core.graal.code.PatchConsumerFactory;
+import com.oracle.svm.core.util.VMError;
 
 @AutomaticFeature
 @Platforms({Platform.AMD64.class})
 class AMD64NativeImagePatcherFeature implements Feature {
     @Override
     public void afterRegistration(AfterRegistrationAccess access) {
-        ImageSingletons.add(PatchConsumerFactory.NativePatchConsumerFactory.class, new PatchConsumerFactory.NativePatchConsumerFactory() {
+        ImageSingletons.add(PatchConsumerFactory.NativePatchConsumerFactory.class, new AMD64NativePatchConsumerFactory());
+    }
+}
+
+final class AMD64NativePatchConsumerFactory extends PatchConsumerFactory.NativePatchConsumerFactory {
+    @Override
+    public Consumer<Assembler.CodeAnnotation> newConsumer(CompilationResult compilationResult) {
+        return new Consumer<Assembler.CodeAnnotation>() {
             @Override
-            public Consumer<Assembler.CodeAnnotation> newConsumer(CompilationResult compilationResult) {
-                return new Consumer<Assembler.CodeAnnotation>() {
-                    @Override
-                    public void accept(Assembler.CodeAnnotation annotation) {
-                        if (annotation instanceof OperandDataAnnotation) {
-                            compilationResult.addAnnotation(new AMD64NativeImagePatcher(annotation.instructionPosition, (OperandDataAnnotation) annotation));
-                        }
-                    }
-                };
+            public void accept(Assembler.CodeAnnotation annotation) {
+                if (annotation instanceof OperandDataAnnotation) {
+                    compilationResult.addAnnotation(new AMD64NativeImagePatcher((OperandDataAnnotation) annotation));
+
+                } else if (annotation instanceof AddressDisplacementAnnotation) {
+                    throw VMError.shouldNotReachHere("Image heap constants do not need patching in runtime compiled code");
+                }
             }
-        });
+        };
     }
 }
 
 public class AMD64NativeImagePatcher extends CompilationResult.CodeAnnotation implements NativeImagePatcher {
     private final OperandDataAnnotation annotation;
 
-    public AMD64NativeImagePatcher(int instructionStartPosition, OperandDataAnnotation annotation) {
-        super(instructionStartPosition);
+    public AMD64NativeImagePatcher(OperandDataAnnotation annotation) {
+        super(annotation.instructionPosition);
         this.annotation = annotation;
     }
 
     @Override
-    public void patchCode(int relative, byte[] code) {
+    public void patchCode(long methodStartAddress, int relative, byte[] code) {
         int curValue = relative - (annotation.nextInstructionPosition - annotation.instructionPosition);
 
         for (int i = 0; i < annotation.operandSize; i++) {

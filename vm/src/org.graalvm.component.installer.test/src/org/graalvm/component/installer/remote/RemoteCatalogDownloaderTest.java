@@ -28,11 +28,13 @@ import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URL;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import org.graalvm.component.installer.CommonConstants;
 import org.graalvm.component.installer.ComponentCatalog;
 import org.graalvm.component.installer.ComponentCollection;
+import org.graalvm.component.installer.ComponentParam;
 import org.graalvm.component.installer.FailedOperationException;
 import org.graalvm.component.installer.IncompatibleException;
 import org.graalvm.component.installer.MockURLConnection;
@@ -46,8 +48,8 @@ import org.graalvm.component.installer.persist.NetworkTestBase;
 import org.graalvm.component.installer.persist.test.Handler;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import org.junit.Test;
 
 public class RemoteCatalogDownloaderTest extends NetworkTestBase {
@@ -171,10 +173,38 @@ public class RemoteCatalogDownloaderTest extends NetworkTestBase {
     @Test
     public void testSingleNonMatchingCatalogIgnored() throws Exception {
         setupJoinedCatalog("catalogMultiPart1.properties");
-        ComponentCollection col = openCatalog(rcd);
-        assertNotNull(findComponent(col, "r"));
-        assertNotNull(findComponent(col, "ruby"));
-        assertNull(findComponent(col, "python"));
+        ComponentCatalog col = openCatalog(rcd);
+
+        // need to incorporate requirements, too... they are tested in CatalogIterable
+        CatalogIterable catIt = new CatalogIterable(this, this);
+        catIt.setRemoteRegistry(col);
+
+        textParams.add("r");
+        textParams.add("ruby");
+        textParams.add("python");
+
+        Iterator<ComponentParam> iter = catIt.iterator();
+
+        ComponentParam p = iter.next();
+        ComponentInfo info;
+
+        assertNotNull(p);
+        info = p.createMetaLoader().getComponentInfo();
+        assertEquals("1.0.0.0", info.getVersion().toString());
+
+        p = iter.next();
+        assertNotNull(p);
+        info = p.createMetaLoader().getComponentInfo();
+        assertEquals("1.0.0.0", info.getVersion().toString());
+
+        // python cannot be found, an exception expected
+        assertTrue(iter.hasNext());
+        try {
+            p = iter.next();
+            fail("No python for 1.0.0");
+        } catch (FailedOperationException ex) {
+
+        }
     }
 
     /**
@@ -287,5 +317,35 @@ public class RemoteCatalogDownloaderTest extends NetworkTestBase {
         assertEquals(2, sources.size());
         assertEquals("First part", sources.get(0).getLabel());
         assertEquals("a", sources.get(1).getParameter("linux"));
+    }
+
+    /**
+     * Checks that catalog entries in environment win over release file ones.
+     * 
+     * @throws Exception
+     */
+    @Test
+    public void testEnvironmentMultiCatalogWins() throws Exception {
+        storage.graalInfo.put(CommonConstants.CAP_GRAALVM_VERSION, "1.0.1.0");
+        storage.graalInfo.put(CommonConstants.CAP_CATALOG_PREFIX + "1_url", "test://graalv.org/test/catalog.properties");
+        storage.graalInfo.put(CommonConstants.CAP_CATALOG_PREFIX + "1_label", "First part");
+
+        storage.graalInfo.put(CommonConstants.CAP_CATALOG_PREFIX + "3_url", "test://graalv.org/test/catalog.2.properties");
+        storage.graalInfo.put(CommonConstants.CAP_CATALOG_PREFIX + "3_label", "Second part");
+        storage.graalInfo.put(CommonConstants.CAP_CATALOG_PREFIX + "3_linux", "a");
+
+        RemoteCatalogDownloader d = new RemoteCatalogDownloader(this, this, (String) null);
+
+        // override with env variables catalog entries:
+        envParameters.put("GRAALVM_COMPONENT_CATALOG_1_URL", "test://graalv.org/test/envcatalog.properties");
+        envParameters.put("GRAALVM_COMPONENT_CATALOG_1_LABEL", "First env");
+
+        List<SoftwareChannelSource> sources = d.readChannelSources();
+        assertEquals(1, sources.size());
+        assertTrue(sources.get(0).getLocationURL().endsWith("envcatalog.properties"));
+    }
+
+    public static List<SoftwareChannelSource> callReadChannelSources(RemoteCatalogDownloader d) {
+        return d.readChannelSources();
     }
 }

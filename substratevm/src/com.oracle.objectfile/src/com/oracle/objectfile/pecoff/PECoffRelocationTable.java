@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,14 +38,13 @@ import com.oracle.objectfile.ElementImpl;
 import com.oracle.objectfile.LayoutDecisionMap;
 import com.oracle.objectfile.ObjectFile;
 import com.oracle.objectfile.ObjectFile.Element;
-import com.oracle.objectfile.ObjectFile.RelocationKind;
 import com.oracle.objectfile.ObjectFile.RelocationMethod;
 import com.oracle.objectfile.ObjectFile.RelocationRecord;
 import com.oracle.objectfile.ObjectFile.Symbol;
-import com.oracle.objectfile.pecoff.PECoffObjectFile.PECoffSection;
-import com.oracle.objectfile.pecoff.PECoff.IMAGE_RELOCATION;
 import com.oracle.objectfile.io.AssemblyBuffer;
 import com.oracle.objectfile.io.OutputAssembler;
+import com.oracle.objectfile.pecoff.PECoff.IMAGE_RELOCATION;
+import com.oracle.objectfile.pecoff.PECoffObjectFile.PECoffSection;
 
 @SuppressWarnings("unchecked")
 public class PECoffRelocationTable extends ObjectFile.Element {
@@ -56,10 +55,11 @@ public class PECoffRelocationTable extends ObjectFile.Element {
     }
 
     interface PECoffRelocationMethod extends RelocationMethod {
+
         long toLong();
     }
 
-    private static final class Entry implements RelocationRecord {
+    static final class Entry implements RelocationRecord {
         final PECoffSection section;
         final long offset;
         final PECoffRelocationMethod t;
@@ -75,11 +75,6 @@ public class PECoffRelocationTable extends ObjectFile.Element {
         }
 
         @Override
-        public RelocationKind getKind() {
-            return t.getKind();
-        }
-
-        @Override
         public long getOffset() {
             return offset;
         }
@@ -87,12 +82,6 @@ public class PECoffRelocationTable extends ObjectFile.Element {
         @Override
         public Symbol getReferencedSymbol() {
             return sym;
-        }
-
-        @Override
-        public int getRelocatedByteSize() {
-            /* All PECoff relocation kinds work on a fixed size of relocation site. */
-            return t.getRelocatedByteSize();
         }
 
         @Override
@@ -113,19 +102,17 @@ public class PECoffRelocationTable extends ObjectFile.Element {
         }
     }
 
-    private final boolean withExplicitAddends;
     private final PECoffSymtab syms;
     private PECoffObjectFile owner = null;
 
-    PECoffRelocationTable(PECoffObjectFile owner, String name, PECoffSymtab syms, boolean withExplicitAddends) {
+    PECoffRelocationTable(PECoffObjectFile owner, String name, PECoffSymtab syms) {
         owner.super(name, 4);
 
         this.owner = owner;
-        this.withExplicitAddends = withExplicitAddends;
         this.syms = syms;
     }
 
-    public Entry addEntry(PECoffSection s, long offset, PECoffRelocationMethod t, PECoffSymtab.Entry sym, Long explicitAddend) {
+    void addEntry(PECoffSection s, long offset, PECoffRelocationMethod t, PECoffSymtab.Entry sym, long addend) {
         Map<Entry, Entry> entries = (Map<Entry, Entry>) s.getRelocEntries();
 
         if (entries == null) {
@@ -133,23 +120,7 @@ public class PECoffRelocationTable extends ObjectFile.Element {
             s.setRelocEntries(entries);
         }
 
-        if (explicitAddend != null) {
-            if (!t.canUseExplicitAddend()) {
-                throw new IllegalArgumentException("cannot use relocation method " + t + " with explicit addends");
-            }
-            if (!withExplicitAddends) {
-                throw new IllegalStateException("cannot create relocation with addend in .rel section");
-            }
-        } else {
-            if (!t.canUseImplicitAddend()) {
-                throw new IllegalArgumentException("cannot use relocation method " + t + " with implicit addends");
-            }
-            if (withExplicitAddends) {
-                throw new IllegalStateException("cannot create relocation without addend in .rela section");
-            }
-        }
-        long addend = (explicitAddend != null) ? explicitAddend : 0L;
-        return entries.computeIfAbsent(new Entry(s, offset, t, sym, addend), Function.identity());
+        entries.computeIfAbsent(new Entry(s, offset, t, sym, addend), Function.identity());
     }
 
     // Returns count of relocation entries for section

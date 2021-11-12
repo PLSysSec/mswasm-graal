@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,16 +29,14 @@ import java.util.List;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.graph.NodeSourcePosition;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.WithExceptionNode;
 import org.graalvm.compiler.nodes.java.MonitorIdNode;
 import org.graalvm.compiler.nodes.virtual.VirtualObjectNode;
 import org.graalvm.compiler.options.OptionValues;
 
-import jdk.vm.ci.meta.ConstantReflectionProvider;
-import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
-import jdk.vm.ci.meta.MetaAccessProvider;
 
 /**
  * This tool can be used to query the current state (normal/virtualized/re-materialized) of values
@@ -46,18 +44,7 @@ import jdk.vm.ci.meta.MetaAccessProvider;
  *
  * See also {@link Virtualizable}.
  */
-public interface VirtualizerTool {
-
-    /**
-     * @return the {@link MetaAccessProvider} associated with the current compilation.
-     */
-    MetaAccessProvider getMetaAccess();
-
-    /**
-     * @return the {@link ConstantReflectionProvider} associated with the current compilation, which
-     *         can be used to access {@link JavaConstant}s.
-     */
-    ConstantReflectionProvider getConstantReflection();
+public interface VirtualizerTool extends CoreProviders {
 
     /**
      * This method should be used to query the maximum size of virtualized objects before attempting
@@ -75,9 +62,10 @@ public interface VirtualizerTool {
      * @param virtualObject the new virtual object.
      * @param entryState the initial state of the virtual object's fields.
      * @param locks the initial locking depths.
+     * @param sourcePosition a source position for the new node or null if none is available
      * @param ensureVirtualized true if this object needs to stay virtual
      */
-    void createVirtualObject(VirtualObjectNode virtualObject, ValueNode[] entryState, List<MonitorIdNode> locks, boolean ensureVirtualized);
+    void createVirtualObject(VirtualObjectNode virtualObject, ValueNode[] entryState, List<MonitorIdNode> locks, NodeSourcePosition sourcePosition, boolean ensureVirtualized);
 
     /**
      * Returns a VirtualObjectNode if the given value is aliased with a virtual object that is still
@@ -96,7 +84,7 @@ public interface VirtualizerTool {
      * @param index the index to be set.
      * @param value the new value for the given index.
      * @param accessKind the kind of the store which might be different than
-     *            {@link VirtualObjectNode#entryKind(int)}.
+     *            {@link VirtualObjectNode#entryKind}.
      * @return true if the operation was permitted
      */
     boolean setVirtualEntry(VirtualObjectNode virtualObject, int index, ValueNode value, JavaKind accessKind, long offset);

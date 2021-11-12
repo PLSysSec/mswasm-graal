@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -54,7 +54,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -92,23 +91,21 @@ public final class TruffleLogger {
 
     private final String name;
     private final LoggerCache loggerCache;
-    private final Function<LoggerCache, ? extends Handler> handlerProvider;
     @CompilerDirectives.CompilationFinal private volatile int levelNum;
     @CompilerDirectives.CompilationFinal private volatile Assumption levelNumStable;
     private volatile Level levelObj;
     private volatile TruffleLogger parent;
     private Collection<ChildLoggerRef> children;
 
-    private TruffleLogger(final String loggerName, final LoggerCache loggerCache, final Function<LoggerCache, ? extends Handler> handlerProvider) {
+    private TruffleLogger(final String loggerName, final LoggerCache loggerCache) {
         this.name = loggerName;
         this.loggerCache = loggerCache;
-        this.handlerProvider = handlerProvider;
         this.levelNum = DEFAULT_VALUE;
         this.levelNumStable = Truffle.getRuntime().createAssumption("Log Level Value stable for: " + loggerName);
     }
 
     private TruffleLogger(LoggerCache loggerCache) {
-        this(ROOT_NAME, loggerCache, new PolyglotLogHandlerProvider());
+        this(ROOT_NAME, loggerCache);
     }
 
     /**
@@ -162,12 +159,8 @@ public final class TruffleLogger {
         return loggerCache.getOrCreateLogger(id, loggerName);
     }
 
-    static LoggerCache createLoggerCache(Object vmObject, Map<String, Level> logLevels) {
-        LoggerCache cache = new LoggerCache(vmObject);
-        if (!logLevels.isEmpty()) {
-            cache.addLogLevelsForContext(vmObject, logLevels);
-        }
-        return cache;
+    LoggerCache getLoggerCache() {
+        return this.loggerCache;
     }
 
     /**
@@ -479,7 +472,7 @@ public final class TruffleLogger {
         if (!isLoggable(level)) {
             return;
         }
-        doLog(level, message, null, null, (Object) null);
+        doLog(level, message, null, null, (Object[]) null);
     }
 
     /**
@@ -497,7 +490,7 @@ public final class TruffleLogger {
         if (!isLoggable(level)) {
             return;
         }
-        doLog(level, messageSupplier, null, null, (Object) null);
+        doLog(level, messageSupplier, null, null, null);
     }
 
     /**
@@ -589,7 +582,7 @@ public final class TruffleLogger {
         if (!isLoggable(level)) {
             return;
         }
-        doLog(level, message, sourceClass, sourceMethod, (Object) null);
+        doLog(level, message, sourceClass, sourceMethod, (Object[]) null);
     }
 
     /**
@@ -609,7 +602,7 @@ public final class TruffleLogger {
         if (!isLoggable(level)) {
             return;
         }
-        doLog(level, messageSupplier, sourceClass, sourceMethod, (Object) null);
+        doLog(level, messageSupplier, sourceClass, sourceMethod, null);
     }
 
     /**
@@ -726,30 +719,12 @@ public final class TruffleLogger {
         if (level.intValue() < value || value == OFF_VALUE) {
             return false;
         }
-        Object currentContext = LanguageAccessor.engineAccess().getCurrentOuterContext();
-        if (currentContext == null) {
-            currentContext = loggerCache.getOwner();
-        }
-        if (currentContext == null) {
-            return noContext();
-        }
-        return isLoggableSlowPath(currentContext, level);
+        return isLoggableSlowPath(level);
     }
 
     @CompilerDirectives.TruffleBoundary
-    @SuppressWarnings("all")
-    private static boolean noContext() {
-        boolean assertionsEnabled = false;
-        assert assertionsEnabled = true;
-        if (assertionsEnabled) {
-            throw new IllegalStateException("Thread using TruffleLogger has to have a current context or the TruffleLogger has to be bound to an engine.");
-        }
-        return false;
-    }
-
-    @CompilerDirectives.TruffleBoundary
-    private boolean isLoggableSlowPath(final Object context, final Level level) {
-        return loggerCache.isLoggable(getName(), context, level);
+    private boolean isLoggableSlowPath(final Level level) {
+        return loggerCache.isLoggable(getName(), level);
     }
 
     @CompilerDirectives.TruffleBoundary
@@ -770,6 +745,7 @@ public final class TruffleLogger {
                     final String methodName,
                     final Object[] params) {
         final LogRecord logRecord = LanguageAccessor.engineAccess().createLogRecord(
+                        loggerCache.getSPI(),
                         level,
                         getName(),
                         message,
@@ -788,6 +764,7 @@ public final class TruffleLogger {
                     final String methodName,
                     final Throwable thrown) {
         final LogRecord logRecord = LanguageAccessor.engineAccess().createLogRecord(
+                        loggerCache.getSPI(),
                         level,
                         getName(),
                         message,
@@ -804,16 +781,6 @@ public final class TruffleLogger {
                     final Supplier<String> messageSupplier,
                     final String className,
                     final String methodName,
-                    final Object param) {
-        doLog(level, messageSupplier.get(), className, methodName, new Object[]{param});
-    }
-
-    @CompilerDirectives.TruffleBoundary
-    private void doLog(
-                    final Level level,
-                    final Supplier<String> messageSupplier,
-                    final String className,
-                    final String methodName,
                     final Throwable thrown) {
         doLog(level, messageSupplier.get(), className, methodName, thrown);
     }
@@ -821,8 +788,8 @@ public final class TruffleLogger {
     private void callHandlers(final LogRecord record) {
         CompilerAsserts.neverPartOfCompilation("Log handler should never be called from compiled code.");
         for (TruffleLogger current = this; current != null; current = current.getParent()) {
-            if (current.handlerProvider != null) {
-                current.handlerProvider.apply(loggerCache).publish(record);
+            if (current == loggerCache.polyglotRootLogger) {
+                LanguageAccessor.engineAccess().getLogHandler(loggerCache.getSPI()).publish(record);
             }
         }
     }
@@ -971,8 +938,9 @@ public final class TruffleLogger {
 
     static final class LoggerCache {
         private static final ReferenceQueue<Object> contextsRefQueue = new ReferenceQueue<>();
-        private static final LoggerCache INSTANCE = new LoggerCache(null);
-        private final Reference<Object> ownerRef;
+        private static final LoggerCache INSTANCE = new LoggerCache(LanguageAccessor.engineAccess().createDefaultLoggerCache());
+        private final Object loggerCache;   // an instance of
+                                            // com.oracle.truffle.polyglot.PolyglotLoggers.LoggerCache
         private final TruffleLogger polyglotRootLogger;
         private final Map<String, NamedLoggerRef> loggers;
         private final LoggerNode root;
@@ -980,8 +948,9 @@ public final class TruffleLogger {
         private Map<String, Level> effectiveLevels;
         private volatile Set<String> knownIds;
 
-        private LoggerCache(Object owner) {
-            this.ownerRef = owner == null ? null : new WeakReference<>(owner);
+        LoggerCache(Object loggerCacheSpi) {
+            Objects.requireNonNull(loggerCacheSpi);
+            this.loggerCache = loggerCacheSpi;
             this.polyglotRootLogger = new TruffleLogger(this);
             this.loggers = new HashMap<>();
             this.loggers.put(ROOT_NAME, new NamedLoggerRef(this.polyglotRootLogger, ROOT_NAME));
@@ -990,22 +959,19 @@ public final class TruffleLogger {
             this.effectiveLevels = Collections.emptyMap();
         }
 
-        synchronized void addLogLevelsForContext(final Object context, final Map<String, Level> addedLevels) {
-            activeContexts.add(new ContextWeakReference(context, contextsRefQueue, addedLevels));
+        synchronized void addLogLevelsForVMObject(final Object vmObject, final Map<String, Level> addedLevels) {
+            activeContexts.add(new ContextWeakReference(vmObject, contextsRefQueue, addedLevels));
             final Set<String> toRemove = collectRemovedLevels();
             reconfigure(addedLevels, toRemove);
         }
 
-        synchronized void removeLogLevelsForContext(final Object context) {
-            Set<String> toRemove = removeContext(context);
+        synchronized void removeLogLevelsForVMObject(final Object vmObject) {
+            Set<String> toRemove = removeContext(vmObject);
             reconfigure(Collections.emptyMap(), toRemove);
         }
 
         synchronized void close() {
-            if (ownerRef == null) {
-                throw new IllegalStateException("Default LoggerCache cannot be closed.");
-            }
-            Object owner = ownerRef.get();
+            Object owner = LanguageAccessor.engineAccess().getLoggerOwner(loggerCache);
             if (owner == null) {
                 return;
             }
@@ -1015,14 +981,17 @@ public final class TruffleLogger {
             }
         }
 
-        synchronized boolean isLoggable(final String loggerName, final Object currentContext, final Level level) {
+        synchronized boolean isLoggable(final String loggerName, final Level level) {
             final Set<String> toRemove = collectRemovedLevels();
             if (!toRemove.isEmpty()) {
                 reconfigure(Collections.emptyMap(), toRemove);
                 // Logger's effective level may changed
                 return getLogger(loggerName).isLoggable(level);
             }
-            final Map<String, Level> current = LanguageAccessor.engineAccess().getLogLevels(currentContext);
+            final Map<String, Level> current = LanguageAccessor.engineAccess().getLogLevels(getSPI());
+            if (current == null) {
+                return noContext();
+            }
             if (current.isEmpty()) {
                 final int currentLevel = DEFAULT_VALUE;
                 return level.intValue() >= currentLevel && currentLevel != OFF_VALUE;
@@ -1032,6 +1001,16 @@ public final class TruffleLogger {
             }
             final int currentLevel = computeLevel(loggerName, current);
             return level.intValue() >= currentLevel && currentLevel != OFF_VALUE;
+        }
+
+        @SuppressWarnings("all")
+        private static boolean noContext() {
+            boolean assertionsEnabled = false;
+            assert assertionsEnabled = true;
+            if (assertionsEnabled) {
+                throw new IllegalStateException("Thread using TruffleLogger has to have a current context or the TruffleLogger has to be bound to an engine.");
+            }
+            return false;
         }
 
         private static int computeLevel(String loggeName, final Map<String, Level> levels) {
@@ -1053,7 +1032,7 @@ public final class TruffleLogger {
         private TruffleLogger getOrCreateLogger(final String loggerName) {
             TruffleLogger found = getLogger(loggerName);
             if (found == null) {
-                for (final TruffleLogger logger = new TruffleLogger(loggerName, this, null); found == null;) {
+                for (final TruffleLogger logger = new TruffleLogger(loggerName, this); found == null;) {
                     if (addLogger(logger)) {
                         found = logger;
                         break;
@@ -1085,8 +1064,8 @@ public final class TruffleLogger {
             return result;
         }
 
-        private Object getOwner() {
-            return this.ownerRef == null ? null : this.ownerRef.get();
+        Object getSPI() {
+            return this.loggerCache;
         }
 
         private synchronized TruffleLogger getLogger(final String loggerName) {
@@ -1140,9 +1119,10 @@ public final class TruffleLogger {
         private Set<String> removeContext(Object vmObject) {
             final Set<String> toRemove = collectRemovedLevels();
             for (Iterator<ContextWeakReference> it = activeContexts.iterator(); it.hasNext();) {
-                final Object active = it.next().get();
+                final ContextWeakReference ref = it.next();
+                final Object active = ref.get();
                 if (vmObject.equals(active)) {
-                    toRemove.addAll(LanguageAccessor.engineAccess().getLogLevels(vmObject).keySet());
+                    toRemove.addAll(ref.configuredLoggers.keySet());
                     it.remove();
                     break;
                 }
@@ -1156,7 +1136,7 @@ public final class TruffleLogger {
             ContextWeakReference ref;
             while ((ref = (ContextWeakReference) contextsRefQueue.poll()) != null) {
                 activeContexts.remove(ref);
-                toRemove.addAll(ref.configuredLoggerNames);
+                toRemove.addAll(ref.configuredLoggers.keySet());
             }
             return toRemove;
         }
@@ -1246,7 +1226,7 @@ public final class TruffleLogger {
                         final Map<String, Level> currentEffectiveLevels,
                         final Set<String> removed,
                         final Map<String, Level> added,
-                        final Collection<? extends Reference<Object>> contexts,
+                        final Collection<? extends ContextWeakReference> contexts,
                         final Collection<? super String> removedLevels,
                         final Collection<? super String> changedLevels) {
             final Map<String, Level> newEffectiveLevels = new HashMap<>(currentEffectiveLevels);
@@ -1263,7 +1243,15 @@ public final class TruffleLogger {
                     }
                 }
             }
-            for (Map.Entry<String, Level> addedLevel : added.entrySet()) {
+            // In a multi context scenario there can be a logger with higher effective log level
+            // than a default one. When the newly configured context does not specify log level
+            // explicitly the effective log level of such a logger needs to be set to the default
+            // level.
+            Map<String, Level> addedWithDefaults = new HashMap<>(added);
+            for (String loggerName : newEffectiveLevels.keySet()) {
+                addedWithDefaults.putIfAbsent(loggerName, Level.INFO);
+            }
+            for (Map.Entry<String, Level> addedLevel : addedWithDefaults.entrySet()) {
                 final String loggerName = addedLevel.getKey();
                 final Level loggerLevel = addedLevel.getValue();
                 final Level currentLevel = newEffectiveLevels.get(loggerName);
@@ -1275,11 +1263,11 @@ public final class TruffleLogger {
             return newEffectiveLevels;
         }
 
-        private static Level findMinLevel(final String loggerName, final Collection<? extends Reference<Object>> contexts) {
+        private static Level findMinLevel(final String loggerName, final Collection<? extends ContextWeakReference> contexts) {
             Level min = null;
-            for (Reference<Object> contextRef : contexts) {
+            for (ContextWeakReference contextRef : contexts) {
                 final Object context = contextRef.get();
-                final Level level = context == null ? null : LanguageAccessor.engineAccess().getLogLevels(context).get(loggerName);
+                final Level level = context == null ? null : contextRef.configuredLoggers.get(loggerName);
                 if (level == null) {
                     continue;
                 }
@@ -1372,32 +1360,12 @@ public final class TruffleLogger {
         }
 
         private static final class ContextWeakReference extends WeakReference<Object> {
-            private final Set<String> configuredLoggerNames;
+            private final Map<String, Level> configuredLoggers;
 
             ContextWeakReference(final Object context, final ReferenceQueue<Object> referenceQueue, final Map<String, Level> logLevels) {
                 super(context, referenceQueue);
-                configuredLoggerNames = logLevels.keySet();
+                configuredLoggers = logLevels;
             }
-        }
-    }
-
-    private static final class PolyglotLogHandlerProvider implements Function<LoggerCache, Handler> {
-
-        private volatile Handler cachedHander;
-
-        @Override
-        public Handler apply(LoggerCache loggerCache) {
-            Handler result = cachedHander;
-            if (result == null) {
-                synchronized (this) {
-                    result = cachedHander;
-                    if (result == null) {
-                        result = LanguageAccessor.engineAccess().getLogHandler(loggerCache.getOwner());
-                        cachedHander = result;
-                    }
-                }
-            }
-            return result;
         }
     }
 }

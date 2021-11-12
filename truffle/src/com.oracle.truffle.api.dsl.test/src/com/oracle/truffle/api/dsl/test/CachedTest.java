@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -44,7 +44,9 @@ import static com.oracle.truffle.api.dsl.test.TestHelper.assertionsEnabled;
 import static com.oracle.truffle.api.dsl.test.TestHelper.createCallTarget;
 import static com.oracle.truffle.api.dsl.test.TestHelper.createNode;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.lang.reflect.Field;
@@ -55,7 +57,6 @@ import org.junit.Test;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.GenerateUncached;
 import com.oracle.truffle.api.dsl.NodeChild;
@@ -76,8 +77,15 @@ import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenAdoption4Factor
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenAdoption5Factory;
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenAdoption6Factory;
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenAdoption7Factory;
+import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenNoAdoption1Factory;
+import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenNoAdoption2Factory;
+import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenNoAdoption3Factory;
+import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenNoAdoption4Factory;
+import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenNoAdoption5Factory;
+import com.oracle.truffle.api.dsl.test.CachedTestFactory.ChildrenNoAdoption6Factory;
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.NullChildAdoptionNodeGen;
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.NullLiteralNodeGen;
+import com.oracle.truffle.api.dsl.test.CachedTestFactory.ProfileNodeGen;
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.TestBoundCacheOverflowContainsFactory;
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.TestCacheFieldFactory;
 import com.oracle.truffle.api.dsl.test.CachedTestFactory.TestCacheMethodFactory;
@@ -95,6 +103,8 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.NodeInterface;
 import com.oracle.truffle.api.nodes.RootNode;
+import com.oracle.truffle.api.profiles.ConditionProfile;
+import com.oracle.truffle.api.profiles.LoopConditionProfile;
 
 @SuppressWarnings("unused")
 public class CachedTest {
@@ -321,12 +331,12 @@ public class CachedTest {
     }
 
     private static boolean isCompileImmediately() {
-        CallTarget target = Truffle.getRuntime().createCallTarget(new RootNode(null) {
+        CallTarget target = new RootNode(null) {
             @Override
             public Object execute(VirtualFrame frame) {
                 return CompilerDirectives.inCompiledCode();
             }
-        });
+        }.getCallTarget();
         return (boolean) target.call();
     }
 
@@ -745,6 +755,144 @@ public class CachedTest {
         Assert.assertTrue(hasParent(root, child));
     }
 
+    @NodeChild
+    static class ConstantValueNode extends Node {
+
+        public int execute() {
+            return 1;
+        }
+    }
+
+    @NodeChild
+    abstract static class ChildrenNoAdoption1 extends ValueNode {
+
+        abstract NodeInterface execute(Object value);
+
+        @Specialization(guards = "value == cachedValue", limit = "3")
+        static NodeInterface do1(NodeInterface value, @Cached(value = "value", adopt = false) NodeInterface cachedValue) {
+            return cachedValue;
+        }
+
+    }
+
+    @NodeChild
+    abstract static class ChildrenNoAdoption2 extends ValueNode {
+
+        abstract NodeInterface[] execute(Object value);
+
+        @Specialization(guards = "value == cachedValue", limit = "3")
+        static NodeInterface[] do1(NodeInterface[] value, @Cached(value = "value", adopt = false, dimensions = 1) NodeInterface[] cachedValue) {
+            return cachedValue;
+        }
+
+    }
+
+    @NodeChild
+    abstract static class ChildrenNoAdoption3 extends ValueNode {
+
+        abstract NodeInterface[] execute(Object value);
+
+        @Specialization
+        static NodeInterface[] do1(Node value, @Cached(value = "createChildren(value)", adopt = false, dimensions = 1) NodeInterface[] cachedValue) {
+            return cachedValue;
+        }
+
+        protected static NodeInterface[] createChildren(Node value) {
+            return new Node[]{value};
+        }
+
+    }
+
+    @NodeChild
+    abstract static class ChildrenNoAdoption4 extends ValueNode {
+
+        abstract Node execute(Object value);
+
+        @Specialization(guards = "value == cachedValue", limit = "3")
+        static Node do1(Node value, @Cached(value = "value", adopt = false) Node cachedValue) {
+            return cachedValue;
+        }
+
+    }
+
+    @NodeChild
+    abstract static class ChildrenNoAdoption5 extends ValueNode {
+
+        abstract Node[] execute(Object value);
+
+        @Specialization
+        static Node[] do1(Node value, @Cached(value = "createChildren(value)", adopt = false, dimensions = 1) Node[] cachedValue) {
+            return cachedValue;
+        }
+
+        protected static Node[] createChildren(Node value) {
+            return new Node[]{value};
+        }
+
+    }
+
+    // Case where a no-adopt cached node is executed in the guards.
+    @NodeChild
+    abstract static class ChildrenNoAdoption6 extends ValueNode {
+
+        abstract Node execute(Object value);
+
+        @Specialization(guards = "cachedValue.execute() == 1")
+        static Node do1(ConstantValueNode value, @Cached(value = "value", adopt = false) ConstantValueNode cachedValue) {
+            return cachedValue;
+        }
+
+    }
+
+    @Test
+    public void testChildrenNoAdoption1() {
+        ChildrenNoAdoption1 root = createNode(ChildrenNoAdoption1Factory.getInstance(), false);
+        Node child = new ValueNode();
+        root.execute(child);
+        root.adoptChildren();
+        assertFalse(hasParent(root, child));
+    }
+
+    @Test
+    public void testChildrenNoAdoption2() {
+        ChildrenNoAdoption2 root = createNode(ChildrenNoAdoption2Factory.getInstance(), false);
+        Node[] children = new Node[]{new ValueNode()};
+        root.execute(children);
+        assertFalse(hasParent(root, children[0]));
+    }
+
+    @Test
+    public void testChildrenNoAdoption3() {
+        ChildrenNoAdoption3 root = createNode(ChildrenNoAdoption3Factory.getInstance(), false);
+        Node child = new ValueNode();
+        root.execute(child);
+        assertFalse(hasParent(root, child));
+    }
+
+    @Test
+    public void testChildrenNoAdoption4() {
+        ChildrenNoAdoption4 root = createNode(ChildrenNoAdoption4Factory.getInstance(), false);
+        Node child = new ValueNode();
+        root.execute(child);
+        assertFalse(hasParent(root, child));
+    }
+
+    @Test
+    public void testChildrenNoAdoption5() {
+        ChildrenNoAdoption5 root = createNode(ChildrenNoAdoption5Factory.getInstance(), false);
+        Node child = new ValueNode();
+        root.execute(child);
+        assertFalse(hasParent(root, child));
+    }
+
+    @Test
+    public void testChildrenNoAdoption6() {
+        ChildrenNoAdoption6 root = createNode(ChildrenNoAdoption6Factory.getInstance(), false);
+        ConstantValueNode child = new ConstantValueNode();
+        root.execute(child);
+        assertFalse(hasParent(root, child));
+    }
+
     @GenerateUncached
     abstract static class NullLiteralNode extends Node {
 
@@ -764,6 +912,31 @@ public class CachedTest {
     public void testNullLiteral() {
         assertNull(NullLiteralNodeGen.create().execute(""));
         assertNull(NullLiteralNodeGen.getUncached().execute(""));
+    }
+
+    @GenerateUncached
+    abstract static class ProfileNode extends Node {
+        abstract Object execute(Object value);
+
+        @Specialization
+        static ConditionProfile do1(String value, //
+                        @Cached ConditionProfile conditionProfile) {
+            return conditionProfile;
+        }
+
+        @Specialization
+        static LoopConditionProfile do1(int value, //
+                        @Cached LoopConditionProfile loopProfile) {
+            return loopProfile;
+        }
+    }
+
+    @Test
+    public void testConditionProfileLoopConditionProfile() {
+        final Object conditionProfile = ProfileNodeGen.getUncached().execute("");
+        assertTrue(conditionProfile instanceof ConditionProfile);
+        assertFalse(conditionProfile instanceof LoopConditionProfile);
+        assertTrue(ProfileNodeGen.getUncached().execute(0) instanceof LoopConditionProfile);
     }
 
     private static boolean hasParent(Node parent, Node node) {
@@ -842,6 +1015,58 @@ public class CachedTest {
                         @ExpectError("The initializer expression of parameter 'cachedValue1' binds uninitialized parameter 'cachedValue2. Reorder the parameters to resolve the problem.") @Cached("cachedValue2") int cachedValue1,
                         @Cached("cachedValue1") int cachedValue2) {
             return cachedValue1 + cachedValue2;
+        }
+
+    }
+
+    @NodeChild
+    static class CachedError4 extends ValueNode {
+
+        // adopting not a Node
+        @Specialization
+        static int do1(int value,
+                        @ExpectError("Type 'int' is neither a NodeInterface type, nor an array of NodeInterface types and therefore it can not be adopted. Remove the adopt attribute to resolve this.") //
+                        @Cached(value = "value", adopt = true) int cachedValue) {
+            return cachedValue;
+        }
+
+    }
+
+    @NodeChild
+    static class CachedError5 extends ValueNode {
+
+        // adopting not a Node
+        @Specialization
+        static Class<?> do1(Class<?> value,
+                        @ExpectError("Type 'java.lang.Class<?>' is neither a NodeInterface type, nor an array of NodeInterface types and therefore it can not be adopted. Remove the adopt attribute to resolve this.") //
+                        @Cached(value = "value", adopt = false) Class<?> cachedValue) {
+            return cachedValue;
+        }
+
+    }
+
+    @NodeChild
+    abstract static class CachedError6 extends ValueNode {
+
+        // dimensions are missing when not adopting
+        @Specialization
+        static NodeInterface[] do1(NodeInterface[] value,
+                        @ExpectError("The cached dimensions attribute must be specified for array types.") //
+                        @Cached(value = "value", adopt = false) NodeInterface[] cachedValue) {
+            return cachedValue;
+        }
+
+    }
+
+    @NodeChild
+    abstract static class CachedError7 extends ValueNode {
+
+        // dimensions are missing when not adopting
+        @Specialization
+        static Node[] do1(Node[] value,
+                        @ExpectError("The cached dimensions attribute must be specified for array types.") //
+                        @Cached(value = "value", adopt = false) Node[] cachedValue) {
+            return cachedValue;
         }
 
     }

@@ -39,6 +39,7 @@ import com.oracle.svm.hosted.c.NativeLibraries;
 import com.oracle.svm.hosted.c.info.AccessorInfo;
 import com.oracle.svm.hosted.c.info.ElementInfo;
 import com.oracle.svm.hosted.c.info.NativeCodeInfo;
+import com.oracle.svm.hosted.c.info.RawPointerToInfo;
 import com.oracle.svm.hosted.c.info.RawStructureInfo;
 import com.oracle.svm.hosted.c.info.SizableInfo.ElementKind;
 import com.oracle.svm.hosted.c.info.SizableInfo.SignednessValue;
@@ -77,7 +78,7 @@ public final class RawStructureLayoutPlanner extends NativeInfoTreeVisitor {
         ResolvedJavaType type = info.getAnnotatedElement();
         for (ResolvedJavaType t : type.getInterfaces()) {
             if (!nativeLibs.isPointerBase(t)) {
-                throw UserError.abort("Type " + type + " must not implement " + t);
+                throw UserError.abort("Type %s must not implement %s", type, t);
             }
 
             if (t.equals(nativeLibs.getPointerBaseType())) {
@@ -112,6 +113,11 @@ public final class RawStructureLayoutPlanner extends NativeInfoTreeVisitor {
         }
 
         planLayout(info);
+    }
+
+    @Override
+    protected void visitRawPointerToInfo(RawPointerToInfo info) {
+        info.getSizeInfo().setProperty(getSizeInBytes(info.getAnnotatedElement()));
     }
 
     private void computeSize(StructFieldInfo info) {
@@ -186,16 +192,14 @@ public final class RawStructureLayoutPlanner extends NativeInfoTreeVisitor {
             try {
                 sizeProvider = ReflectionUtil.newInstance(sizeProviderClass);
             } catch (ReflectionUtilError ex) {
-                throw UserError.abort(
-                                ex.getCause(),
-                                "The size provider of @" + RawStructure.class.getSimpleName() + " " + info.getAnnotatedElement().toJavaName(true) +
-                                                " cannot be instantiated via no-argument constructor");
+                throw UserError.abort(ex.getCause(), "The size provider of @%s %s cannot be instantiated via no-argument constructor",
+                                RawStructure.class.getSimpleName(), info.getAnnotatedElement().toJavaName(true));
             }
 
             totalSize = sizeProvider.applyAsInt(currentOffset);
             if (totalSize < currentOffset) {
-                throw UserError.abort("The size provider of @" + RawStructure.class.getSimpleName() + " " + info.getAnnotatedElement().toJavaName(true) + " computed size " + totalSize +
-                                " which is smaller than the minimum size of " + currentOffset);
+                throw UserError.abort("The size provider of @%s %s computed size %d which is smaller than the minimum size of %d",
+                                RawStructure.class.getSimpleName(), info.getAnnotatedElement().toJavaName(true), totalSize, currentOffset);
             }
         }
 

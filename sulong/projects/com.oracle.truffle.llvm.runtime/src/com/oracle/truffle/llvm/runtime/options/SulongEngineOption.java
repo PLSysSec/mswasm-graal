@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -64,12 +64,6 @@ public final class SulongEngineOption {
                    "Paths are delimited by a colon \'" + OPTION_ARRAY_SEPARATOR + "\'.")
     public static final OptionKey<String> LIBRARY_PATH = new OptionKey<>("");
 
-    @Option(name = "llvm.sourcePath",
-            category = OptionCategory.USER,
-            help = "This option is deprecated. Use --inspect.SourcePath instead.",
-            deprecated = true)
-    public static final OptionKey<String> SOURCE_PATH = new OptionKey<>("");
-
     public static final String LOAD_CXX_LIBRARIES_NAME = "llvm.loadC++Libraries";
     @Option(name = LOAD_CXX_LIBRARIES_NAME,
             category = OptionCategory.EXPERT,
@@ -79,10 +73,11 @@ public final class SulongEngineOption {
                    "dependency on both of them. Thus, the option is off by default.")
     public static final OptionKey<Boolean> LOAD_CXX_LIBRARIES = new OptionKey<>(false);
 
-    @Option(name = "llvm.enableExternalNativeAccess",
-            category = OptionCategory.USER,
-            help = "Enable Sulongs native interface.")
-    public static final OptionKey<Boolean> ENABLE_NFI = new OptionKey<>(true);
+    public static final String CXX_INTEROP_NAME = "llvm.C++Interop";
+    @Option(name = CXX_INTEROP_NAME,
+            category = OptionCategory.EXPERT,
+            help = "Enables using C++ code and features via interop.")
+    public static final OptionKey<Boolean> CXX_INTEROP = new OptionKey<>(false);
 
     @Option(name = "llvm.debugSysCalls",
             category = OptionCategory.INTERNAL,
@@ -126,8 +121,14 @@ public final class SulongEngineOption {
 
     @Option(name = "llvm.enableLVI",
             category = OptionCategory.EXPERT,
-            help = "Enable source-level inspection of local variables.")
+            help = "This option is deprecated, local variable inspection is always enabled.",
+            deprecated = true)
     public static final OptionKey<Boolean> ENABLE_LVI = new OptionKey<>(false);
+
+    @Option(name = "llvm.OSR",
+            category = OptionCategory.EXPERT,
+            help = "Enable on-stack-replacement of loops.")
+    public static final OptionKey<Boolean> ENABLE_OSR = new OptionKey<>(true);
 
     public static final String LAZY_PARSING_NAME = "llvm.lazyParsing";
     @Option(name = LAZY_PARSING_NAME,
@@ -140,11 +141,12 @@ public final class SulongEngineOption {
             help = "Enable IR-level debugging of LLVM bitcode files.")
     public static final OptionKey<Boolean> LL_DEBUG = new OptionKey<>(false);
 
-    @Option(name = "llvm.llDebug.verbose",
+    public static final String LL_DEBUG_VERBOSE_NAME = "llvm.llDebug.verbose";
+    @Option(name = LL_DEBUG_VERBOSE_NAME,
             category = OptionCategory.EXPERT,
             help = "Enables diagnostics for IR-level debugging (e.g., report missing .ll files). Requires \'--llvm.llDebug=true\'. " +
                    "Set value to \'stdout\', \'stderr\' or \'file://<path to writable file>\' to enable.")
-    public static final OptionKey<String> LL_DEBUG_VERBOSE = new OptionKey<>("");
+    public static final OptionKey<String> LL_DEBUG_VERBOSE = new OptionKey<>("stderr");
 
     @Option(name = "llvm.llDebug.sources",
             category = OptionCategory.EXPERT,
@@ -156,11 +158,6 @@ public final class SulongEngineOption {
             category = OptionCategory.INTERNAL,
             help = "Prints a C stack trace when abort() is called.")
     public static final OptionKey<Boolean> STACKTRACE_ON_ABORT = new OptionKey<>(false);
-
-    @Option(name = "llvm.printToolchainPath",
-            category = OptionCategory.INTERNAL,
-            help = "Enables the intrinisc for printing the toolchain path.")
-    public static final OptionKey<Boolean> PRINT_TOOLCHAIN_PATH = new OptionKey<>(false);
 
     @Option(name = "llvm.traceIR",
             category = OptionCategory.EXPERT,
@@ -175,6 +172,22 @@ public final class SulongEngineOption {
                    "Files with a relative path will be looked up relative to llvm.libraryPath. " +
                    "Libraries are delimited by a colon \'" + OPTION_ARRAY_SEPARATOR + "\'.")
     public static final OptionKey<String> LIBRARIES = new OptionKey<>("");
+
+    public static final String VERIFY_BITCODE_NAME = "llvm.verifyBitcode";
+    @Option(name = VERIFY_BITCODE_NAME, category = OptionCategory.EXPERT,
+            help = "Sanity check whether loaded bitcode files are compiled correctly.")
+    public static final OptionKey<Boolean> VERIFY_BITCODE = new OptionKey<>(true);
+
+
+    @Option(name = "llvm.AOTCacheStore",
+            category = OptionCategory.EXPERT,
+            help = "Perform AOT-specific initialization before storing auxiliary engine cache.")
+    public static final OptionKey<Boolean> AOTCacheStore = new OptionKey<>(false);
+
+    @Option(name = "llvm.AOTCacheLoad",
+            category = OptionCategory.EXPERT,
+            help = "Perform AOT-specific initialization after loading auxiliary engine cache.")
+    public static final OptionKey<Boolean> AOTCacheLoad = new OptionKey<>(false);
     // @formatter:on
 
     public static List<OptionDescriptor> describeOptions() {
@@ -205,5 +218,9 @@ public final class SulongEngineOption {
         String librariesOption = env.getOptions().get(LIBRARIES);
         String[] userLibraries = "".equals(librariesOption) ? new String[0] : librariesOption.split(OPTION_ARRAY_SEPARATOR);
         return Arrays.asList(userLibraries);
+    }
+
+    public static boolean shouldVerifyCompileUnitChecksums(TruffleLanguage.Env env) {
+        return env.getOptions().get(LL_DEBUG) && optionEnabled(env.getOptions().get(LL_DEBUG_VERBOSE));
     }
 }

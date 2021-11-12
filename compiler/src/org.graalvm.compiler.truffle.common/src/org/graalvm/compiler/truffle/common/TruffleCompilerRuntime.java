@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,6 +28,7 @@ import static org.graalvm.compiler.truffle.common.TruffleCompilerRuntimeInstance
 
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
@@ -244,13 +245,6 @@ public interface TruffleCompilerRuntime {
     TruffleCompiler getTruffleCompiler(CompilableTruffleAST compilable);
 
     /**
-     * Gets a plan for inlining in terms of a Truffle AST call graph.
-     *
-     * @return the requested plan or {@code null} a plan cannot be created in the calling context
-     */
-    TruffleInliningPlan createInliningPlan(CompilableTruffleAST compilable, TruffleCompilationTask task);
-
-    /**
      * Gets the {@link CompilableTruffleAST} represented by {@code constant}.
      *
      * @return {@code null} if {@code constant} does not represent a {@link CompilableTruffleAST} or
@@ -279,19 +273,57 @@ public interface TruffleCompilerRuntime {
     Consumer<OptimizedAssumptionDependency> registerOptimizedAssumptionDependency(JavaConstant optimizedAssumption);
 
     /**
-     * {@linkplain #formatEvent(String, int, String, int, String, int, Map, int) Formats} a Truffle
-     * event and writes it to the {@linkplain #log(String) log output}.
+     * {@linkplain #formatEvent(int, String, int, String, int, Map, int) Formats} a Truffle event
+     * and writes it to the {@linkplain #log(CompilableTruffleAST, String) log output}.
+     *
+     * @param compilable the currently compiled AST used as a subject
+     * @param depth nesting depth of the event
+     * @param event a short description of the event being traced
+     * @param properties name/value pairs describing properties relevant to the event
+     * @since 20.1.0
      */
-    default void logEvent(int depth, String event, String subject, Map<String, Object> properties) {
-        log(formatEvent("[truffle]", depth, event, 16, subject, 60, properties, 20));
+    default void logEvent(CompilableTruffleAST compilable, int depth, String event, Map<String, Object> properties) {
+        logEvent(compilable, depth, event, compilable.toString(), properties, null);
     }
+
+    /**
+     * {@linkplain #formatEvent(int, String, int, String, int, Map, int) Formats} a Truffle event
+     * and writes it to the {@linkplain #log(CompilableTruffleAST, String) log output}.
+     *
+     * @param compilable the currently compiled AST
+     * @param depth nesting depth of the event
+     * @param event a short description of the event being traced
+     * @param subject a description of the event's subject
+     * @param properties name/value pairs describing properties relevant to the event
+     * @param message optional additional message appended to the formatted event
+     * @since 20.1.0
+     */
+    default void logEvent(CompilableTruffleAST compilable, int depth, String event, String subject, Map<String, Object> properties, String message) {
+        String formattedMessage = formatEvent(depth, event, 12, subject, 60, properties, 0);
+        if (message != null) {
+            formattedMessage = String.format("%s%n%s", formattedMessage, message);
+        }
+        log(compilable, formattedMessage);
+    }
+
+    /**
+     * Writes {@code message} followed by a new line to the Truffle logger.
+     *
+     * @param compilable the currently compiled AST
+     * @param message message to log
+     */
+    default void log(CompilableTruffleAST compilable, String message) {
+        log("engine", compilable, message);
+    }
+
+    void log(String loggerId, CompilableTruffleAST compilable, String message);
 
     /**
      * Formats a message describing a Truffle event as a single line of text. A representative event
      * trace line is shown below:
      *
      * <pre>
-     * [truffle] opt queued       :anonymous <split-1563da5>                                  |ASTSize      20/   20 |Calls/Thres    7723/    3 |CallsAndLoop/Thres    7723/ 1000 |Inval#              0
+     * opt queued       :anonymous <split-1563da5>                                  |ASTSize      20/   20 |Calls/Thres    7723/    3 |CallsAndLoop/Thres    7723/ 1000 |Inval#              0
      * </pre>
      *
      * @param depth nesting depth of the event (subject column is indented @{code depth * 2})
@@ -302,7 +334,7 @@ public interface TruffleCompilerRuntime {
      * @param properties name/value pairs describing properties relevant to the event
      * @param propertyWidth the minimum width of the column for each property
      */
-    default String formatEvent(String caption, int depth, String event, int eventWidth, String subject, int subjectWidth, Map<String, Object> properties, int propertyWidth) {
+    default String formatEvent(int depth, String event, int eventWidth, String subject, int subjectWidth, Map<String, Object> properties, int propertyWidth) {
         if (depth < 0) {
             throw new IllegalArgumentException("depth is negative: " + depth);
         }
@@ -317,15 +349,15 @@ public interface TruffleCompilerRuntime {
         }
         int subjectIndent = depth * 2;
         StringBuilder sb = new StringBuilder();
-        String format = "%s %-" + eventWidth + "s%" + (1 + subjectIndent) + "s%-" + Math.max(1, subjectWidth - subjectIndent) + "s";
-        sb.append(String.format(format, caption, event, "", subject));
+        String format = "%-" + eventWidth + "s%" + (1 + subjectIndent) + "s%-" + Math.max(1, subjectWidth - subjectIndent) + "s";
+        sb.append(String.format(format, event, "", subject));
         if (properties != null) {
             for (String property : properties.keySet()) {
                 Object value = properties.get(property);
                 if (value == null) {
                     continue;
                 }
-                sb.append('|');
+                sb.append("|");
                 sb.append(property);
 
                 String valueString;
@@ -338,16 +370,11 @@ public interface TruffleCompilerRuntime {
                 }
 
                 int length = Math.max(1, propertyWidth - property.length());
-                sb.append(String.format(" %" + length + "s ", valueString));
+                sb.append(String.format(" %" + length + "s", valueString));
             }
         }
         return sb.toString();
     }
-
-    /**
-     * Writes {@code message} followed by a new line to the Truffle log stream.
-     */
-    void log(String message);
 
     /**
      * Looks up a type in this runtime.
@@ -372,26 +399,11 @@ public interface TruffleCompilerRuntime {
     ResolvedJavaType resolveType(MetaAccessProvider metaAccess, String className, boolean required);
 
     /**
-     * Gets the option values for this runtime as a map from option name to option value.
-     */
-    Map<String, Object> getOptions();
-
-    /**
-     * Gets the option values for this runtime in an instance of {@code type}.
+     * Gets the Graal option values for this runtime in an instance of {@code type}.
      *
      * @throws IllegalArgumentException if this runtime does not support {@code type}
      */
-    default <T> T getOptions(Class<T> type) {
-        throw new IllegalArgumentException(getClass().getName() + " can not return option values of type " + type.getName());
-    }
-
-    /**
-     * Convert option values in name/value pairs to an instance of {@code type}.
-     *
-     * @param map input option values as {@link String} names to values
-     * @throws IllegalArgumentException if this runtime does not support {@code type}
-     */
-    default <T> T convertOptions(Class<T> type, Map<String, Object> map) {
+    default <T> T getGraalOptions(Class<T> type) {
         throw new IllegalArgumentException(getClass().getName() + " can not return option values of type " + type.getName());
     }
 
@@ -430,4 +442,26 @@ public interface TruffleCompilerRuntime {
      * Determines if {@code method} is annotated by {@code TruffleBoundary}.
      */
     boolean isTruffleBoundary(ResolvedJavaMethod method);
+
+    /**
+     * Determines if {@code method} is annotated by {@code Specialization}.
+     */
+    boolean isSpecializationMethod(ResolvedJavaMethod method);
+
+    /**
+     * Determines if {@code method} is annotated by {@code BytecodeInterpreterSwitch}.
+     */
+    boolean isBytecodeInterpreterSwitch(ResolvedJavaMethod method);
+
+    /**
+     * Determines if {@code method} is annotated by {@code BytecodeInterpreterSwitchBoundary}.
+     */
+    boolean isBytecodeInterpreterSwitchBoundary(ResolvedJavaMethod method);
+
+    /**
+     * Determines if the exception which happened during the compilation is suppressed and should be
+     * silent.
+     */
+    boolean isSuppressedFailure(CompilableTruffleAST compilable, Supplier<String> serializedException);
+
 }

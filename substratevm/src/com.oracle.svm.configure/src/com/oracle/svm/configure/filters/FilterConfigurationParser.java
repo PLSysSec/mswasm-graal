@@ -37,6 +37,7 @@ public class FilterConfigurationParser extends ConfigurationParser {
     private final RuleNode rootNode;
 
     public FilterConfigurationParser(RuleNode rootNode) {
+        super(true);
         assert rootNode != null;
         this.rootNode = rootNode;
     }
@@ -85,6 +86,6 @@ public class FilterConfigurationParser extends ConfigurationParser {
         if (qualified == null) {
             throw new JSONParserException(exactlyOneMessage);
         }
-        rootNode.addOrGetChildren(qualified.toString(), inclusion);
+        rootNode.addOrGetChildren(asString(qualified), inclusion);
     }
 }

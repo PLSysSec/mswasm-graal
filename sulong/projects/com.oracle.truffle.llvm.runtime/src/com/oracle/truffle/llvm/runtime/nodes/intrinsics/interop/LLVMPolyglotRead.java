@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -32,6 +32,7 @@ package com.oracle.truffle.llvm.runtime.nodes.intrinsics.interop;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Fallback;
+import com.oracle.truffle.api.dsl.GenerateAOT;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.InteropLibrary;
@@ -60,6 +61,7 @@ public abstract class LLVMPolyglotRead extends LLVMIntrinsic {
         }
 
         @Specialization
+        @GenerateAOT.Exclude
         protected Object uncached(LLVMManagedPointer value, Object id,
                         @Cached LLVMAsForeignNode asForeign,
                         @Cached("createReadString()") LLVMReadStringNode readStr,
@@ -72,15 +74,19 @@ public abstract class LLVMPolyglotRead extends LLVMIntrinsic {
                 return toLLVM.executeWithTarget(rawValue);
             } catch (UnsupportedMessageException e) {
                 exception.enter();
-                throw new LLVMPolyglotException(foreignRead, "Can not read member '%s' of polyglot value.", name);
+                throw new LLVMPolyglotException(foreignRead, "Cannot read member '%s' of polyglot value.", name);
             } catch (UnknownIdentifierException e) {
                 exception.enter();
                 throw new LLVMPolyglotException(foreignRead, "Member '%s' does not exist.", e.getUnknownIdentifier());
             }
         }
 
+        /**
+         * @param value @NodeChild
+         * @param id @NodeChild
+         * @see LLVMPolyglotGetMember
+         */
         @Fallback
-        @SuppressWarnings("unused")
         public Object fallback(Object value, Object id) {
             throw new LLVMPolyglotException(this, "Invalid argument to polyglot builtin.");
         }
@@ -97,6 +103,7 @@ public abstract class LLVMPolyglotRead extends LLVMIntrinsic {
         }
 
         @Specialization
+        @GenerateAOT.Exclude
         protected Object doIntrinsic(LLVMManagedPointer value, int id,
                         @Cached LLVMAsForeignNode asForeign,
                         @CachedLibrary(limit = "3") InteropLibrary foreignRead,
@@ -107,16 +114,20 @@ public abstract class LLVMPolyglotRead extends LLVMIntrinsic {
                 return toLLVM.executeWithTarget(rawValue);
             } catch (UnsupportedMessageException e) {
                 exception.enter();
-                throw new LLVMPolyglotException(foreignRead, "Can not read from index %d of polyglot value.", id);
+                throw new LLVMPolyglotException(foreignRead, "Cannot read from index %d of polyglot value.", id);
             } catch (InvalidArrayIndexException e) {
                 exception.enter();
                 throw new LLVMPolyglotException(foreignRead, "Index %d does not exist.", id);
             }
         }
 
+        /**
+         * @param value @NodeChild
+         * @param id @NodeChild
+         * @see LLVMPolyglotGetArrayElement
+         */
         @Fallback
         @TruffleBoundary
-        @SuppressWarnings("unused")
         public Object fallback(Object value, Object id) {
             throw new LLVMPolyglotException(this, "Invalid argument to polyglot builtin.");
         }

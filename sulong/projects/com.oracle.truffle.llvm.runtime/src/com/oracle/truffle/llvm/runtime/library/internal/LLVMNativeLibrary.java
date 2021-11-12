@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,12 +29,14 @@
  */
 package com.oracle.truffle.llvm.runtime.library.internal;
 
+import com.oracle.truffle.api.dsl.GenerateAOT;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.library.GenerateLibrary;
 import com.oracle.truffle.api.library.GenerateLibrary.Abstract;
 import com.oracle.truffle.api.library.GenerateLibrary.DefaultExport;
 import com.oracle.truffle.api.library.Library;
+import com.oracle.truffle.api.library.LibraryFactory;
 import com.oracle.truffle.llvm.runtime.library.internal.LLVMNativeLibraryDefaults.ArrayLibrary;
 import com.oracle.truffle.llvm.runtime.library.internal.LLVMNativeLibraryDefaults.DefaultLibrary;
 import com.oracle.truffle.llvm.runtime.library.internal.LLVMNativeLibraryDefaults.LongLibrary;
@@ -50,16 +52,22 @@ import com.oracle.truffle.llvm.runtime.pointer.LLVMNativePointer;
 @DefaultExport(LongLibrary.class)
 @DefaultExport(ArrayLibrary.class)
 @DefaultExport(DefaultLibrary.class)
-@SuppressWarnings("unused")
+@GenerateAOT
 public abstract class LLVMNativeLibrary extends Library {
 
+    static final LibraryFactory<LLVMNativeLibrary> FACTORY = LibraryFactory.resolve(LLVMNativeLibrary.class);
+
+    public static LibraryFactory<LLVMNativeLibrary> getFactory() {
+        return FACTORY;
+    }
+
     @Abstract
-    public boolean isPointer(Object receiver) {
+    public boolean isPointer(@SuppressWarnings("unused") Object receiver) {
         return false;
     }
 
     @Abstract
-    public long asPointer(Object receiver) throws UnsupportedMessageException {
+    public long asPointer(@SuppressWarnings("unused") Object receiver) throws UnsupportedMessageException {
         throw UnsupportedMessageException.create();
     }
 

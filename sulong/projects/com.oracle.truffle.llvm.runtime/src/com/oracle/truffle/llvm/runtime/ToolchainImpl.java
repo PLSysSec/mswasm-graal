@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -32,9 +32,15 @@ package com.oracle.truffle.llvm.runtime;
 import com.oracle.truffle.api.TruffleFile;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.llvm.api.Toolchain;
+import com.oracle.truffle.llvm.runtime.nodes.asm.syscall.LLVMInfo;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 public final class ToolchainImpl implements Toolchain {
 
+    private static final String[] WINDOWS_EXECUTABLE_EXTENSIONS = {".exe", ".cmd"};
     private final ToolchainConfig toolchainConfig;
     private final LLVMLanguage language;
 
@@ -43,17 +49,41 @@ public final class ToolchainImpl implements Toolchain {
         this.language = language;
     }
 
+    @Override
+    public TruffleFile getToolPath(String tool) {
+        TruffleFile res = getToolPathImpl(tool);
+        if (LLVMInfo.SYSNAME.toLowerCase().contains("windows")) {
+            /*
+             * On Windows the tools have either a .exe or a .cmd suffix. ATM there is no other way
+             * than to see if the file exists.
+             */
+            TruffleFile parent = res.getParent();
+            String name = res.getName();
+            for (String ext : WINDOWS_EXECUTABLE_EXTENSIONS) {
+                TruffleFile fileWithExt = parent.resolve(name + ext);
+                try {
+                    if (fileWithExt.exists()) {
+                        return fileWithExt;
+                    }
+                } catch (Throwable e) {
+                    // ignore if call to exists() fails
+                }
+            }
+        }
+        return res;
+    }
+
     /**
      * Please keep this list in sync with Toolchain.java (method documentation) and mx_sulong.py's
      * ToolchainConfig::_tool_map.
      */
-    @Override
-    public TruffleFile getToolPath(String tool) {
+    private TruffleFile getToolPathImpl(String tool) {
+
         if (toolchainConfig == null) {
             return null;
         }
 
-        final TruffleFile binPrefix = getRoot().resolve("bin");
+        final TruffleFile binPrefix = getWrappersRoot().resolve("bin");
         switch (tool) {
             case "PATH":
                 return binPrefix;
@@ -80,12 +110,43 @@ public final class ToolchainImpl implements Toolchain {
         }
     }
 
-    protected TruffleFile getRoot() {
+    @Override
+    public List<TruffleFile> getPaths(String pathName) {
+        if (toolchainConfig == null) {
+            return null;
+        }
+
+        switch (pathName) {
+            case "PATH":
+                return Collections.unmodifiableList(Arrays.asList(getWrappersRoot().resolve("bin")));
+            case "LD_LIBRARY_PATH":
+                return Collections.unmodifiableList(Arrays.asList(getSysroot().resolve("lib")));
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Returns the directory where the toolchain wrappers live.
+     *
+     * Usually this is the same as {@link #getSysroot}, but for the bootstrap toolchain the wrappers
+     * are in a different location.
+     */
+    private TruffleFile getWrappersRoot() {
         TruffleLanguage.Env env = LLVMLanguage.getContext().getEnv();
         String toolchainRoot = toolchainConfig.getToolchainRootOverride();
         return toolchainRoot != null //
                         ? env.getInternalTruffleFile(toolchainRoot)
-                        : env.getInternalTruffleFile(language.getLLVMLanguageHome()).resolve(toolchainConfig.getToolchainSubdir());
+                        : getSysroot();
+    }
+
+    /**
+     * Returns the "sysroot" of the toolchain. That is the directory where the toolchain specific
+     * header files an libraries are located.
+     */
+    private TruffleFile getSysroot() {
+        TruffleLanguage.Env env = LLVMLanguage.getContext().getEnv();
+        return env.getInternalTruffleFile(language.getLLVMLanguageHome()).resolve(toolchainConfig.getToolchainSubdir());
     }
 
     @Override

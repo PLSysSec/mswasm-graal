@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -32,6 +32,7 @@ package com.oracle.truffle.llvm.runtime.nodes.intrinsics.interop;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Fallback;
+import com.oracle.truffle.api.dsl.GenerateAOT;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.interop.InteropLibrary;
@@ -53,6 +54,7 @@ public final class LLVMPolyglotRemove {
     public abstract static class LLVMPolyglotRemoveMember extends LLVMIntrinsic {
 
         @Specialization
+        @GenerateAOT.Exclude
         protected boolean doRemove(LLVMManagedPointer value, Object id,
                         @Cached LLVMAsForeignNode asForeign,
                         @Cached LLVMReadStringNode readStr,
@@ -68,13 +70,17 @@ public final class LLVMPolyglotRemove {
                 return false;
             } catch (UnsupportedMessageException ex) {
                 exception.enter();
-                throw new LLVMPolyglotException(this, "Can not remove member '%s' from polyglot value.", id);
+                throw new LLVMPolyglotException(this, "Cannot remove member '%s' from polyglot value.", id);
             }
         }
 
+        /**
+         * @param value @NodeChild
+         * @param id @NodeChild
+         * @see LLVMPolyglotRemoveMember
+         */
         @Fallback
         @TruffleBoundary
-        @SuppressWarnings("unused")
         public boolean error(Object value, Object id) {
             throw new LLVMPolyglotException(this, "Invalid argument to polyglot builtin.");
         }
@@ -85,6 +91,7 @@ public final class LLVMPolyglotRemove {
     public abstract static class LLVMPolyglotRemoveArrayElement extends LLVMIntrinsic {
 
         @Specialization
+        @GenerateAOT.Exclude
         protected boolean doRemove(LLVMManagedPointer value, int idx,
                         @Cached LLVMAsForeignNode asForeign,
                         @CachedLibrary(limit = "3") InteropLibrary interop,
@@ -99,13 +106,17 @@ public final class LLVMPolyglotRemove {
                 return false;
             } catch (UnsupportedMessageException ex) {
                 exception.enter();
-                throw new LLVMPolyglotException(this, "Can not remove index %d from polyglot value.", idx);
+                throw new LLVMPolyglotException(this, "Cannot remove index %d from polyglot value.", idx);
             }
         }
 
+        /**
+         * @param value @NodeChild
+         * @param id @NodeChild
+         * @see LLVMPolyglotRemoveArrayElement
+         */
         @Fallback
         @TruffleBoundary
-        @SuppressWarnings("unused")
         public boolean fallback(Object value, Object id) {
             throw new LLVMPolyglotException(this, "Invalid argument to polyglot builtin.");
         }

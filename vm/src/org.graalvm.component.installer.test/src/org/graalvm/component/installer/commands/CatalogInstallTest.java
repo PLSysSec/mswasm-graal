@@ -28,20 +28,28 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import org.graalvm.component.installer.CommandInput;
 import org.graalvm.component.installer.remote.CatalogIterable;
 import org.graalvm.component.installer.CommandTestBase;
 import org.graalvm.component.installer.Commands;
 import org.graalvm.component.installer.CommonConstants;
+import org.graalvm.component.installer.ComponentCatalog;
 import org.graalvm.component.installer.ComponentParam;
 import org.graalvm.component.installer.DependencyException;
 import org.graalvm.component.installer.FailedOperationException;
 import org.graalvm.component.installer.FileIterable;
 import org.graalvm.component.installer.IncompatibleException;
 import org.graalvm.component.installer.SoftwareChannelSource;
+import org.graalvm.component.installer.Version;
 import org.graalvm.component.installer.model.CatalogContents;
 import org.graalvm.component.installer.model.ComponentInfo;
+import org.graalvm.component.installer.model.ComponentRegistry;
+import org.graalvm.component.installer.model.GraalEdition;
 import org.graalvm.component.installer.persist.ProxyResource;
 import org.graalvm.component.installer.remote.RemoteCatalogDownloader;
 import org.graalvm.component.installer.persist.test.Handler;
@@ -95,6 +103,13 @@ public class CatalogInstallTest extends CommandTestBase {
         Handler.bind(TEST_CATALOG_URL, u);
 
         downloader = new RemoteCatalogDownloader(this, this, new URL(TEST_CATALOG_URL));
+        this.registry = new CatalogContents(this, downloader.getStorage(), getLocalRegistry());
+    }
+
+    private void setupCatalog2(String rel) throws IOException {
+        Path p = dataFile(rel);
+        URL u = p.toUri().toURL();
+        downloader = new RemoteCatalogDownloader(this, this, u);
         this.registry = new CatalogContents(this, downloader.getStorage(), getLocalRegistry());
     }
 
@@ -285,12 +300,16 @@ public class CatalogInstallTest extends CommandTestBase {
      */
     @Test
     public void testInstallDepsWithDependecnyInstalled() throws Exception {
+        setupVersion("19.3-dev");
+        setupCatalog(null);
+        testInstallDepsWithDependecnyInstalledCommon();
+    }
+
+    private void testInstallDepsWithDependecnyInstalledCommon() throws Exception {
         ComponentInfo fakeInfo = new ComponentInfo("org.graalvm.llvm-toolchain", "Fake Toolchain", "19.3-dev");
         fakeInfo.setInfoPath("");
         storage.installed.add(fakeInfo);
 
-        setupVersion("19.3-dev");
-        setupCatalog(null);
         paramIterable = new CatalogIterable(this, this);
         textParams.add("r");
 
@@ -309,7 +328,11 @@ public class CatalogInstallTest extends CommandTestBase {
     @Test
     public void testInstallDepsOnCommandLine() throws Exception {
         setupVersion("19.3-dev");
-        setupCatalog(null);
+        setupCatalog2("cataloginstallDeps.properties");
+        testInstallDepsOnCommandLineCommon();
+    }
+
+    private void testInstallDepsOnCommandLineCommon() throws Exception {
         paramIterable = new CatalogIterable(this, this);
         textParams.add("r");
         textParams.add("llvm-toolchain");
@@ -319,6 +342,7 @@ public class CatalogInstallTest extends CommandTestBase {
         cmd.executionInit();
 
         cmd.executeStep(cmd::prepareInstallation, false);
+        cmd.executeStep(cmd::completeInstallers, false);
 
         List<Installer> instSequence = cmd.getInstallers();
         assertEquals(2, instSequence.size());
@@ -329,13 +353,42 @@ public class CatalogInstallTest extends CommandTestBase {
     }
 
     /**
+     * Checks that if a dependency is specified also on the commandline, the component is actually
+     * installed just once. In this case, the catalog does NOT specify dependencies, they are
+     * discovered only when the component's archive is loaded.
+     */
+    @Test
+    public void testInstallDepsOnCommandLine2() throws Exception {
+        setupVersion("19.3-dev");
+        setupCatalog2("cataloginstallDeps2.properties");
+        testInstallDepsOnCommandLineCommon();
+    }
+
+    /**
      * Checks that dependencies precede the component that uses them. In this case ruby >
      * native-image > llvm-toolchain, so they should be installed in the opposite order.
      */
     @Test
     public void testDepsBeforeUsage() throws Exception {
         setupVersion("19.3-dev");
-        setupCatalog(null);
+        setupCatalog2("cataloginstallDeps.properties");
+        testDepsBeforeUsageCommon();
+    }
+
+    /**
+     * The same as {@link #testDepsBeforeUsage()} except that dependency info is incomplete in the
+     * catalog.
+     * 
+     * @throws Exception
+     */
+    @Test
+    public void testDepsBeforeUsage2() throws Exception {
+        setupVersion("19.3-dev");
+        setupCatalog2("cataloginstallDeps2.properties");
+        testDepsBeforeUsageCommon();
+    }
+
+    private void testDepsBeforeUsageCommon() throws Exception {
         paramIterable = new CatalogIterable(this, this);
         textParams.add("ruby");
 
@@ -344,6 +397,7 @@ public class CatalogInstallTest extends CommandTestBase {
         cmd.executionInit();
 
         cmd.executeStep(cmd::prepareInstallation, false);
+        cmd.executeStep(cmd::completeInstallers, false);
 
         List<Installer> instSequence = cmd.getInstallers();
         assertEquals(3, instSequence.size());
@@ -361,7 +415,21 @@ public class CatalogInstallTest extends CommandTestBase {
     @Test
     public void testTwoSameComponentsCommandLineDeps() throws Exception {
         setupVersion("19.3-dev");
-        setupCatalog(null);
+        setupCatalog2("cataloginstallDeps.properties");
+        testTwoSameComponentsCommandLineDepsCommon();
+    }
+
+    /**
+     * Checks that two same components on the commandline are merged, including their dependencies.
+     */
+    @Test
+    public void testTwoSameComponentsCommandLineDeps2() throws Exception {
+        setupVersion("19.3-dev");
+        setupCatalog2("cataloginstallDeps2.properties");
+        testTwoSameComponentsCommandLineDepsCommon();
+    }
+
+    private void testTwoSameComponentsCommandLineDepsCommon() throws Exception {
         paramIterable = new CatalogIterable(this, this);
         textParams.add("r");
         textParams.add("r");
@@ -371,6 +439,7 @@ public class CatalogInstallTest extends CommandTestBase {
         cmd.executionInit();
 
         cmd.executeStep(cmd::prepareInstallation, false);
+        cmd.executeStep(cmd::completeInstallers, false);
 
         List<Installer> instSequence = cmd.getInstallers();
         assertEquals(2, instSequence.size());
@@ -407,7 +476,17 @@ public class CatalogInstallTest extends CommandTestBase {
         downloader = new RemoteCatalogDownloader(this, this, (URL) null);
         downloader.addLocalChannelSource(
                         new SoftwareChannelSource(ruby193Source.getParent().toFile().toURI().toString()));
-        catalogFactory = (input, reg) -> new CatalogContents(this, downloader.getStorage(), reg);
+        catalogFactory = new CatalogFactory() {
+            @Override
+            public ComponentCatalog createComponentCatalog(CommandInput input) {
+                return new CatalogContents(CatalogInstallTest.this, downloader.getStorage(), input.getLocalRegistry());
+            }
+
+            @Override
+            public List<GraalEdition> listEditions(ComponentRegistry targetGraalVM) {
+                return Collections.emptyList();
+            }
+        };
         FileIterable fit = new FileIterable(this, this);
         fit.setCatalogFactory(catalogFactory);
         paramIterable = fit;
@@ -458,5 +537,130 @@ public class CatalogInstallTest extends CommandTestBase {
         cmd.executeStep(cmd::prepareInstallation, false);
         List<Installer> installers = cmd.getInstallers();
         assertEquals(1, installers.size());
+    }
+
+    /**
+     * Version 20.3.0 should not accept 20.3.1 (20.3.1.2, 20.3.1.3, ...) components.
+     * 
+     * @throws Exception
+     */
+    @Test
+    public void testRejectNewerInstallVersion() throws Exception {
+        storage.graalInfo.put(CommonConstants.CAP_GRAALVM_VERSION, "20.3.0");
+        setupCatalog("data/catalog21patch.properties");
+
+        textParams.add("llvm-toolchain");
+
+        paramIterable = new CatalogIterable(this, this);
+        Iterator<ComponentParam> params = paramIterable.iterator();
+        assertTrue(params.hasNext());
+        ComponentParam toolchainParam = params.next();
+        ComponentInfo toolchainInfo = toolchainParam.createMetaLoader().getComponentInfo();
+        assertNotNull(toolchainInfo);
+        assertEquals("org.graalvm.llvm-toolchain", toolchainInfo.getId());
+        assertEquals("Only release is compatible", "20.3.0", toolchainInfo.getVersion().displayString());
+    }
+
+    /**
+     * Checks that all installable versions are collected.
+     * 
+     * @throws Exception
+     */
+    @Test
+    public void testCollectAllVersions() throws Exception {
+        storage.graalInfo.put(CommonConstants.CAP_GRAALVM_VERSION, "20.3.0");
+        setupCatalog("data/catalog21patch.properties");
+
+        Collection<ComponentInfo> infos = registry.loadComponents("ruby", localRegistry.getGraalVersion().match(Version.Match.Type.INSTALLABLE), false);
+        assertEquals("3 version equal or greater", 3, infos.size());
+
+        infos = registry.loadComponents("ruby", localRegistry.getGraalVersion().match(Version.Match.Type.COMPATIBLE), false);
+        assertEquals("Just 1 version", 1, infos.size());
+
+        infos = registry.loadComponents("llvm-toolchain", localRegistry.getGraalVersion().match(Version.Match.Type.INSTALLABLE), false);
+        assertEquals("3 version equal or greater", 4, infos.size());
+    }
+
+    @Test
+    public void testAcceptsNewerPatchInstallVersion() throws Exception {
+        storage.graalInfo.put(CommonConstants.CAP_GRAALVM_VERSION, "21.0.0.0");
+        setupCatalog("data/catalog21patch.properties");
+
+        textParams.add("ruby");
+        textParams.add("python");
+
+        Collection<ComponentInfo> infos = registry.loadComponents("ruby", localRegistry.getGraalVersion().match(Version.Match.Type.COMPATIBLE), false);
+        assertEquals("Release and patch ruby available", 2, infos.size());
+
+        paramIterable = new CatalogIterable(this, this);
+        Iterator<ComponentParam> params = paramIterable.iterator();
+        assertTrue(params.hasNext());
+        ComponentParam rubyParam = params.next();
+        ComponentInfo rubyInfo = rubyParam.createMetaLoader().getComponentInfo();
+        assertNotNull(rubyInfo);
+        assertEquals("org.graalvm.ruby", rubyInfo.getId());
+        assertEquals("Only release is compatible", "21.0.0", rubyInfo.getVersion().displayString());
+
+        ComponentParam pythonParam = params.next();
+        ComponentInfo pythonInfo = pythonParam.createMetaLoader().getComponentInfo();
+        assertNotNull(pythonInfo);
+        assertEquals("org.graalvm.python", pythonInfo.getId());
+        assertEquals("Patch can be installed", "21.0.0.2", pythonInfo.getVersion().displayString());
+    }
+
+    /**
+     * Checks that 20.3.1.1 will not downgrade to 20.3.1.0.
+     * 
+     * @throws Exception
+     */
+    @Test
+    public void testWillNotDowngradePatch() throws Exception {
+        storage.graalInfo.put(CommonConstants.CAP_GRAALVM_VERSION, "20.3.1.2");
+        setupCatalog("data/catalog21patch.properties");
+
+        Collection<ComponentInfo> infos;
+        infos = registry.loadComponents("llvm-toolchain", localRegistry.getGraalVersion().match(Version.Match.Type.INSTALLABLE), false);
+        assertEquals("4 version equal or greater", 4, infos.size());
+
+        infos = registry.loadComponents("llvm-toolchain", localRegistry.getGraalVersion().match(Version.Match.Type.COMPATIBLE), false);
+        assertEquals("2 version patch-compatible", 2, infos.size());
+    }
+
+    private static ComponentInfo findVersion(Collection<ComponentInfo> versions, String vString) {
+        Version ver = Version.fromString(vString);
+        return versions.stream().filter(
+                        c -> c.getVersion().equals(ver)).findFirst().orElse(null);
+    }
+
+    /**
+     * Checks that older versions are acceptable.
+     * 
+     * @throws Exception
+     */
+    @Test
+    public void testAcceptCompatibleOlders() throws Exception {
+        storage.graalInfo.put(CommonConstants.CAP_GRAALVM_VERSION, "21.0.0.2");
+        setupCatalog("data/catalog21patch.properties");
+
+        Collection<ComponentInfo> infos;
+
+        infos = registry.loadComponents("r", localRegistry.getGraalVersion().match(Version.Match.Type.INSTALLABLE), false);
+        assertEquals("1 older version ", 1, infos.size());
+        assertEquals("21.0.0", infos.iterator().next().getVersion().displayString());
+
+        infos = registry.loadComponents("python", localRegistry.getGraalVersion().match(Version.Match.Type.INSTALLABLE), false);
+        assertEquals("2 older and current versions ", 2, infos.size());
+        assertNotNull("21.0.0.2 present", findVersion(infos, "21.0.0.2"));
+        assertNotNull("21.0.0.0 present", findVersion(infos, "21.0.0.0"));
+
+        textParams.add("python");
+
+        paramIterable = new CatalogIterable(this, this);
+        Iterator<ComponentParam> params = paramIterable.iterator();
+
+        ComponentParam pythonParam = params.next();
+        ComponentInfo pythonInfo = pythonParam.createMetaLoader().getComponentInfo();
+        assertNotNull(pythonInfo);
+        assertEquals("Current version offered", "21.0.0.2", pythonInfo.getVersion().toString());
     }
 }

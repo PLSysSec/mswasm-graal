@@ -24,14 +24,13 @@
  */
 package com.oracle.svm.hosted.classinitialization;
 
+import static com.oracle.svm.hosted.NativeImageOptions.DiagnosticsMode;
+
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.function.Consumer;
 
 import org.graalvm.collections.Pair;
-
-import com.oracle.svm.core.option.SubstrateOptionsParser;
-import com.oracle.svm.core.util.UserError;
 
 /**
  * The initialization kind for a class. The order of the enum values matters, {@link #max} depends
@@ -49,7 +48,11 @@ public enum InitKind {
         return this.ordinal() > other.ordinal() ? this : other;
     }
 
-    boolean isDelayed() {
+    InitKind min(InitKind other) {
+        return this.ordinal() < other.ordinal() ? this : other;
+    }
+
+    boolean isRunTime() {
         return this.equals(RUN_TIME);
     }
 
@@ -59,20 +62,28 @@ public enum InitKind {
         return SEPARATOR + name().toLowerCase();
     }
 
-    Consumer<String> stringConsumer(ClassInitializationSupport support) {
+    Consumer<String> stringConsumer(ClassInitializationSupport support, String origin) {
         if (this == RUN_TIME) {
-            return name -> {
-                if ("".equals(name)) {
-                    throw UserError.abort("Initializing the whole hierarchy at run time is currently not supported. Initialize individual packages from the application with: " +
-                                    SubstrateOptionsParser.commandArgument(ClassInitializationFeature.Options.ClassInitialization, "<package>", "initialize-at-run-time"));
-                }
-                support.initializeAtRunTime(name, "from the command line");
-            };
+            return name -> support.initializeAtRunTime(name, reason(origin, name));
         } else if (this == RERUN) {
-            return name -> support.rerunInitialization(name, "from the command line");
+            return name -> support.rerunInitialization(name, reason(origin, name));
         } else {
-            return name -> support.initializeAtBuildTime(name, "from the command line");
+            return name -> {
+                if (name.equals("") && !DiagnosticsMode.getValue()) {
+                    System.err.println(
+                                    "--initialize-at-build-time without arguments has been deprecated when not using --diagnostics-mode. With GraalVM 22.0.0" +
+                                                    " --initialize-at-build-time will only work with --diagnostics-mode for debugging purposes.\n" +
+                                                    "The reason for deprecation is that --initalize-at-build-time does not compose, i.e., a single library can make assumptions that the whole classpath can be safely initialized at build time;" +
+                                                    " that assumption is often incorrect.");
+                }
+                support.initializeAtBuildTime(name, reason(origin, name));
+            };
         }
+    }
+
+    private static String reason(String origin, String name) {
+        String prefix = "from ";
+        return (origin == null ? prefix + "the command line" : prefix + origin) + " with '" + name + "'";
     }
 
     static Pair<String, InitKind> strip(String input) {

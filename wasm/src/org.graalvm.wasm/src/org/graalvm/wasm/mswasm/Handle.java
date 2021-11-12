@@ -31,14 +31,15 @@ public class Handle {
     // memory access validation
     private final long base;
     private final long bound;
-    private long offset;
+    private final int key;
+    private int offset;
 
     // flags
     private boolean isCorrupted;
     private final boolean isSlice;
 
     // Manual constructor used to generate slices
-    private Handle(Segment segment, long base, long bound, long offset, 
+    private Handle(Segment segment, long base, long bound, int offset, 
                    boolean isCorrupted, boolean isSlice) {
         this.segment = segment;
 
@@ -48,6 +49,8 @@ public class Handle {
 
         // this.isCorrupted = isCorrupted;
         this.isSlice = isSlice;
+        this.key = generateKey(this);
+        keysToHandles.put(key, this);
     }
 
     /*
@@ -66,6 +69,8 @@ public class Handle {
         // set flags
         // this.isCorrupted = false;
         this.isSlice = false;
+        this.key = generateKey(this);
+        keysToHandles.put(key, this);
     }
 
     // Duplicate handle
@@ -77,6 +82,8 @@ public class Handle {
         this.bound = other.bound;
         // this.isCorrupted = other.isCorrupted;
         this.isSlice = other.isSlice;
+        this.key = generateKey(this);
+        keysToHandles.put(key, this);
     }
 
 
@@ -85,6 +92,13 @@ public class Handle {
         return new Handle(new Segment(), 0, 0, 0, true, false);
     }
 
+    public static long handleToRawLongBits(Handle value) {
+        return ((long)value.offset << 32) | value.key;
+    }
+
+    public static Handle longBitsToHandle(long value) {
+        return keysToHandles.get((int)(value & 0xffffffffL));
+    }
 
     /**
      * Generate random key for the given handle. Returns key in
@@ -103,20 +117,18 @@ public class Handle {
                + this.isCorrupted + ", " + this.isSlice + ")";
     }
 
-    public int getOffset() {
-        return (int)this.offset;
+    public int getKey() {
+        return this.key;
     }
 
-
-    /**
-     * Set offset of this handle to new value, or trap if new value is
-     * out-of-bounds
-     */
+    public int getOffset() {
+        return this.offset;
+    }
+    
     public void setOffset(Node node, int offset) {
         this.offset = offset;
     }
 
-    
     public void validateHandleAccess(Node node, long accessSize) {
         // WasmTracing.trace("validating handle at 0x%016X (%d)", this.base + this.offset, this.base + this.offset);
         // if (this.isCorrupted) {
@@ -206,11 +218,11 @@ public class Handle {
         return result;
     }
 
-    public void add(long addOffset) {
+    public void add(int addOffset) {
         this.offset += addOffset;
     }
 
-    public void sub(long subOffset) {
+    public void sub(int subOffset) {
         this.offset -= subOffset;
     }
 
@@ -454,13 +466,8 @@ public class Handle {
 
     public void store_handle(Node node, Handle value) {
         WasmTracing.trace("store.handle address = %d", this.base + this.offset);
-        validateHandleAccess(node, 4);
-
-        // add handle to key table before storing
-        int key = generateKey(value);
-        keysToHandles.put(key, value);
-        
-        unsafe.putInt(this.base + this.offset, key);
+        validateHandleAccess(node, 4);        
+        unsafe.putInt(this.base + this.offset, value.getKey());
     }
 
 }

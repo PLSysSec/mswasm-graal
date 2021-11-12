@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,18 +40,53 @@
  */
 package org.graalvm.launcher;
 
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.graalvm.nativeimage.RuntimeOptions;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Language;
 import org.graalvm.polyglot.PolyglotException;
 
 public abstract class AbstractLanguageLauncher extends LanguageLauncherBase {
+
+    private static final Constructor<AbstractLanguageLauncher> LAUNCHER_CTOR;
+    private int nativeArgc;
+    private long nativeArgv;
+
+    static {
+        LAUNCHER_CTOR = getLauncherCtor();
+    }
+
+    /**
+     * Looks up the launcher constructor based on the launcher class passed in via the
+     * org.graalvm.launcher.class system property.
+     *
+     * @return launcher constructor, if found.
+     */
+    @SuppressWarnings("unchecked")
+    private static Constructor<AbstractLanguageLauncher> getLauncherCtor() {
+        String launcherClassName = System.getProperty("org.graalvm.launcher.class");
+        Constructor<AbstractLanguageLauncher> launcherCtor = null;
+        if (launcherClassName != null) {
+            try {
+                Class<AbstractLanguageLauncher> launcherClass = (Class<AbstractLanguageLauncher>) Class.forName(launcherClassName);
+                if (!AbstractLanguageLauncher.class.isAssignableFrom(launcherClass)) {
+                    throw new Exception("Launcher does not implement " + AbstractLanguageLauncher.class.getName());
+                }
+                launcherCtor = launcherClass.getConstructor();
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+        return launcherCtor;
+    }
 
     /**
      * This starts the launcher. it should be called from the main method:
@@ -80,9 +115,59 @@ public abstract class AbstractLanguageLauncher extends LanguageLauncherBase {
         }
     }
 
+    /**
+     * Entry point for invoking the launcher via JNI. Relies on a launcher constructor to be set via
+     * the org.graalvm.launcher.class system property.
+     *
+     * @param args the command line arguments as an encoding-agnostic byte array
+     * @param argc the number of native command line arguments
+     * @param argv pointer to argv
+     * @throws Exception if no launcher constructor has been set.
+     */
+    public static void runLauncher(byte[][] args, int argc, long argv) throws Exception {
+        if (isAOT()) {
+            // enable signal handling for the launcher
+            RuntimeOptions.set("EnableSignalHandling", true);
+        }
+
+        if (LAUNCHER_CTOR == null) {
+            throw new Exception("Launcher constructor has not been set.");
+        }
+
+        String[] arguments = new String[args.length];
+        for (int i = 0; i < args.length; i++) {
+            arguments[i] = new String(args[i]);
+        }
+
+        AbstractLanguageLauncher launcher = LAUNCHER_CTOR.newInstance();
+        launcher.nativeArgc = argc;
+        launcher.nativeArgv = argv;
+        launcher.launch(arguments);
+    }
+
+    /**
+     * The native argument count as passed to the main method of the native launcher.
+     *
+     * @return native argument count, including the program name
+     */
+    protected int getNativeArgc() {
+        return nativeArgc;
+    }
+
+    /**
+     * The native argument values as passed to the main method of the native launcher.
+     *
+     * @return pointer to the native argument values, including the program name
+     */
+    protected long getNativeArgv() {
+        return nativeArgv;
+    }
+
     protected static final boolean IS_LIBPOLYGLOT = Boolean.getBoolean("graalvm.libpolyglot");
 
     final void launch(List<String> args, Map<String, String> defaultOptions, boolean doNativeSetup) {
+        List<String> originalArgs = Collections.unmodifiableList(new ArrayList<>(args));
+
         Map<String, String> polyglotOptions = defaultOptions;
         if (polyglotOptions == null) {
             polyglotOptions = new HashMap<>();
@@ -96,7 +181,7 @@ public abstract class AbstractLanguageLauncher extends LanguageLauncherBase {
 
         if (isAOT() && doNativeSetup && !IS_LIBPOLYGLOT) {
             assert nativeAccess != null;
-            maybeNativeExec(args, false, polyglotOptions);
+            maybeNativeExec(originalArgs, unrecognizedArgs, false);
         }
 
         parseUnrecognizedOptions(getLanguageId(), polyglotOptions, unrecognizedArgs);
@@ -124,10 +209,14 @@ public abstract class AbstractLanguageLauncher extends LanguageLauncherBase {
     /**
      * Process command line arguments by either saving the necessary state or adding it to the
      * {@code polyglotOptions}. Any unrecognized arguments should be accumulated and returned as a
-     * list.
+     * list. VM (--jvm/--native/--polyglot/--vm.*) and polyglot options (--language.option or
+     * --option) should be returned as unrecognized arguments to be automatically parsed and
+     * validated by {@link Launcher#parsePolyglotOption(String, Map, boolean, String)}.
      *
-     * Arguments that are translated to polyglot options should be removed from the list. Other
-     * arguments should not be removed.
+     * The {@code arguments} should not be modified, but doing so also has no effect.
+     *
+     * {@code polyglotOptions.put()} can be used to set launcher-specific default values when they
+     * do not match the OptionKey's default.
      *
      * The {@code preprocessArguments} implementations can use {@link Engine} to inspect the the
      * installed {@link Engine#getLanguages() guest languages} and {@link Engine#getInstruments()
@@ -135,7 +224,7 @@ public abstract class AbstractLanguageLauncher extends LanguageLauncherBase {
      * options} is forbidden.
      *
      * @param arguments the command line arguments that were passed to the launcher.
-     * @param polyglotOptions a map where polyglot options can be set. These will be uses when
+     * @param polyglotOptions a map where polyglot options can be set. These will be used when
      *            creating the {@link org.graalvm.polyglot.Engine Engine}.
      * @return the list of arguments that were not recognized.
      */
@@ -212,7 +301,8 @@ public abstract class AbstractLanguageLauncher extends LanguageLauncherBase {
 
     /**
      * The return value specifies what languages should be available by default when not using
-     * polyglot. E.g. Ruby needs llvm as well.
+     * --polyglot. Note that TruffleLanguage.Registration#dependentLanguages() should be preferred
+     * in most cases.
      *
      * @return an array of required language ids
      */

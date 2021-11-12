@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -107,6 +107,12 @@ public class VarHandleTest extends GraalCompilerTest {
 
     void testAccess(String name, int expectedReads, int expectedWrites, int expectedMembars, int expectedAnyKill) {
         ResolvedJavaMethod method = getResolvedJavaMethod(name);
+
+        // Ensures that all VarHandles in the snippet are fully resolved.
+        // Works around outlining of methods in VarHandle resolution (JDK-8265135).
+        Holder h = new Holder();
+        executeExpected(method, null, h);
+
         StructuredGraph graph = parseForCompile(method);
         compile(method, graph);
         Assert.assertEquals(expectedReads, graph.getNodes().filter(ReadNode.class).count());
@@ -122,7 +128,7 @@ public class VarHandleTest extends GraalCompilerTest {
 
     @Test
     public void testRead2() {
-        testAccess("testRead2Snippet", 1, 0, 2, 2);
+        testAccess("testRead2Snippet", 1, 0, 0, 1);
     }
 
     @Test
@@ -132,7 +138,7 @@ public class VarHandleTest extends GraalCompilerTest {
 
     @Test
     public void testRead4() {
-        testAccess("testRead4Snippet", 1, 0, 2, 2);
+        testAccess("testRead4Snippet", 1, 0, 0, 1);
     }
 
     @Test
@@ -142,7 +148,7 @@ public class VarHandleTest extends GraalCompilerTest {
 
     @Test
     public void testWrite2() {
-        testAccess("testWrite2Snippet", 0, 1, 2, 2);
+        testAccess("testWrite2Snippet", 0, 1, 0, 1);
     }
 
     @Test
@@ -152,7 +158,7 @@ public class VarHandleTest extends GraalCompilerTest {
 
     @Test
     public void testWrite4() {
-        testAccess("testWrite4Snippet", 0, 1, 2, 2);
+        testAccess("testWrite4Snippet", 0, 1, 0, 1);
     }
 
     private static int countAnyKill(StructuredGraph graph) {

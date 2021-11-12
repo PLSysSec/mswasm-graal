@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,6 +24,10 @@
  */
 package org.graalvm.compiler.hotspot;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Formatter;
 import java.util.HashMap;
 import java.util.Map;
@@ -43,7 +47,7 @@ import java.util.regex.Pattern;
  */
 public final class JVMCIVersionCheck {
 
-    private static final Version JVMCI_MIN_VERSION = new Version3(19, 3, 4);
+    private static final Version JVMCI_MIN_VERSION = new Version3(20, 2, 1);
 
     public interface Version {
         boolean isLessThan(Version other);
@@ -55,13 +59,21 @@ public final class JVMCIVersionCheck {
             return false;
         }
 
-        static Version parse(String vmVersion) {
+        static Version parse(String vmVersion, Map<String, String> props) {
             Matcher m = Pattern.compile(".*-jvmci-(\\d+)\\.(\\d+)-b(\\d+).*").matcher(vmVersion);
             if (m.matches()) {
                 try {
                     int major = Integer.parseInt(m.group(1));
                     int minor = Integer.parseInt(m.group(2));
                     int build = Integer.parseInt(m.group(3));
+                    String jvmciVersionFile = props.get("JVMCIVersionCheck.jvmci.version.file");
+                    if (jvmciVersionFile != null) {
+                        try {
+                            Files.write(Paths.get(jvmciVersionFile), String.format("%d,%d,%d", major, minor, build).getBytes());
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
                     return new Version3(major, minor, build);
                 } catch (NumberFormatException e) {
                     // ignore
@@ -180,6 +192,9 @@ public final class JVMCIVersionCheck {
         }
     }
 
+    public static final String JVMCI8_RELEASES_URL = "https://github.com/graalvm/graal-jvmci-8/releases";
+    public static final String JVMCI11_RELEASES_URL = "https://github.com/graalvm/labs-openjdk-11/releases";
+
     private void failVersionCheck(boolean exit, String reason, Object... args) {
         Formatter errorMessage = new Formatter().format(reason, args);
         String javaHome = props.get("java.home");
@@ -189,10 +204,10 @@ public final class JVMCIVersionCheck {
         errorMessage.format("Currently used Java home directory is %s.%n", javaHome);
         errorMessage.format("Currently used VM configuration is: %s%n", vmName);
         if (javaSpecVersion.compareTo("1.9") < 0) {
-            errorMessage.format("Download the latest JVMCI JDK 8 from https://github.com/graalvm/openjdk8-jvmci-builder/releases");
+            errorMessage.format("Download the latest JVMCI JDK 8 from " + JVMCI8_RELEASES_URL);
         } else {
             if (javaSpecVersion.compareTo("11") == 0 && vmVersion.contains("-jvmci-")) {
-                errorMessage.format("Download the latest Labs OpenJDK 11 from https://github.com/graalvm/labs-openjdk-11/releases");
+                errorMessage.format("Download the latest Labs OpenJDK 11 from " + JVMCI11_RELEASES_URL);
             } else {
                 errorMessage.format("Download JDK 11 or later.");
             }
@@ -238,7 +253,7 @@ public final class JVMCIVersionCheck {
 
     private void run(boolean exitOnFailure, Version minVersion) {
         if (javaSpecVersion.compareTo("1.9") < 0) {
-            Version v = Version.parse(vmVersion);
+            Version v = Version.parse(vmVersion, props);
             if (v != null) {
                 if (v.isLessThan(minVersion)) {
                     failVersionCheck(exitOnFailure, "The VM does not support the minimum JVMCI API version required by Graal: %s < %s.%n", v, minVersion);
@@ -259,7 +274,7 @@ public final class JVMCIVersionCheck {
             }
             if (vmVersion.contains("-jvmci-")) {
                 // A "labsjdk"
-                Version v = Version.parse(vmVersion);
+                Version v = Version.parse(vmVersion, props);
                 if (v != null) {
                     if (v.isLessThan(minVersion)) {
                         failVersionCheck(exitOnFailure, "The VM does not support the minimum JVMCI API version required by Graal: %s < %s.%n", v, minVersion);

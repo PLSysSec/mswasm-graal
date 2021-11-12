@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,30 +40,23 @@
  */
 package com.oracle.truffle.regex.tregex.matchers;
 
-import com.oracle.truffle.api.nodes.Node;
-
-public abstract class CharMatcher extends Node {
-
-    public static final CharMatcher[] EMPTY = {};
+public abstract class CharMatcher {
 
     /**
-     * Check if a given character matches this {@link CharMatcher}.
-     * 
-     * @param c any character.
-     * @param compactString {@code true} if {@code c} was read from a compact string and can
-     *            therefore be treated as a {@code byte}. This parameter must always be partial
-     *            evaluation constant!
+     * Check if a given code point matches this {@link CharMatcher}.
+     *
+     * @param c any code point.
      * @return {@code true} if the character matches.
      * @see com.oracle.truffle.api.CompilerDirectives#isPartialEvaluationConstant(Object)
      */
-    public abstract boolean execute(char c, boolean compactString);
+    public abstract boolean match(int c);
 
     /**
      * Conservatively estimate the equivalent number of integer comparisons of calling
-     * {@link #execute(char, boolean)}.
-     * 
-     * @return the number of integer comparisons one call to {@link #execute(char, boolean)} is
-     *         roughly equivalent to. Array loads are treated as two comparisons.
+     * {@link #match(int)}.
+     *
+     * @return the number of integer comparisons one call to {@link #match(int)} is roughly
+     *         equivalent to. Array loads are treated as two comparisons.
      */
     public abstract int estimatedCost();
 }

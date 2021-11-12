@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -50,14 +50,14 @@ class MachORelocationElement extends MachOObjectFile.LinkEditElement {
      * within the section.
      */
 
-    private static int compareSectionThenOffset(RelocationInfo p, RelocationInfo q) {
+    private static int compareSectionThenOffset(MachORelocationInfo p, MachORelocationInfo q) {
         if (!p.getRelocatedSection().equals(q.getRelocatedSection())) {
             return p.getRelocatedSection().hashCode() - q.getRelocatedSection().hashCode();
         }
         return Math.toIntExact(p.getOffset() - q.getOffset());
     }
 
-    private Map<RelocationInfo, RelocationInfo> infos = new TreeMap<>(MachORelocationElement::compareSectionThenOffset);
+    private Map<MachORelocationInfo, MachORelocationInfo> infos = new TreeMap<>(MachORelocationElement::compareSectionThenOffset);
     private Set<MachOSection> relocatedSections = new HashSet<>();
 
     MachORelocationElement(Segment64Command segment) {
@@ -66,7 +66,7 @@ class MachORelocationElement extends MachOObjectFile.LinkEditElement {
         segment.getOwner().relocs = this;
     }
 
-    public void add(RelocationInfo rec) {
+    public void add(MachORelocationInfo rec) {
         if (infos.putIfAbsent(rec, rec) == null) {
             relocatedSections.add(rec.getRelocatedSection());
         }
@@ -79,7 +79,7 @@ class MachORelocationElement extends MachOObjectFile.LinkEditElement {
     @Override
     public byte[] getOrDecideContent(Map<Element, LayoutDecisionMap> alreadyDecided, byte[] contentHint) {
         OutputAssembler out = AssemblyBuffer.createOutputAssembler(getOwner().getByteOrder());
-        for (RelocationInfo rec : infos.keySet()) {
+        for (MachORelocationInfo rec : infos.keySet()) {
             rec.write(out, alreadyDecided);
         }
         assert getOrDecideSize(alreadyDecided, -1) == out.pos();
@@ -98,7 +98,7 @@ class MachORelocationElement extends MachOObjectFile.LinkEditElement {
 
     public int startIndexFor(MachOSection s) {
         int i = 0;
-        for (RelocationInfo info : infos.keySet()) {
+        for (MachORelocationInfo info : infos.keySet()) {
             if (info.getRelocatedSection() == s) {
                 return i;
             }
@@ -108,7 +108,7 @@ class MachORelocationElement extends MachOObjectFile.LinkEditElement {
     }
 
     public int encodedEntrySize() {
-        return RelocationInfo.getEncodedSize();
+        return MachORelocationInfo.getEncodedSize();
     }
 
     public int countFor(MachOSection s) {
@@ -116,50 +116,60 @@ class MachORelocationElement extends MachOObjectFile.LinkEditElement {
     }
 }
 
+/**
+ * These are defined as an enum in
+ * https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/EXTERNAL_HEADERS/mach-o/x86_64/reloc.h#L173
+ * which we reproduce. Of course, take care to preserve the order!
+ *
+ * For examples of how these symbols are used, see the linked file above and
+ * https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/EXTERNAL_HEADERS/mach-o/reloc.h.
+ */
 enum X86_64Reloc {
-    /*
-     * These are defined as an enum in /usr/include/mach-o/x86-64/reloc.h, which we reproduce. Of
-     * course, take care to preserve the order!
-     */
-    UNSIGNED,
-    SIGNED,
-    BRANCH,
-    GOT_LOAD,
-    GOT,
-    SUBTRACTOR,
-    SIGNED_1,
-    SIGNED_2,
-    SIGNED_4,
-    TLV;
+    UNSIGNED, // for absolute addresses
+    SIGNED, // for signed 32-bit displacement
+    BRANCH, // a CALL/JMP instruction with 32-bit displacement
+    GOT_LOAD, // a MOVQ load of a GOT entry
+    GOT, // other GOT references
+    SUBTRACTOR, // must be followed by a X86_64_RELOC_UNSIGNED
+    SIGNED_1, // for signed 32-bit displacement with a -1 addend
+    SIGNED_2, // for signed 32-bit displacement with a -2 addend
+    SIGNED_4, // for signed 32-bit displacement with a -4 addend
+    TLV; // for thread local variables
 
     public int getValue() {
         return ordinal();
     }
 }
 
+/**
+ * These are defined as an enum in
+ * https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/EXTERNAL_HEADERS/mach-o/arm64/reloc.h#L26,
+ * which we reproduce. Of course, take care to preserve the order!
+ *
+ * For examples of how these symbols are used, see
+ * https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/EXTERNAL_HEADERS/mach-o/arm/reloc.h
+ * (for AArch32 information, but does provide some insight) and
+ * https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/EXTERNAL_HEADERS/mach-o/reloc.h.
+ */
 enum ARM64Reloc {
-    /*
-     * These are defined as an enum in /usr/include/mach-o/arm64/reloc.h, which we reproduce. Of
-     * course, take care to preserve the order!
-     */
-    UNSIGNED,
-    SUBTRACTOR,
-    BRANCH26,
-    PAGE21,
-    PAGEOFF12,
-    GOT_LOAD_PAGE21,
-    GOT_LOAD_PAGEOFF12,
-    POINTER_TO_GOT,
-    TLVP_LOAD_PAGE21,
-    TLVP_LOAD_PAGEOFF12,
-    ADDEND;
+    UNSIGNED, // for pointers
+    SUBTRACTOR, // must be followed by a ARM64_RELOC_UNSIGNED
+    BRANCH26, // a B/BL instruction with 26-bit displacement
+    PAGE21, // pc-rel distance to page of target
+    PAGEOFF12, // offset within page, scaled by r_length
+    GOT_LOAD_PAGE21, // pc-rel distance to page of GOT slot
+    GOT_LOAD_PAGEOFF12, // offset within page of GOT slot, scaled by r_length
+    POINTER_TO_GOT, // for pointers to GOT slots
+    TLVP_LOAD_PAGE21, // pc-rel distance to page of TLVP slot
+    TLVP_LOAD_PAGEOFF12, // offset within page of TLVP slot, scaled by r_length
+    ADDEND; // must be followed by PAGE21 or PAGEOFF12
 
     public int getValue() {
         return ordinal();
     }
 }
 
-final class RelocationInfo implements RelocationRecord, RelocationMethod {
+final class MachORelocationInfo implements RelocationRecord, RelocationMethod {
 
     private final MachORelocationElement containingElement;
     private final MachOSection relocatedSection;
@@ -179,7 +189,7 @@ final class RelocationInfo implements RelocationRecord, RelocationMethod {
      * @param kind the kind of relocation to perform at the relocation site
      * @param symbolName the symbol against which to relocate
      */
-    RelocationInfo(MachORelocationElement containingElement, MachOSection relocatedSection, int offset, int requestedLength, RelocationKind kind, String symbolName, boolean asLocalReloc) {
+    MachORelocationInfo(MachORelocationElement containingElement, MachOSection relocatedSection, int offset, int requestedLength, RelocationKind kind, String symbolName, boolean asLocalReloc) {
         this.containingElement = containingElement;
         this.relocatedSection = relocatedSection;
         this.sectionOffset = offset; // gets turned into a vaddr on write-out
@@ -240,18 +250,13 @@ final class RelocationInfo implements RelocationRecord, RelocationMethod {
         int remainingWord = 0;
         //@formatter:off
         remainingWord |=                       symbolNum & 0x00ffffff;
-        remainingWord |= (kind == RelocationKind.PC_RELATIVE) ? (1 << 24) : 0;
+        remainingWord |=                       isPCRelative() ? (1 << 24) : 0;
         remainingWord |=                        (log2length & 0x3) << 25;
         remainingWord |=                           isExtern() ? (1 << 27) : 0;
         remainingWord |=          (getMachORelocationType() & 0xf) << 28;
         //@formatter:on
         oa.write4Byte(remainingWord);
         assert oa.pos() - startPos == 8; // check we wrote how much we expected
-    }
-
-    @Override
-    public RelocationKind getKind() {
-        return kind;
     }
 
     @Override
@@ -266,21 +271,6 @@ final class RelocationInfo implements RelocationRecord, RelocationMethod {
         return sym;
     }
 
-    @Override
-    public int getRelocatedByteSize() {
-        return 1 << log2length;
-    }
-
-    @Override
-    public boolean canUseExplicitAddend() {
-        return false;
-    }
-
-    @Override
-    public boolean canUseImplicitAddend() {
-        return true;
-    }
-
     public MachOSection getRelocatedSection() {
         return relocatedSection;
     }
@@ -290,24 +280,52 @@ final class RelocationInfo implements RelocationRecord, RelocationMethod {
         return targetSection == null;
     }
 
+    private boolean isPCRelative() {
+        switch (kind) {
+            case PC_RELATIVE_1:
+            case PC_RELATIVE_2:
+            case PC_RELATIVE_4:
+            case PC_RELATIVE_8:
+            case AARCH64_R_AARCH64_ADR_PREL_PG_HI21:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private int getMachORelocationType() {
         switch (getRelocatedSection().getOwner().cpuType) {
             case X86_64:
                 switch (kind) {
-                    case DIRECT:
+                    case DIRECT_1:
+                    case DIRECT_2:
+                    case DIRECT_4:
+                    case DIRECT_8:
                         return X86_64Reloc.UNSIGNED.getValue();
-                    case PC_RELATIVE:
+                    case PC_RELATIVE_1:
+                    case PC_RELATIVE_2:
+                    case PC_RELATIVE_4:
+                    case PC_RELATIVE_8:
                         return X86_64Reloc.SIGNED.getValue();
-                    case PROGRAM_BASE:
-                        throw new IllegalArgumentException("Mach-O does not support PROGRAM_BASE relocations");
                     default:
                     case UNKNOWN:
                         throw new IllegalArgumentException("unknown relocation kind: " + kind);
                 }
             case ARM64:
                 switch (kind) {
-                    case DIRECT:
+                    case DIRECT_1:
+                    case DIRECT_2:
+                    case DIRECT_4:
+                    case DIRECT_8:
                         return ARM64Reloc.UNSIGNED.getValue();
+                    case AARCH64_R_AARCH64_ADR_PREL_PG_HI21:
+                        return ARM64Reloc.PAGE21.getValue();
+                    case AARCH64_R_AARCH64_LDST64_ABS_LO12_NC:
+                    case AARCH64_R_AARCH64_LDST32_ABS_LO12_NC:
+                    case AARCH64_R_AARCH64_LDST16_ABS_LO12_NC:
+                    case AARCH64_R_AARCH64_LDST8_ABS_LO12_NC:
+                    case AARCH64_R_AARCH64_ADD_ABS_LO12_NC:
+                        return ARM64Reloc.PAGEOFF12.getValue();
                     default:
                     case UNKNOWN:
                         throw new IllegalArgumentException("unknown relocation kind: " + kind);
@@ -323,7 +341,7 @@ final class RelocationInfo implements RelocationRecord, RelocationMethod {
             return true;
         }
         if (obj != null && getClass() == obj.getClass()) {
-            RelocationInfo other = (RelocationInfo) obj;
+            MachORelocationInfo other = (MachORelocationInfo) obj;
             return sectionOffset == other.sectionOffset && log2length == other.log2length && Objects.equals(containingElement, other.containingElement) &&
                             Objects.equals(getRelocatedSection(), other.getRelocatedSection()) && kind == other.kind &&
                             Objects.equals(sym, other.sym) && Objects.equals(targetSection, other.targetSection);

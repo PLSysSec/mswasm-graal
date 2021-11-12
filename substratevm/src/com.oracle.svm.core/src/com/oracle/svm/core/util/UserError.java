@@ -26,6 +26,9 @@ package com.oracle.svm.core.util;
 
 import java.util.Collections;
 
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+
 import jdk.vm.ci.meta.ResolvedJavaField;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
@@ -33,11 +36,13 @@ import jdk.vm.ci.meta.ResolvedJavaType;
 /**
  * SVM mechanism for handling user errors and warnings that should be reported to the command line.
  */
+@Platforms(Platform.HOSTED_ONLY.class)
 public class UserError {
 
     /**
      * UserException type for all errors that should be reported to the SVM users.
      */
+    @Platforms(Platform.HOSTED_ONLY.class)
     public static class UserException extends Error {
         static final long serialVersionUID = 75431290632980L;
         private final Iterable<String> messages;
@@ -73,10 +78,14 @@ public class UserError {
      * Stop compilation immediately and report the message to the user.
      *
      * @param cause the exception that caused the abort.
-     * @param message the error message to be reported to the user.
+     * @param format format string
+     * @param args arguments for the format string that are {@link #formatArguments(Object...)
+     *            preprocessed} before being sent to {@link String#format(String, Object...)}
      */
-    public static UserException abort(Throwable cause, String message) {
-        throw ((UserException) new UserException(message).initCause(cause));
+    public static UserException abort(Throwable cause, String format, Object... args) {
+        // Checkstyle: stop
+        throw ((UserException) new UserException(String.format(format, formatArguments(args))).initCause(cause));
+        // Checkstyle: resume
     }
 
     /**
@@ -89,7 +98,7 @@ public class UserError {
     public static void guarantee(boolean condition, String format, Object... args) {
         if (!condition) {
             // Checkstyle: stop
-            throw UserError.abort(String.format(format, formatArguments(args)));
+            throw UserError.abort(format, args);
             // Checkstyle: resume
         }
     }

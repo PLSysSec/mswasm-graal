@@ -24,39 +24,33 @@
  */
 package com.oracle.svm.truffle.api;
 
-import static com.oracle.svm.core.util.VMError.shouldNotReachHere;
-
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
-import org.graalvm.collections.EconomicMap;
-import org.graalvm.collections.UnmodifiableMapCursor;
 import org.graalvm.compiler.api.replacements.Fold;
-import org.graalvm.compiler.debug.TTY;
+import org.graalvm.compiler.debug.DebugOptions;
 import org.graalvm.compiler.options.Option;
-import org.graalvm.compiler.options.OptionDescriptor;
-import org.graalvm.compiler.options.OptionKey;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.truffle.common.CompilableTruffleAST;
 import org.graalvm.compiler.truffle.common.OptimizedAssumptionDependency;
+import org.graalvm.compiler.truffle.common.TruffleCompilationTask;
 import org.graalvm.compiler.truffle.common.TruffleCompiler;
+import org.graalvm.compiler.truffle.common.TruffleInliningData;
 import org.graalvm.compiler.truffle.options.PolyglotCompilerOptions;
 import org.graalvm.compiler.truffle.runtime.BackgroundCompileQueue;
-import org.graalvm.compiler.truffle.runtime.CancellableCompileTask;
+import org.graalvm.compiler.truffle.runtime.CompilationTask;
 import org.graalvm.compiler.truffle.runtime.GraalTruffleRuntime;
-import org.graalvm.compiler.truffle.runtime.LoopNodeFactory;
 import org.graalvm.compiler.truffle.runtime.OptimizedCallTarget;
-import org.graalvm.compiler.truffle.runtime.TruffleRuntimeOptions;
+import org.graalvm.compiler.truffle.runtime.TruffleInlining;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platform.HOSTED_ONLY;
 import org.graalvm.nativeimage.Platforms;
 
+import com.oracle.graal.pointsto.util.GraalAccess;
 import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.deopt.Deoptimizer;
@@ -65,14 +59,14 @@ import com.oracle.svm.core.jdk.RuntimeSupport;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.meta.SubstrateObjectConstant;
 import com.oracle.svm.core.option.HostedOptionKey;
-import com.oracle.svm.core.option.RuntimeOptionParser;
 import com.oracle.svm.core.option.RuntimeOptionValues;
-import com.oracle.svm.core.snippets.KnownIntrinsics;
 import com.oracle.svm.core.stack.SubstrateStackIntrospection;
-import com.oracle.svm.hosted.c.GraalAccess;
-import com.oracle.svm.truffle.TruffleFeature;
+import com.oracle.svm.truffle.TruffleSupport;
 import com.oracle.truffle.api.CompilerAsserts;
+import com.oracle.truffle.api.impl.AbstractFastThreadLocal;
+import com.oracle.truffle.api.impl.ThreadLocalHandshake;
 import com.oracle.truffle.api.nodes.RootNode;
+import com.oracle.truffle.api.utilities.TriState;
 
 import jdk.vm.ci.code.stack.StackIntrospection;
 import jdk.vm.ci.meta.JavaConstant;
@@ -80,10 +74,13 @@ import jdk.vm.ci.meta.MetaAccessProvider;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.SpeculationLog;
 
-class SubstateTruffleOptions {
+class SubstrateTruffleOptions {
 
     @Option(help = "Enable support for Truffle background compilation")//
     static final HostedOptionKey<Boolean> TruffleMultiThreaded = new HostedOptionKey<>(true);
+
+    @Option(help = "Propagate Truffle compilation errors")//
+    static final HostedOptionKey<Boolean> TrufflePropagateCompilationErrors = new HostedOptionKey<>(false);
 
     @Fold
     static boolean isMultiThreaded() {
@@ -93,7 +90,7 @@ class SubstateTruffleOptions {
          * background compile queue. The latter is useful when background compilation is not needed,
          * but recurring callbacks (which depend on the safepoint mechanism) are required.
          */
-        return SubstrateOptions.MultiThreaded.getValue() && SubstateTruffleOptions.TruffleMultiThreaded.getValue();
+        return SubstrateOptions.MultiThreaded.getValue() && SubstrateTruffleOptions.TruffleMultiThreaded.getValue();
     }
 }
 
@@ -107,12 +104,6 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
     private volatile boolean initialized;
     private volatile Boolean profilingEnabled;
 
-    @Override
-    protected BackgroundCompileQueue getCompileQueue() {
-        assert compileQueue != null;
-        return compileQueue;
-    }
-
     @Platforms(Platform.HOSTED_ONLY.class)
     public SubstrateTruffleRuntime() {
         super(Collections.emptyList());
@@ -120,24 +111,49 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
         super.getLoopNodeFactory();
     }
 
+    @Override
+    public BackgroundCompileQueue getCompileQueue() {
+        return compileQueue;
+    }
+
     @Platforms(Platform.HOSTED_ONLY.class)
     public void resetHosted() {
         truffleCompiler = null;
     }
 
+    @Override
+    public ThreadLocalHandshake getThreadLocalHandshake() {
+        return SubstrateThreadLocalHandshake.SINGLETON;
+    }
+
+    @Override
+    protected AbstractFastThreadLocal getFastThreadLocalImpl() {
+        return SubstrateFastThreadLocal.SINGLETON;
+    }
+
     private void initializeAtRuntime(OptimizedCallTarget callTarget) {
-        truffleCompiler.initialize(TruffleRuntimeOptions.getOptionsForCompiler(callTarget));
-        if (SubstateTruffleOptions.isMultiThreaded()) {
-            compileQueue = TruffleFeature.getSupport().createBackgroundCompileQueue(this);
-            RuntimeSupport.getRuntimeSupport().addTearDownHook(this::tearDown);
+        truffleCompiler.initialize(getOptionsForCompiler(callTarget), callTarget, true);
+        if (SubstrateTruffleOptions.isMultiThreaded()) {
+            compileQueue = TruffleSupport.singleton().createBackgroundCompileQueue(this);
         }
         if (callTarget.engine.traceTransferToInterpreter) {
-            if (!SubstrateOptions.IncludeNodeSourcePositions.getValue()) {
-                Log.log().string("Warning: TraceTruffleTransferToInterpreter cannot print stack traces. Build image with -H:+IncludeNodeSourcePositions to enable stack traces.").newline();
-            }
             RuntimeOptionValues.singleton().update(Deoptimizer.Options.TraceDeoptimization, true);
         }
         installDefaultListeners();
+        RuntimeSupport.getRuntimeSupport().addTearDownHook(this::teardown);
+    }
+
+    private void teardown() {
+        long timeout = SubstrateUtil.assertionsEnabled() ? DEBUG_TEAR_DOWN_TIMEOUT : PRODUCTION_TEAR_DOWN_TIMEOUT;
+        BackgroundCompileQueue queue = getCompileQueue();
+        if (queue != null) {
+            queue.shutdownAndAwaitTermination(timeout);
+        }
+
+        TruffleCompiler tcp = truffleCompiler;
+        if (tcp != null) {
+            ((SubstrateTruffleCompiler) tcp).teardown();
+        }
     }
 
     @Platforms(Platform.HOSTED_ONLY.class)
@@ -164,16 +180,7 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
     @Platforms(Platform.HOSTED_ONLY.class)
     @Override
     public SubstrateTruffleCompiler newTruffleCompiler() {
-        return TruffleFeature.getSupport().createTruffleCompiler(this);
-    }
-
-    private void tearDown() {
-        /*
-         * Runaway compilations should fail during testing, but should not cause crashes in
-         * production.
-         */
-        long timeout = SubstrateUtil.assertionsEnabled() ? DEBUG_TEAR_DOWN_TIMEOUT : PRODUCTION_TEAR_DOWN_TIMEOUT;
-        getCompileQueue().shutdownAndAwaitTermination(timeout);
+        return TruffleSupport.singleton().createTruffleCompiler(this);
     }
 
     @Override
@@ -181,14 +188,6 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
         Objects.requireNonNull(compilable, "Compilable must be non null.");
         ensureInitializedAtRuntime((OptimizedCallTarget) compilable);
         return (SubstrateTruffleCompiler) truffleCompiler;
-    }
-
-    @Override
-    protected LoopNodeFactory getLoopNodeFactory() {
-        if (loopNodeFactory == null) {
-            throw shouldNotReachHere("loopNodeFactory not initialized");
-        }
-        return loopNodeFactory;
     }
 
     @Override
@@ -220,7 +219,7 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
         if (profilingEnabled == null) {
             profilingEnabled = getEngineData(rootNode).profilingEnabled;
         }
-        OptimizedCallTarget callTarget = TruffleFeature.getSupport().createOptimizedCallTarget(source, rootNode);
+        OptimizedCallTarget callTarget = TruffleSupport.singleton().createOptimizedCallTarget(source, rootNode);
         ensureInitializedAtRuntime(callTarget);
         return callTarget;
     }
@@ -261,7 +260,7 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
     }
 
     @Override
-    public CancellableCompileTask submitForCompilation(OptimizedCallTarget optimizedCallTarget, boolean lastTierCompilation) {
+    public CompilationTask submitForCompilation(OptimizedCallTarget optimizedCallTarget, boolean lastTierCompilation) {
         if (SubstrateUtil.HOSTED) {
             /*
              * Truffle code can run during image generation. But for now it is the easiest to not
@@ -274,21 +273,23 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
         }
         /*
          * Normally creating call targets schedules the initialization. However if call targets were
-         * already created in the boot image and they are directly compiled then the compile queue
-         * might not yet be initialized.
+         * already created in the image and they are directly compiled then the compile queue might
+         * not yet be initialized.
          */
         ensureInitializedAtRuntime(optimizedCallTarget);
 
-        if (SubstateTruffleOptions.isMultiThreaded()) {
+        if (SubstrateTruffleOptions.isMultiThreaded()) {
             return super.submitForCompilation(optimizedCallTarget, lastTierCompilation);
         }
 
         try {
-            // Single threaded compilation does not require cancellation.
-            doCompile(optimizedCallTarget, null);
+            doCompile(optimizedCallTarget, new SingleThreadedCompilationTask(optimizedCallTarget, lastTierCompilation));
         } catch (com.oracle.truffle.api.OptimizationFailedException e) {
-            if (TruffleRuntimeOptions.getPolyglotOptionValue(optimizedCallTarget.getOptionValues(), PolyglotCompilerOptions.CompilationExceptionsArePrinted)) {
+            if (optimizedCallTarget.getOptionValue(PolyglotCompilerOptions.CompilationExceptionsArePrinted)) {
                 Log.log().string(printStackTraceToString(e));
+            }
+            if (SubstrateTruffleOptions.TrufflePropagateCompilationErrors.getValue()) {
+                throw e;
             }
         }
 
@@ -296,24 +297,15 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
     }
 
     @Override
-    public void finishCompilation(OptimizedCallTarget optimizedCallTarget, CancellableCompileTask task, boolean mayBeAsynchronous) {
-        if (SubstateTruffleOptions.isMultiThreaded()) {
+    public void finishCompilation(OptimizedCallTarget optimizedCallTarget, CompilationTask task, boolean mayBeAsynchronous) {
+        if (SubstrateTruffleOptions.isMultiThreaded()) {
             super.finishCompilation(optimizedCallTarget, task, mayBeAsynchronous);
         }
     }
 
     @Override
-    public boolean cancelInstalledTask(OptimizedCallTarget optimizedCallTarget, Object source, CharSequence reason) {
-        if (SubstateTruffleOptions.isMultiThreaded()) {
-            return super.cancelInstalledTask(optimizedCallTarget, source, reason);
-        }
-
-        return false;
-    }
-
-    @Override
     public void waitForCompilation(OptimizedCallTarget optimizedCallTarget, long timeout) throws ExecutionException, TimeoutException {
-        if (SubstateTruffleOptions.isMultiThreaded()) {
+        if (SubstrateTruffleOptions.isMultiThreaded()) {
             super.waitForCompilation(optimizedCallTarget, timeout);
             return;
         }
@@ -322,61 +314,21 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
     }
 
     @Override
-    public boolean isCompiling(OptimizedCallTarget optimizedCallTarget) {
-        if (SubstateTruffleOptions.isMultiThreaded()) {
-            return super.isCompiling(optimizedCallTarget);
-        }
-
-        return false;
-    }
-
-    @Override
     protected StackIntrospection getStackIntrospection() {
         return SubstrateStackIntrospection.SINGLETON;
     }
 
     @Override
-    public <T> T getOptions(Class<T> type) {
+    public <T> T getGraalOptions(Class<T> type) {
         if (type == OptionValues.class) {
             return type.cast(RuntimeOptionValues.singleton());
         }
-        return super.getOptions(type);
+        return super.getGraalOptions(type);
     }
 
     @Override
-    public <T> T convertOptions(Class<T> type, Map<String, Object> map) {
-        if (type == OptionValues.class) {
-            final EconomicMap<OptionKey<?>, Object> values = OptionValues.newOptionMap();
-            for (Map.Entry<String, Object> e : map.entrySet()) {
-                final String optionName = e.getKey();
-                final Object optionValue = e.getValue();
-                Optional<OptionDescriptor> descriptor = RuntimeOptionParser.singleton().getDescriptor(optionName);
-                if (descriptor.isPresent()) {
-                    OptionDescriptor desc = descriptor.get();
-                    Class<?> valueType = optionValue.getClass();
-                    if (desc.getOptionValueType().isAssignableFrom(valueType)) {
-                        values.put(desc.getOptionKey(), optionValue);
-                    } else {
-                        throw new IllegalArgumentException("Invalid type of option '" + optionName + "': required " + desc.getOptionValueType().getSimpleName() + ", got " + valueType);
-                    }
-                }
-            }
-            return type.cast(new OptionValues(values));
-
-        }
-        return super.convertOptions(type, map);
-    }
-
-    @Override
-    protected Map<String, Object> createInitialOptions() {
-        Map<String, Object> res = new HashMap<>();
-        UnmodifiableMapCursor<OptionKey<?>, Object> optionValues = RuntimeOptionValues.singleton().getMap().getEntries();
-        while (optionValues.advance()) {
-            final OptionKey<?> key = optionValues.getKey();
-            Object value = optionValues.getValue();
-            res.put(key.getName(), value);
-        }
-        return res;
+    protected boolean isPrintGraphEnabled() {
+        return DebugOptions.PrintGraph.getValue(getGraalOptions(OptionValues.class)) != DebugOptions.PrintGraphTarget.Disable;
     }
 
     @Platforms(HOSTED_ONLY.class)
@@ -385,9 +337,8 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     protected <T> T asObject(Class<T> type, JavaConstant constant) {
-        return (T) KnownIntrinsics.convertUnknownValue(SubstrateObjectConstant.asObject(type, constant), Object.class);
+        return SubstrateObjectConstant.asObject(type, constant);
     }
 
     @Override
@@ -396,17 +347,76 @@ public final class SubstrateTruffleRuntime extends GraalTruffleRuntime {
     }
 
     @Override
-    public void log(String message) {
-        TTY.println(message);
-    }
-
-    @Override
     public Consumer<OptimizedAssumptionDependency> registerOptimizedAssumptionDependency(JavaConstant optimizedAssumptionConstant) {
-        return TruffleFeature.getSupport().registerOptimizedAssumptionDependency(optimizedAssumptionConstant);
+        return TruffleSupport.singleton().registerOptimizedAssumptionDependency(optimizedAssumptionConstant);
     }
 
     @Override
     public JavaConstant getCallTargetForCallNode(JavaConstant callNodeConstant) {
-        return TruffleFeature.getSupport().getCallTargetForCallNode(callNodeConstant);
+        return TruffleSupport.singleton().getCallTargetForCallNode(callNodeConstant);
     }
+
+    @Override
+    public CompilableTruffleAST asCompilableTruffleAST(JavaConstant constant) {
+        return TruffleSupport.singleton().asCompilableTruffleAST(constant);
+    }
+
+    @Override
+    public void log(String loggerId, CompilableTruffleAST compilable, String message) {
+        if (!TruffleSupport.singleton().tryLog(this, loggerId, compilable, message)) {
+            super.log(loggerId, compilable, message);
+        }
+    }
+
+    @Override
+    public boolean isSuppressedFailure(CompilableTruffleAST compilable, Supplier<String> serializedException) {
+        TriState res = TruffleSupport.singleton().tryIsSuppressedFailure(compilable, serializedException);
+        switch (res) {
+            case TRUE:
+                return true;
+            case FALSE:
+                return false;
+            case UNDEFINED:
+                return super.isSuppressedFailure(compilable, serializedException);
+            default:
+                throw new IllegalStateException("Unsupported value " + res);
+        }
+    }
+
+    /**
+     * Compilation task used when truffle runtime is run in single threaded mode.
+     */
+    private static class SingleThreadedCompilationTask implements TruffleCompilationTask {
+        private final boolean lastTierCompilation;
+        private final boolean hasNextTier;
+        TruffleInlining inlining = new TruffleInlining();
+
+        SingleThreadedCompilationTask(OptimizedCallTarget optimizedCallTarget, boolean lastTierCompilation) {
+            this.hasNextTier = !optimizedCallTarget.engine.firstTierOnly && !lastTierCompilation;
+            this.lastTierCompilation = lastTierCompilation;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            // Single threaded compilation does not require cancellation.
+            return false;
+        }
+
+        @Override
+        public boolean isLastTier() {
+            return lastTierCompilation;
+        }
+
+        @Override
+        public TruffleInliningData inliningData() {
+            return inlining;
+        }
+
+        @Override
+        public boolean hasNextTier() {
+            return hasNextTier;
+        }
+
+    }
+
 }

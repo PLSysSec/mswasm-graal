@@ -123,8 +123,7 @@ public final class PureNFAMap {
                     acc.addSet(target.getCharSet());
                     break;
                 default:
-                    CompilerDirectives.transferToInterpreter();
-                    throw new IllegalStateException();
+                    throw CompilerDirectives.shouldNotReachHere();
             }
         }
         return true;

@@ -40,16 +40,16 @@
  */
 package org.graalvm.wasm;
 
+import com.oracle.truffle.api.TruffleFile;
+
 import java.io.IOException;
 import java.nio.charset.Charset;
-
-import com.oracle.truffle.api.TruffleFile;
 
 public final class WasmFileDetector implements TruffleFile.FileTypeDetector {
     @Override
     public String findMimeType(TruffleFile file) throws IOException {
-        if (file.getName() != null && file.getName().endsWith(".wasm")) {
-            return "application/wasm";
+        if (file.getName() != null && file.getName().endsWith(WasmLanguage.WASM_SOURCE_NAME_SUFFIX)) {
+            return WasmLanguage.WASM_MIME_TYPE;
         }
         return null;
     }

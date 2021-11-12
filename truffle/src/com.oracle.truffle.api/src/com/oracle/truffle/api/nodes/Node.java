@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,9 @@
  */
 package com.oracle.truffle.api.nodes;
 
+import static com.oracle.truffle.api.nodes.NodeAccessor.ENGINE;
+import static com.oracle.truffle.api.nodes.NodeAccessor.INSTRUMENT;
+
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -48,7 +51,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -63,8 +65,6 @@ import com.oracle.truffle.api.TruffleLanguage.ContextReference;
 import com.oracle.truffle.api.TruffleLanguage.LanguageReference;
 import com.oracle.truffle.api.TruffleOptions;
 import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.impl.Accessor.InstrumentSupport;
-import com.oracle.truffle.api.nodes.ExecutableNode.ReferenceCache;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
 
@@ -102,7 +102,6 @@ public abstract class Node implements NodeInterface, Cloneable {
     }
 
     /** @since 0.8 or earlier */
-    @SuppressWarnings("deprecation")
     protected Node() {
         CompilerAsserts.neverPartOfCompilation("do not create a Node from compiled code");
         assert NodeClass.get(getClass()) != null; // ensure NodeClass constructor does not throw
@@ -176,8 +175,8 @@ public abstract class Node implements NodeInterface, Cloneable {
     }
 
     /**
-     * Returns <code>true</code> if this node can be adopated by a parent. This method is intended
-     * to be overriden by subclasses. If nodes need to be statically shared that they must not be
+     * Returns <code>true</code> if this node can be adopted by a parent. This method is intended to
+     * be overriden by subclasses. If nodes need to be statically shared that they must not be
      * adoptable, because otherwise the parent reference might cause a memory leak. If a node is not
      * adoptable then then it is guaranteed that the {@link #getParent() parent} pointer remains
      * <code>null</code> at all times, even if the node is tried to be adopted by a parent.
@@ -250,10 +249,7 @@ public abstract class Node implements NodeInterface, Cloneable {
         if (rootNode == null) {
             throw new IllegalStateException("Node is not yet adopted and cannot be updated.");
         }
-        InstrumentSupport support = NodeAccessor.ACCESSOR.instrumentSupport();
-        if (support != null) {
-            support.onNodeInserted(rootNode, node);
-        }
+        INSTRUMENT.onNodeInserted(rootNode, node);
     }
 
     /** @since 0.8 or earlier */
@@ -262,7 +258,6 @@ public abstract class Node implements NodeInterface, Cloneable {
         NodeUtil.adoptChildrenHelper(this);
     }
 
-    @SuppressWarnings("deprecation")
     final void adoptHelper(final Node newChild) {
         assert newChild != null;
         if (newChild == this) {
@@ -280,7 +275,6 @@ public abstract class Node implements NodeInterface, Cloneable {
         return 1 + NodeUtil.adoptChildrenAndCountHelper(this);
     }
 
-    @SuppressWarnings("deprecation")
     int adoptAndCountHelper(Node newChild) {
         assert newChild != null;
         if (newChild == this) {
@@ -416,13 +410,14 @@ public abstract class Node implements NodeInterface, Cloneable {
         return NodeUtil.isReplacementSafe(getParent(), this, newNode);
     }
 
-    @SuppressWarnings("deprecation")
     private void reportReplace(Node oldNode, Node newNode, CharSequence reason) {
         Node node = this;
         while (node != null) {
             boolean consumed = false;
             if (node instanceof ReplaceObserver) {
                 consumed = ((ReplaceObserver) node).nodeReplaced(oldNode, newNode, reason);
+            } else if (node instanceof BytecodeOSRNode) {
+                NodeAccessor.RUNTIME.onOSRNodeReplaced((BytecodeOSRNode) node, oldNode, newNode, reason);
             } else if (node instanceof RootNode) {
                 CallTarget target = ((RootNode) node).getCallTarget();
                 if (target instanceof ReplaceObserver) {
@@ -511,15 +506,40 @@ public abstract class Node implements NodeInterface, Cloneable {
      * @since 0.8 or earlier
      */
     public final RootNode getRootNode() {
-        Node rootNode = this;
-        while (rootNode.getParent() != null) {
-            assert !(rootNode instanceof RootNode) : "root node must not have a parent";
-            rootNode = rootNode.getParent();
+        if (CompilerDirectives.isPartialEvaluationConstant(this)) {
+            return getRootNodeImpl();
+        } else {
+            return getRootBoundary();
         }
-        if (rootNode instanceof RootNode) {
-            return (RootNode) rootNode;
+    }
+
+    @TruffleBoundary
+    private RootNode getRootBoundary() {
+        return getRootNodeImpl();
+    }
+
+    /** Protect against parent cycles and extremely long parent chains. */
+    private static final int PARENT_LIMIT = 100000;
+
+    @ExplodeLoop
+    private RootNode getRootNodeImpl() {
+        Node node = this;
+        Node prev;
+        int parentsVisited = 0;
+        do {
+            if (parentsVisited++ > PARENT_LIMIT) {
+                assert false : "getRootNode() did not terminate in " + PARENT_LIMIT + " iterations.";
+                return null;
+            }
+            prev = node;
+            node = node.parent;
+        } while (node != null);
+
+        if (prev instanceof RootNode) {
+            return (RootNode) prev;
+        } else {
+            return null;
         }
-        return null;
     }
 
     /**
@@ -533,7 +553,7 @@ public abstract class Node implements NodeInterface, Cloneable {
      */
     protected final void reportPolymorphicSpecialize() {
         CompilerAsserts.neverPartOfCompilation();
-        NodeAccessor.ACCESSOR.nodeSupport().reportPolymorphicSpecialize(this);
+        NodeAccessor.RUNTIME.reportPolymorphicSpecialize(this);
     }
 
     /**
@@ -595,7 +615,11 @@ public abstract class Node implements NodeInterface, Cloneable {
         // it is never reset to null, and thus, rootNode is always reachable.
         // GIL: used for nodes that are replace in ASTs that are not yet adopted
         RootNode root = getRootNode();
-        return root == null ? GIL_LOCK : root.lock;
+        if (root == null) {
+            return GIL_LOCK;
+        } else {
+            return root.getLazyLock();
+        }
     }
 
     /**
@@ -612,95 +636,23 @@ public abstract class Node implements NodeInterface, Cloneable {
         return "";
     }
 
-    private static final Map<Class<?>, LanguageReference<?>> UNCACHED_LANGUAGE_REFERENCES = new ConcurrentHashMap<>();
-
     /**
-     * Returns a reference that returns the current language instance. The returned language
-     * reference is intended to be cached in the currently adopted AST. If this node is
-     * {@link #isAdoptable() adoptable} then the method must be invoked after the AST was adopted
-     * otherwise an {@link IllegalStateException} is thrown. The reference lookup decides which
-     * lookup method is the best given the parent {@link ExecutableNode} or {@link RootNode} and the
-     * provided languageClass. It is recommended to use
-     * {@link com.oracle.truffle.api.dsl.CachedLanguage @CachedLanguage} instead whenever possible.
-     * The given language class must not be <code>null</code>. If the given language class is not
-     * known to the current engine then an {@link IllegalArgumentException} is thrown.
-     * <p>
-     * Usage example:
-     *
-     * <pre>
-     * class ExampleNode extends Node {
-     *
-     *     &#64;CompilationFinal private LanguageReference<MyLanguage> reference;
-     *
-     *     void execute() {
-     *         if (reference == null) {
-     *             CompilerDirectives.transferToInterpreterAndInvalidate();
-     *             this.reference = lookupLanguageReference(MyLanguage.class);
-     *         }
-     *         MyLanguage language = this.reference.get();
-     *         // use language
-     *     }
-     * }
-     *
-     * </pre>
-     * <p>
-     * The current language might vary between {@link ExecutableNode#execute(VirtualFrame)
-     * executions} if resources or code was shared between multiple contexts and the node was
-     * inserted into an AST that was not associated with this language. It is not recommended to
-     * cache the language in the AST directly.
-     * <p>
-     * This method is designed for partial evaluation and will reliably return a constant when
-     * called with a class literal and the number of accessed languages does not exceed the limit of
-     * 5 per root executable node. If possible the reference should be cached in the AST in order to
-     * avoid the repeated lookup of the parent executable or root node.
-     *
-     * @see com.oracle.truffle.api.dsl.CachedContext @CachedContext to use the context reference in
-     *      specializations or exported messages.
      * @since 19.0
+     * @deprecated in 21.3, use static final context references instead. See
+     *             {@link LanguageReference} for the new intended usage.
      */
+    @Deprecated
     @SuppressWarnings({"unchecked", "rawtypes"})
+    @TruffleBoundary
     protected final <T extends TruffleLanguage> LanguageReference<T> lookupLanguageReference(Class<T> languageClass) {
         try {
             if (languageClass == null) {
-                CompilerDirectives.transferToInterpreter();
                 throw new NullPointerException();
             }
-            ExecutableNode executableNode = getExecutableNode();
-            if (executableNode != null) {
-                if (executableNode.language != null && executableNode.language.getClass() == languageClass) {
-                    return NodeAccessor.ACCESSOR.engineSupport().getDirectLanguageReference(executableNode.polyglotEngine,
-                                    executableNode.language, languageClass);
-                } else {
-                    ReferenceCache cache = executableNode.lookupReferenceCache(languageClass);
-                    if (cache != null) {
-                        return (LanguageReference<T>) cache.languageReference;
-                    } else {
-                        return NodeAccessor.ACCESSOR.engineSupport().lookupLanguageReference(executableNode.polyglotEngine,
-                                        executableNode.language, languageClass);
-                    }
-                }
-            }
-            return lookupUncachedLanguageReference(languageClass);
+            return ENGINE.createLanguageReference(this, languageClass);
         } catch (Throwable t) {
-            throw NodeAccessor.ACCESSOR.engineSupport().engineToLanguageException(t);
+            throw ENGINE.engineToLanguageException(t);
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    @TruffleBoundary
-    private static <T extends TruffleLanguage<?>> LanguageReference<T> lookupUncachedLanguageReference(Class<T> languageClass) {
-        LanguageReference<?> result = UNCACHED_LANGUAGE_REFERENCES.get(languageClass);
-        if (result == null) {
-            result = new LanguageReference<TruffleLanguage<?>>() {
-                @Override
-                @TruffleBoundary
-                public TruffleLanguage<?> get() {
-                    return NodeAccessor.ACCESSOR.engineSupport().getCurrentLanguage(languageClass);
-                }
-            };
-            UNCACHED_LANGUAGE_REFERENCES.put(languageClass, result);
-        }
-        return (LanguageReference<T>) result;
     }
 
     @ExplodeLoop
@@ -729,110 +681,22 @@ public abstract class Node implements NodeInterface, Cloneable {
     }
 
     /**
-     * Returns a reference that returns the current execution context associated with the given
-     * language. The returned context reference is intended to be cached in the currently adopted
-     * AST. If this node is {@link #isAdoptable() adoptable} then the method must be invoked after
-     * the AST was adopted otherwise an {@link IllegalStateException} is thrown. The reference
-     * lookup decides which lookup method is the best given the parent {@link ExecutableNode} or
-     * {@link RootNode} and the provided languageClass. It is recommended to use
-     * {@link com.oracle.truffle.api.dsl.CachedContext @CachedContext} instead whenever possible.
-     * The given language class must not be null. If the given language class is not known to the
-     * current engine then an {@link IllegalArgumentException} is thrown.
-     * <p>
-     * Usage example:
-     *
-     * <pre>
-     * class ExampleNode extends Node {
-     *
-     *     &#64;CompilationFinal private ContextReference<MyContext> reference;
-     *
-     *     void execute() {
-     *         if (reference == null) {
-     *             CompilerDirectives.transferToInterpreterAndInvalidate();
-     *             this.reference = lookupContextReference(MyLanguage.class);
-     *         }
-     *         MyContext context = this.reference.get();
-     *         // use context
-     *     }
-     * }
-     *
-     * </pre>
-     * <p>
-     * The current context might vary between {@link ExecutableNode#execute(VirtualFrame)
-     * executions} if resources or code is shared between multiple contexts. It is not recommended
-     * to cache the context in the AST directly.
-     * <p>
-     * This method is designed for partial evaluation and will reliably return a constant when
-     * called with a class literal and the number of accessed languages does not exceed the limit of
-     * 5 per root executable node. If possible the reference should be cached in the AST in order to
-     * avoid the repeated lookup of the parent executable or root node.
-     * <p>
-     *
-     * @see com.oracle.truffle.api.dsl.CachedContext @CachedContext to use the context reference in
-     *      specializations or exported messages.
      * @since 19.0
+     * @deprecated in 21.3, use static final context references instead. See
+     *             {@link LanguageReference} for the new intended usage.
      */
+    @Deprecated
     @SuppressWarnings("unchecked")
+    @TruffleBoundary
     protected final <C, T extends TruffleLanguage<C>> ContextReference<C> lookupContextReference(Class<T> languageClass) {
         try {
             if (languageClass == null) {
-                CompilerDirectives.transferToInterpreter();
                 throw new NullPointerException();
             }
-            ExecutableNode executableNode = getExecutableNode();
-            if (executableNode != null) {
-                if (executableNode.language != null && executableNode.language.getClass() == languageClass) {
-                    return NodeAccessor.ACCESSOR.engineSupport().getDirectContextReference(executableNode.polyglotEngine,
-                                    executableNode.language, languageClass);
-                } else {
-                    ReferenceCache cache = executableNode.lookupReferenceCache(languageClass);
-                    if (cache != null) {
-                        return (ContextReference<C>) cache.contextReference;
-                    } else {
-                        return NodeAccessor.ACCESSOR.engineSupport().lookupContextReference(executableNode.polyglotEngine,
-                                        executableNode.language, languageClass);
-                    }
-                }
-            }
-            return lookupUncachedContextReference(languageClass);
+            return ENGINE.createContextReference(this, languageClass);
         } catch (Throwable t) {
-            throw NodeAccessor.ACCESSOR.engineSupport().engineToLanguageException(t);
+            throw ENGINE.engineToLanguageException(t);
         }
-    }
-
-    private static final Map<Class<?>, ContextReference<?>> UNCACHED_CONTEXT_REFERENCES = new ConcurrentHashMap<>();
-
-    /**
-     * Resets the state for native image generation.
-     *
-     * NOTE: this method is called reflectively by downstream projects.
-     */
-    @SuppressWarnings("unused")
-    private static void resetNativeImageState() {
-        assert TruffleOptions.AOT : "Only supported during image generation";
-        UNCACHED_CONTEXT_REFERENCES.clear();
-        UNCACHED_LANGUAGE_REFERENCES.clear();
-    }
-
-    @SuppressWarnings("unchecked")
-    @TruffleBoundary
-    private static <T extends TruffleLanguage<C>, C> ContextReference<C> lookupUncachedContextReference(Class<T> language) {
-        ContextReference<?> result = UNCACHED_CONTEXT_REFERENCES.get(language);
-        if (result == null) {
-            result = new ContextReference<Object>() {
-                @Override
-                @TruffleBoundary
-                public Object get() {
-                    try {
-                        return NodeAccessor.ACCESSOR.engineSupport().getCurrentContext(language);
-                    } catch (Throwable t) {
-                        throw NodeAccessor.ACCESSOR.engineSupport().engineToLanguageException(t);
-                    }
-                }
-            };
-            UNCACHED_CONTEXT_REFERENCES.put(language, result);
-        }
-        return (ContextReference<C>) result;
     }
 
     private static final ReentrantLock GIL_LOCK = new ReentrantLock(false);

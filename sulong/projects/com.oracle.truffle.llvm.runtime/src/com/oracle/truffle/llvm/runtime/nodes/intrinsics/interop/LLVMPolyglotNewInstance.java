@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,11 +29,7 @@
  */
 package com.oracle.truffle.llvm.runtime.nodes.intrinsics.interop;
 
-import com.oracle.truffle.api.CompilerDirectives;
-import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
-import com.oracle.truffle.api.TruffleLanguage.ContextReference;
 import com.oracle.truffle.api.dsl.Cached;
-import com.oracle.truffle.api.dsl.CachedContext;
 import com.oracle.truffle.api.dsl.Fallback;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.Specialization;
@@ -43,20 +39,15 @@ import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.interop.UnsupportedTypeException;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
+import com.oracle.truffle.api.profiles.BranchProfile;
 import com.oracle.truffle.llvm.runtime.CommonNodeFactory;
-import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.LLVMIntrinsic;
-import com.oracle.truffle.llvm.runtime.LLVMContext;
-import com.oracle.truffle.llvm.runtime.LLVMGetStackNode;
-import com.oracle.truffle.llvm.runtime.LLVMLanguage;
 import com.oracle.truffle.llvm.runtime.except.LLVMPolyglotException;
 import com.oracle.truffle.llvm.runtime.interop.LLVMAsForeignNode;
 import com.oracle.truffle.llvm.runtime.interop.LLVMDataEscapeNode;
 import com.oracle.truffle.llvm.runtime.interop.convert.ForeignToLLVM;
 import com.oracle.truffle.llvm.runtime.interop.convert.ForeignToLLVM.ForeignToLLVMType;
-import com.oracle.truffle.llvm.runtime.memory.LLVMStack;
-import com.oracle.truffle.llvm.runtime.memory.LLVMStack.StackPointer;
-import com.oracle.truffle.llvm.runtime.memory.LLVMThreadingStack;
 import com.oracle.truffle.llvm.runtime.nodes.api.LLVMExpressionNode;
+import com.oracle.truffle.llvm.runtime.nodes.intrinsics.llvm.LLVMIntrinsic;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMManagedPointer;
 import com.oracle.truffle.llvm.runtime.types.Type;
 
@@ -78,22 +69,11 @@ public abstract class LLVMPolyglotNewInstance extends LLVMIntrinsic {
         this.foreignNewInstance = InteropLibrary.getFactory().createDispatched(5);
     }
 
-    @CompilationFinal private LLVMThreadingStack threadingStack = null;
-
-    private LLVMThreadingStack getThreadingStack(ContextReference<LLVMContext> context) {
-        if (threadingStack == null) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            threadingStack = context.get().getThreadingStack();
-        }
-        return threadingStack;
-    }
-
     @Specialization
     @ExplodeLoop
     protected Object doNew(VirtualFrame frame, LLVMManagedPointer value,
-                    @CachedContext(LLVMLanguage.class) ContextReference<LLVMContext> ctxRef,
-                    @Cached("create()") LLVMGetStackNode getStack,
-                    @Cached("createForeignToLLVM()") ForeignToLLVM toLLVM) {
+                    @Cached("createForeignToLLVM()") ForeignToLLVM toLLVM,
+                    @Cached BranchProfile exception) {
         Object foreign = asForeign.execute(value);
 
         Object[] evaluatedArgs = new Object[args.length];
@@ -101,29 +81,28 @@ public abstract class LLVMPolyglotNewInstance extends LLVMIntrinsic {
             evaluatedArgs[i] = prepareValuesForEscape[i].executeWithTarget(args[i].executeGeneric(frame));
         }
 
-        LLVMStack stack = getStack.executeWithTarget(getThreadingStack(ctxRef), Thread.currentThread());
         try {
             Object rawValue;
-            try (StackPointer save = stack.newFrame()) {
-                rawValue = foreignNewInstance.instantiate(foreign, evaluatedArgs);
-            }
+            rawValue = foreignNewInstance.instantiate(foreign, evaluatedArgs);
             return toLLVM.executeWithTarget(rawValue);
         } catch (UnsupportedMessageException e) {
-            CompilerDirectives.transferToInterpreter();
-            throw new LLVMPolyglotException(this, "Polyglot value can not be instantiated.");
+            exception.enter();
+            throw new LLVMPolyglotException(this, "Polyglot value cannot be instantiated.");
         } catch (UnsupportedTypeException e) {
-            CompilerDirectives.transferToInterpreter();
+            exception.enter();
             throw new LLVMPolyglotException(this, "Wrong argument type passed to polyglot_new_instance.");
         } catch (ArityException e) {
-            CompilerDirectives.transferToInterpreter();
-            throw new LLVMPolyglotException(this, "Wrong number of arguments passed to polyglot_new_instance, expected %d but got %d.", e.getExpectedArity(), e.getActualArity());
+            exception.enter();
+            throw new LLVMPolyglotException(this, "Wrong number of arguments passed to polyglot_new_instance, expected %d but got %d.", e.getExpectedMinArity(), e.getActualArity());
         }
     }
 
+    /**
+     * @param value @NodeChild
+     * @see LLVMPolyglotNewInstance
+     */
     @Fallback
-    @SuppressWarnings("unused")
     public Object fallback(Object value) {
-        CompilerDirectives.transferToInterpreter();
         throw new LLVMPolyglotException(this, "Non-polyglot value passed to polyglot_new_instance.");
     }
 

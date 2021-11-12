@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -34,12 +34,14 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.regex.Pattern;
 
+import com.oracle.truffle.llvm.tests.Platform;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.junit.Assert;
-import org.junit.BeforeClass;
+import org.junit.Assume;
+import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -47,7 +49,6 @@ import org.junit.rules.ExpectedException;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleFile;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.llvm.runtime.except.LLVMParserException;
 import com.oracle.truffle.llvm.runtime.types.VariableBitWidthType;
 import com.oracle.truffle.llvm.tests.options.TestOptions;
@@ -55,8 +56,8 @@ import com.oracle.truffle.tck.TruffleRunner;
 
 public class AllocationLimitsTest {
 
-    private static final Path TEST_DIR = new File(TestOptions.LL_TEST_SUITE_PATH, "other").toPath();
-    private static final String FILENAME = "O0.bc";
+    private static final Path TEST_DIR = new File(TestOptions.getTestDistribution("SULONG_EMBEDDED_TEST_SUITES"), "other").toPath();
+    private static final String FILENAME = "bitcode-O0.bc";
     public static final BaseMatcher<String> EXCEEDS_LIMIT = new BaseMatcher<String>() {
         private final Pattern compile = Pattern.compile(".*exceeds.*limit.*");
 
@@ -73,7 +74,7 @@ public class AllocationLimitsTest {
 
     @ClassRule public static TruffleRunner.RunWithPolyglotRule runWithPolyglot = new TruffleRunner.RunWithPolyglotRule();
 
-    protected static TruffleObject loadTestBitcodeInternal(String name) {
+    protected static Object loadTestBitcodeInternal(String name) {
         File file = TEST_DIR.resolve(name).resolve(FILENAME).toFile();
         TruffleFile tf = runWithPolyglot.getTruffleTestEnv().getPublicTruffleFile(file.toURI());
         com.oracle.truffle.api.source.Source source;
@@ -83,7 +84,7 @@ public class AllocationLimitsTest {
             throw new AssertionError(ex);
         }
         CallTarget target = runWithPolyglot.getTruffleTestEnv().parsePublic(source);
-        return (TruffleObject) target.call();
+        return target.call();
     }
 
     protected static Value loadTestBitcodeValue(String name) {
@@ -101,8 +102,10 @@ public class AllocationLimitsTest {
 
     public static Value library;
 
-    @BeforeClass
-    public static void setup() {
+    @Before
+    public void setup() {
+        TestOptions.assumeBundledLLVM();
+        Assume.assumeTrue("Skipping linux/amd64 only test", Platform.isLinux() && Platform.isAMD64());
         library = loadTestBitcodeValue("allocation_limits.ll.dir");
     }
 

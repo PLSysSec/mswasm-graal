@@ -154,7 +154,7 @@ public final class InspectorExecutionContext {
         synchronized (this) {
             sh = scriptsHandler;
             if (sh == null) {
-                scriptsHandler = sh = new ScriptsHandler(inspectInternal);
+                scriptsHandler = sh = new ScriptsHandler(env, inspectInternal);
                 attachListener = true;
                 schCounter = 0;
             }
@@ -215,12 +215,16 @@ public final class InspectorExecutionContext {
     }
 
     void setValue(DebugValue debugValue, CallArgument newValue) {
+        debugValue.set(getDebugValue(newValue, debugValue.getSession()));
+    }
+
+    DebugValue getDebugValue(CallArgument newValue, DebuggerSession session) {
         String objectId = newValue.getObjectId();
         if (objectId != null) {
             RemoteObject obj = getRemoteObjectsHandler().getRemote(objectId);
-            debugValue.set(obj.getDebugValue());
+            return obj.getDebugValue();
         } else {
-            debugValue.set(newValue.getPrimitiveValue());
+            return session.createPrimitiveValue(newValue.getPrimitiveValue(), null);
         }
     }
 
@@ -312,16 +316,6 @@ public final class InspectorExecutionContext {
     }
 
     /**
-     * Returns the current debugger session if debugging is on.
-     *
-     * @return the current debugger session, or <code>null</code>.
-     */
-    public DebuggerSession getDebuggerSession() {
-        ScriptsHandler handler = this.scriptsHandler;
-        return (handler != null) ? handler.getDebuggerSession() : null;
-    }
-
-    /**
      * For test purposes only. Do not call from production code.
      */
     public static void resetIDs() {
@@ -334,7 +328,8 @@ public final class InspectorExecutionContext {
         this.roh = null;
         assert scriptsHandler == null;
         synchronized (runPermission) {
-            runPermission[0] = false;
+            runPermission[0] = true;
+            runPermission.notifyAll();
         }
     }
 

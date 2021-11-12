@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -261,12 +261,14 @@ final class AlignedUnsafeArrayTypeWriter extends UnsafeArrayTypeWriter {
 
     @Override
     protected void putS2(long value, Chunk chunk, long offset) {
+        assert TypeConversion.isS2(value);
         UNSAFE.putByte(chunk.data, offset + 0, (byte) (value >> 0));
         UNSAFE.putByte(chunk.data, offset + 1, (byte) (value >> 8));
     }
 
     @Override
     protected void putS4(long value, Chunk chunk, long offset) {
+        assert TypeConversion.isS4(value);
         UNSAFE.putByte(chunk.data, offset + 0, (byte) (value >> 0));
         UNSAFE.putByte(chunk.data, offset + 1, (byte) (value >> 8));
         UNSAFE.putByte(chunk.data, offset + 2, (byte) (value >> 16));

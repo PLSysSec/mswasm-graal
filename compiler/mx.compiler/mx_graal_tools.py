@@ -1,7 +1,7 @@
 #
 # ----------------------------------------------------------------------------------------------------
 #
-# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -28,13 +28,15 @@
 
 from __future__ import print_function
 
-import os, shutil, re
+import os
+import shutil
+import re
+import sys
 from os.path import join, exists
 from argparse import ArgumentParser, REMAINDER
 
 import mx
-
-import sys
+from mx_urlrewrites import rewriteurl
 
 if sys.version_info[0] < 3:
     _long = long # pylint: disable=undefined-variable
@@ -68,14 +70,6 @@ def run_netbeans_app(app_name, env=None, args=None):
         launch.append('-J-Dnetbeans.logger.console=false')
     mx.run(launch+args, env=env)
 
-def netbeans_jdk(appName):
-    v8u20 = mx.VersionSpec("1.8.0_20")
-    v8u40 = mx.VersionSpec("1.8.0_40")
-    v11 = mx.VersionSpec("11") # IGV requires java.xml.bind which has been removed in 11 (JEP320)
-    def _igvJdkVersionCheck(version):
-        return (version < v8u20 or version >= v8u40) and version < v11
-    return mx.get_jdk(_igvJdkVersionCheck, versionDescription='(< 1.8.0u20 or >= 1.8.0u40) and < 11', purpose="running " + appName).home
-
 def igv(args):
     """(obsolete) informs about IGV"""
     mx.warn(
@@ -88,9 +82,12 @@ from the GraalVM EE installation.
 
 def c1visualizer(args):
     """run the C1 Compiler Visualizer"""
+    v8u40 = mx.VersionSpec("1.8.0_40")
+    def _c1vJdkVersionCheck(version):
+        return version >= v8u40 and str(version).startswith('1.8.0')
     env = dict(os.environ)
-    env['jdkhome'] = netbeans_jdk("C1 Visualizer")
-    run_netbeans_app('C1Visualizer', env, args)
+    env['jdkhome'] = mx.get_jdk(_c1vJdkVersionCheck, versionDescription='(1.8 JDK that is >= 1.8.0u40 )', purpose="running C1 Visualizer").home
+    run_netbeans_app('C1Visualizer', env, args() if callable(args) else args)
 
 def hsdis(args, copyToDir=None):
     """download the hsdis library
@@ -114,8 +111,6 @@ def hsdis(args, copyToDir=None):
         r'intel\hsdis-amd64-windows-%s.dll' : '6a388372cdd5fe905c1a26ced614334e405d1f30',
         r'intel/hsdis-amd64-linux-%s.so' : '0d031013db9a80d6c88330c42c983fbfa7053193',
         r'intel/hsdis-amd64-darwin-%s.dylib' : '67f6d23cbebd8998450a88b5bef362171f66f11a',
-        r'hsdis-sparcv9-solaris-%s.so': '970640a9af0bd63641f9063c11275b371a59ee60',
-        r'hsdis-sparcv9-linux-%s.so': '0c375986d727651dee1819308fbbc0de4927d5d9',
         r'hsdis-aarch64-linux-%s.so': 'fcc9b70ac91c00db8a50b0d4345490a68e3743e1',
     }
 
@@ -132,7 +127,7 @@ def hsdis(args, copyToDir=None):
     path = join(_suite.get_output_root(), lib)
     if not exists(path):
         sha1path = path + '.sha1'
-        mx.download_file_with_sha1('hsdis', path, ['https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/hsdis/' + lib.replace(os.sep, '/')], sha1, sha1path, True, True, sources=False)
+        mx.download_file_with_sha1('hsdis', path, [rewriteurl('https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/hsdis/' + lib.replace(os.sep, '/'))], sha1, sha1path, True, True, sources=False)
 
     overwrite = True
     if copyToDir is None:
@@ -166,7 +161,7 @@ def hsdis(args, copyToDir=None):
             except IOError as e:
                 mx.warn('Could not copy {} to {}: {}'.format(path, dest, str(e)))
 
-def hcfdis(args):
+def hcfdis(args, cp=None):
     """disassemble HexCodeFiles embedded in text files
 
     Run a tool over the input files to convert all embedded HexCodeFiles
@@ -178,7 +173,7 @@ def hcfdis(args):
 
     args = parser.parse_args(args)
 
-    path = mx.library('HCFDIS').get_path(resolve=True)
+    path = cp or mx.library('HCFDIS').get_path(resolve=True)
     mx.run_java(['-cp', path, 'com.oracle.max.hcfdis.HexCodeFileDis'] + args.files)
 
     if args.map is not None:

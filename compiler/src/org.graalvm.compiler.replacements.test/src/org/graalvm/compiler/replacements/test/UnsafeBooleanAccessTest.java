@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,6 +27,9 @@ package org.graalvm.compiler.replacements.test;
 import java.lang.reflect.Field;
 
 import org.graalvm.compiler.core.test.GraalCompilerTest;
+import org.graalvm.compiler.serviceprovider.JavaVersionUtil;
+import org.junit.Assume;
+import org.junit.Before;
 import org.junit.Test;
 
 public class UnsafeBooleanAccessTest extends GraalCompilerTest {
@@ -44,6 +47,13 @@ public class UnsafeBooleanAccessTest extends GraalCompilerTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Before
+    public void testJDK() {
+        // Prior to JDK-8250825, C2 does not support reading a short field via an unaligned
+        // Unsafe.getBoolean, so -Xcomp can crash this test.
+        Assume.assumeTrue(JavaVersionUtil.JAVA_SPEC >= 16);
     }
 
     public static boolean testGetBooleanSnippet() {

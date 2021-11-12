@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # The Universal Permissive License (UPL), Version 1.0
@@ -45,7 +45,7 @@ import sys
 import zipfile
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from collections import OrderedDict
-from os.path import exists
+from os.path import exists, isdir, join
 
 import mx
 import mx_benchmark
@@ -90,7 +90,15 @@ class JMHRunnerTruffleBenchmarkSuite(mx_benchmark.JMHRunnerBenchmarkSuite):
         return "truffle"
 
     def extraVmArgs(self):
-        return ['-XX:-UseJVMCIClassLoader'] + super(JMHRunnerTruffleBenchmarkSuite, self).extraVmArgs()
+        extraVmArgs = super(JMHRunnerTruffleBenchmarkSuite, self).extraVmArgs()
+        jdk = mx.get_jdk()
+        if jdk.javaCompliance <= '1.8':
+            extraVmArgs = ['-XX:-UseJVMCIClassLoader'] + extraVmArgs
+        else:
+            extraVmArgs.extend(_open_module_exports_args())
+            # com.oracle.truffle.api.benchmark.InterpreterCallBenchmark$BenchmarkState needs DefaultTruffleRuntime
+            extraVmArgs.append('--add-exports=org.graalvm.truffle/com.oracle.truffle.api.impl=ALL-UNNAMED')
+        return extraVmArgs
 
 mx_benchmark.add_bm_suite(JMHRunnerTruffleBenchmarkSuite())
 #mx_benchmark.add_java_vm(mx_benchmark.DefaultJavaVm("server", "default"), priority=3)
@@ -177,8 +185,29 @@ def _path_args(depNames=None):
             return ['--add-modules=' + ','.join([m.name for m in modules]), '--module-path=' + os.pathsep.join(modulepath), '-cp', os.pathsep.join(classpath)]
     return ['-cp', mx.classpath(depNames)]
 
+def _open_module_exports_args():
+    """
+    Gets the VM args for exporting all Truffle API packages on JDK9 or later.
+    """
+    assert mx.get_jdk().javaCompliance >= '1.9'
+    truffle_api_dist = mx.distribution('TRUFFLE_API')
+    truffle_api_module_name = truffle_api_dist.moduleInfo['name']
+    module_info_open_exports = getattr(truffle_api_dist, 'moduleInfo:open')['exports']
+    args = []
+    for export in module_info_open_exports:
+        if ' to ' in export: # Qualified exports
+            package, targets = export.split(' to ')
+            targets = targets.replace(' ', '')
+        else: # Unqualified exports
+            package = export
+            targets = 'ALL-UNNAMED'
+        args.append('--add-exports=' + truffle_api_module_name + '/' + package + '=' + targets)
+    return args
+
 def _unittest_config_participant(config):
     vmArgs, mainClass, mainClassArgs = config
+    # Disable DefaultRuntime warning
+    vmArgs = vmArgs + ['-Dpolyglot.engine.WarnInterpreterOnly=false']
     jdk = mx.get_jdk(tag='default')
     if jdk.javaCompliance > '1.8':
         # This is required to access jdk.internal.module.Modules which
@@ -222,14 +251,37 @@ def _truffle_gate_runner(args, tasks):
     if jdk.javaCompliance < '9':
         with Task('Truffle Javadoc', tasks) as t:
             if t: javadoc([])
-    with Task('Truffle UnitTests', tasks) as t:
-        if t: unittest(['--suite', 'truffle', '--enable-timing', '--verbose', '--fail-fast'])
-    with Task('Truffle Signature Tests', tasks) as t:
-        if t: sigtest(['--check', 'binary'])
     with Task('File name length check', tasks) as t:
         if t: check_filename_length([])
-    with Task('Check Copyrights', tasks) as t:
-        if t: mx.checkcopyrights(['--primary'])
+    with Task('Truffle Signature Tests', tasks) as t:
+        if t: sigtest(['--check', 'binary'])
+    with Task('Truffle UnitTests', tasks) as t:
+        if t: unittest(list(['--suite', 'truffle', '--enable-timing', '--verbose', '--fail-fast']))
+    if os.getenv('DISABLE_DSL_STATE_BITS_TESTS', 'false').lower() != 'true':
+        with Task('Truffle DSL max state bit tests', tasks) as t:
+            if t:
+                _truffle_gate_state_bitwidth_tests()
+
+# The Truffle DSL specialization state bit width computation is complicated and
+# rarely used as the default maximum bit width of 32 is rarely exceeded. Therefore
+# we rebuild the truffle tests with a number of max state bit width values to
+# force using multiple state fields for the tests. This makes sure the tests
+# do not break for rarely used combination of features and bit widths.
+def _truffle_gate_state_bitwidth_tests():
+    runs = [1, 2, 4, 8, 16, 64]
+    for run_bits in runs:
+        build_args = ['-f', '-p', '--dependencies', 'TRUFFLE_TEST', '--force-javac',
+                      '-A-Atruffle.dsl.StateBitWidth={0}'.format(run_bits)]
+
+        unittest_args = ['--suite', 'truffle', '--enable-timing', '--fail-fast', '-Dtruffle.dsl.StateBitWidth={0}'.format(run_bits),
+                         'com.oracle.truffle.api.dsl.test', 'com.oracle.truffle.api.library.test', 'com.oracle.truffle.sl.test']
+        try:
+            mx.build(build_args)
+            unittest(unittest_args)
+        finally:
+            mx.log('Completed Truffle DSL state bitwidth test. Reproduce with:')
+            mx.log('  mx build {0}'.format(" ".join(build_args)))
+            mx.log('  mx unittest {0}'.format(" ".join(unittest_args)))
 
 mx_gate.add_gate_runner(_suite, _truffle_gate_runner)
 
@@ -282,15 +334,20 @@ def _collect_class_path_entries_by_resource(requiredResources, entries_collector
     """
     def has_resource(dist):
         if dist.isJARDistribution() and exists(dist.path):
-            with zipfile.ZipFile(dist.path, "r") as zf:
+            if isdir(dist.path):
                 for requiredResource in requiredResources:
-                    try:
-                        zf.getinfo(requiredResource)
-                    except KeyError:
-                        pass
-                    else:
+                    if exists(join(dist.path, requiredResource)):
                         return True
-                return False
+            else:
+                with zipfile.ZipFile(dist.path, "r") as zf:
+                    for requiredResource in requiredResources:
+                        try:
+                            zf.getinfo(requiredResource)
+                        except KeyError:
+                            pass
+                        else:
+                            return True
+                    return False
         else:
             return False
     _collect_class_path_entries(has_resource, entries_collector, properties_collector)
@@ -388,11 +445,13 @@ class TruffleArchiveParticipant:
         self.services = services
         self.arc = arc
 
-    def __add__(self, arcname, contents): # pylint: disable=unexpected-special-method-signature
+    def __process__(self, arcname, contents_supplier, is_source):
+        if is_source:
+            return False
         m = TruffleArchiveParticipant.providersRE.match(arcname)
         if m:
             provider = m.group(2)
-            for service in _decode(contents).strip().split(os.linesep):
+            for service in _decode(contents_supplier()).strip().split(os.linesep):
                 assert service
                 version = m.group(1)
                 if version is None:
@@ -425,10 +484,10 @@ def mx_post_parse_cmd_line(opts):
             if _uses_truffle_dsl_processor(d):
                 d.set_archiveparticipant(TruffleArchiveParticipant())
 
-_debuggertestHelpSuffix = """
+_tckHelpSuffix = """
     TCK options:
 
-      --tck-configuration                  configuration {default|debugger}
+      --tck-configuration                  configuration {compiler|debugger|default}
           compile                          executes TCK tests with immediate comilation
           debugger                         executes TCK tests with enabled debugalot instrument
           default                          executes TCK tests
@@ -484,7 +543,7 @@ def execute_tck(graalvm_home, mode='default', language_filter=None, values_filte
 def _tck(args):
     """runs TCK tests"""
 
-    parser = ArgumentParser(prog="mx tck", description="run the TCK tests", formatter_class=RawDescriptionHelpFormatter, epilog=_debuggertestHelpSuffix)
+    parser = ArgumentParser(prog="mx tck", description="run the TCK tests", formatter_class=RawDescriptionHelpFormatter, epilog=_tckHelpSuffix)
     parser.add_argument("--tck-configuration", help="TCK configuration", choices=["compile", "debugger", "default"], default="default")
     parsed_args, args = parser.parse_known_args(args)
     tckConfiguration = parsed_args.tck_configuration
@@ -515,11 +574,18 @@ def _tck(args):
     elif tckConfiguration == "compile":
         if not _is_graalvm(mx.get_jdk()):
             mx.abort("The 'compile' TCK configuration requires graalvm execution, run with --java-home=<path_to_graalvm>.")
-        unittest(unitTestOptions + ["--"] + jvmOptions + ["-Dgraal.TruffleCompileImmediately=true", "-Dgraal.TruffleCompilationExceptionsAreThrown=true"] + tests)
+        compileOptions = [
+            "-Dpolyglot.engine.AllowExperimentalOptions=true",
+            "-Dpolyglot.engine.Mode=latency",
+            "-Dpolyglot.engine.CompilationFailureAction=Throw",
+            "-Dpolyglot.engine.CompileImmediately=true",
+            "-Dpolyglot.engine.BackgroundCompilation=false",
+        ]
+        unittest(unitTestOptions + ["--"] + jvmOptions + compileOptions + tests)
 
 
 mx.update_commands(_suite, {
-    'tck': [_tck, "[--tck-configuration {default|debugger}] [unittest options] [--] [VM options] [filters...]", _debuggertestHelpSuffix]
+    'tck': [_tck, "[--tck-configuration {compile|debugger|default}] [unittest options] [--] [VM options] [filters...]", _tckHelpSuffix]
 })
 
 
@@ -542,7 +608,7 @@ def check_filename_length(args):
 
 COPYRIGHT_HEADER_UPL = """\
 /*
- * Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -597,7 +663,7 @@ def create_sl_parser(args=None, out=None):
     """create the SimpleLanguage parser using antlr"""
     create_parser("com.oracle.truffle.sl", "com.oracle.truffle.sl.parser", "SimpleLanguage", COPYRIGHT_HEADER_UPL, args, out)
 
-def create_parser(grammar_project, grammar_package, grammar_name, copyright_template, args=None, out=None):
+def create_parser(grammar_project, grammar_package, grammar_name, copyright_template, args=None, out=None, postprocess=None):
     """create the DSL expression parser using antlr"""
     grammar_dir = os.path.join(mx.project(grammar_project).source_dirs()[0], *grammar_package.split(".")) + os.path.sep
     mx.run_java(mx.get_runtime_jvm_args(['ANTLR4_COMPLETE']) + ["org.antlr.v4.Tool", "-package", grammar_package, "-no-listener"] + args + [grammar_dir + grammar_name + ".g4"], out=out)
@@ -613,6 +679,9 @@ def create_parser(grammar_project, grammar_package, grammar_name, copyright_temp
         content = PTRN_TOKEN_CAST.sub('_errHandler.recoverInline(this)', content)
         # add copyright header
         content = copyright_template.format(content)
+        # user provided post-processing hook:
+        if postprocess is not None:
+            content = postprocess(content)
         with open(filename, 'w') as content_file:
             content_file.write(content)
 
@@ -635,10 +704,10 @@ class LibffiBuilderProject(mx.AbstractNativeProject, mx_native.NativeDependency)
         self.out_dir = self.get_output_root()
         if mx.get_os() == 'windows':
             self.delegate = mx_native.DefaultNativeProject(suite, name, subDir, [], [], None,
-                                                           mx.join(self.out_dir, 'libffi-3.2.1'),
+                                                           mx.join(self.out_dir, 'libffi-3.3'),
                                                            'static_lib',
                                                            deliverable='ffi',
-                                                           cflags=['-MD', '-O2'])
+                                                           cflags=['-MD', '-O2', '-DFFI_BUILDING_DLL'])
             self.delegate._source = dict(tree=['include',
                                                'src',
                                                mx.join('src', 'x86')],
@@ -647,12 +716,11 @@ class LibffiBuilderProject(mx.AbstractNativeProject, mx_native.NativeDependency)
                                                        mx.join('src', 'fficonfig.h'),
                                                        mx.join('src', 'ffi_common.h')],
                                                 '.c': [mx.join('src', 'closures.c'),
-                                                       mx.join('src', 'java_raw_api.c'),
                                                        mx.join('src', 'prep_cif.c'),
                                                        mx.join('src', 'raw_api.c'),
                                                        mx.join('src', 'types.c'),
-                                                       mx.join('src', 'x86', 'ffi.c')],
-                                                '.S': [mx.join('src', 'x86', 'win64.S')]})
+                                                       mx.join('src', 'x86', 'ffiw64.c')],
+                                                '.S': [mx.join('src', 'x86', 'win64_intel.S')]})
         else:
             class LibtoolNativeProject(mx.NativeProject,  # pylint: disable=too-many-ancestors
                                        mx_native.NativeDependency):
@@ -672,7 +740,7 @@ class LibffiBuilderProject(mx.AbstractNativeProject, mx_native.NativeDependency)
                                                   'include/ffi.h',
                                                   'include/ffitarget.h'],
                                                  mx.join(self.out_dir, 'libffi-build'),
-                                                 mx.join(self.out_dir, 'libffi-3.2.1'))
+                                                 mx.join(self.out_dir, 'libffi-3.3'))
             self.delegate.buildEnv = dict(
                 SOURCES=mx.basename(self.delegate.dir),
                 OUTPUT=mx.basename(self.delegate.getOutput()),
@@ -683,12 +751,17 @@ class LibffiBuilderProject(mx.AbstractNativeProject, mx_native.NativeDependency)
                     'CFLAGS="{}"'.format(' '.join(
                         ['-g', '-O3'] + (['-m64'] if mx.get_os() == 'solaris' else [])
                     )),
+                    'CPPFLAGS="-DNO_JAVA_RAW_API"',
                 ])
             )
 
-        self.buildDependencies = self.delegate.buildDependencies
         self.include_dirs = self.delegate.include_dirs
         self.libs = self.delegate.libs
+
+    def resolveDeps(self):
+        super(LibffiBuilderProject, self).resolveDeps()
+        self.delegate.resolveDeps()
+        self.buildDependencies += self.delegate.buildDependencies
 
     @property
     def sources(self):
@@ -743,8 +816,8 @@ class LibffiBuildTask(mx.AbstractNativeBuildTask):
         mx.Extractor.create(self.subject.sources.get_path(False)).extract(self.subject.out_dir)
 
         mx.log('Applying patches...')
-        git_apply = ['git', 'apply', '--whitespace=nowarn', '--directory',
-                     os.path.relpath(self.subject.delegate.dir, self.subject.suite.vc_dir).replace(os.sep, '/')]
+        git_apply = ['git', 'apply', '--whitespace=nowarn', '--unsafe-paths', '--directory',
+                     os.path.relpath(self.subject.delegate.dir, self.subject.suite.vc_dir)]
         for patch in self.subject.patches:
             mx.run(git_apply + [patch], cwd=self.subject.suite.vc_dir)
 
@@ -771,6 +844,7 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJreComponent(
         'truffle:TRUFFLE_API',
         'truffle:LOCATOR',
     ],
+    stability="supported",
 ))
 
 
@@ -782,7 +856,8 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVMSvmMacro(
     license_files=[],
     third_party_license_files=[],
     dependencies=['Truffle'],
-    support_distributions=['truffle:TRUFFLE_GRAALVM_SUPPORT']
+    support_distributions=['truffle:TRUFFLE_GRAALVM_SUPPORT'],
+    stability="supported",
 ))
 
 
@@ -794,11 +869,11 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmLanguage(
     license_files=[],
     third_party_license_files=[],
     dependencies=['Truffle'],
-    truffle_jars=['truffle:TRUFFLE_NFI'],
+    truffle_jars=['truffle:TRUFFLE_NFI', 'truffle:TRUFFLE_NFI_LIBFFI'],
     support_distributions=['truffle:TRUFFLE_NFI_GRAALVM_SUPPORT'],
-    support_headers_distributions=['truffle:TRUFFLE_NFI_GRAALVM_HEADERS_SUPPORT'],
     support_libraries_distributions=['truffle:TRUFFLE_NFI_NATIVE_GRAALVM_SUPPORT'],
     installable=False,
+    stability="supported",
 ))
 
 
@@ -807,3 +882,5 @@ mx.update_commands(_suite, {
     'create-dsl-parser' : [create_dsl_parser, "create the DSL expression parser using antlr"],
     'create-sl-parser' : [create_sl_parser, "create the SimpleLanguage parser using antlr"],
 })
+
+mx_gate.add_jacoco_includes(['org.graalvm.*', 'com.oracle.truffle.*'])

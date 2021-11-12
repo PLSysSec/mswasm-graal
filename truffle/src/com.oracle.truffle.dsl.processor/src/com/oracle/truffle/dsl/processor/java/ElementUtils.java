@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -48,9 +48,9 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -66,7 +66,6 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
@@ -84,8 +83,8 @@ import com.oracle.truffle.dsl.processor.CompileErrorException;
 import com.oracle.truffle.dsl.processor.ProcessorContext;
 import com.oracle.truffle.dsl.processor.java.model.CodeAnnotationMirror;
 import com.oracle.truffle.dsl.processor.java.model.CodeTypeMirror;
-import com.oracle.truffle.dsl.processor.java.model.GeneratedElement;
 import com.oracle.truffle.dsl.processor.java.model.CodeTypeMirror.DeclaredCodeTypeMirror;
+import com.oracle.truffle.dsl.processor.java.model.GeneratedElement;
 
 /**
  * THIS IS NOT PUBLIC API.
@@ -186,6 +185,16 @@ public class ElementUtils {
         List<? extends ExecutableElement> elements = ElementFilter.methodsIn(type.asElement().getEnclosedElements());
         for (ExecutableElement executableElement : elements) {
             if (executableElement.getSimpleName().toString().equals(name) && !isDeprecated(executableElement)) {
+                return executableElement;
+            }
+        }
+        return null;
+    }
+
+    public static ExecutableElement findExecutableElement(DeclaredType type, String name, int argumentCount) {
+        List<? extends ExecutableElement> elements = ElementFilter.methodsIn(type.asElement().getEnclosedElements());
+        for (ExecutableElement executableElement : elements) {
+            if (executableElement.getParameters().size() == argumentCount && executableElement.getSimpleName().toString().equals(name) && !isDeprecated(executableElement)) {
                 return executableElement;
             }
         }
@@ -722,6 +731,19 @@ public class ElementUtils {
         return mirror != null && mirror.getKind().isPrimitive();
     }
 
+    public static boolean isFinal(TypeMirror mirror) {
+        if (isPrimitive(mirror) || isVoid(mirror)) {
+            return true;
+        }
+        if (mirror.getKind() == TypeKind.DECLARED) {
+            Element element = ((DeclaredType) mirror).asElement();
+            if (element.getKind().isClass() && element.getModifiers().contains(Modifier.FINAL)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static List<String> getQualifiedSuperTypeNames(TypeElement element) {
         List<TypeElement> types = getSuperTypes(element);
         List<String> qualifiedNames = new ArrayList<>();
@@ -1210,6 +1232,29 @@ public class ElementUtils {
         return superMethods;
     }
 
+    /**
+     * Determines whether {@code declaringElement} or any of its direct super types override a
+     * default interface method.
+     * <p>
+     * Any declaration of the given method and signature in the direct super type hierarchy - even
+     * if it is abstract - is considered to override the default method.
+     *
+     * @param declaringElement the type to check
+     * @param name the name of the default interface method
+     * @param params the signature of the method
+     * @return true if any the default method is overridden
+     */
+    public static boolean isDefaultMethodOverridden(TypeElement declaringElement, String name, TypeMirror... params) {
+        TypeElement element = declaringElement;
+        while (element != null) {
+            if (getDeclaredMethod(element, name, params) != null) {
+                return true;
+            }
+            element = getSuperType(element);
+        }
+        return false;
+    }
+
     public static boolean typeEquals(TypeMirror type1, TypeMirror type2) {
         if (type1 == type2) {
             return true;
@@ -1324,6 +1369,14 @@ public class ElementUtils {
         }
 
         return false;
+    }
+
+    public static void setFinal(Set<Modifier> modifiers, boolean enabled) {
+        if (enabled) {
+            modifiers.add(Modifier.FINAL);
+        } else {
+            modifiers.remove(Modifier.FINAL);
+        }
     }
 
     public static void setVisibility(Set<Modifier> modifiers, Modifier visibility) {
@@ -1454,18 +1507,31 @@ public class ElementUtils {
             return false;
         } else if (element1.getKind() != element2.getKind()) {
             return false;
-        } else if (element1 instanceof VariableElement) {
-            return variableEquals((VariableElement) element1, (VariableElement) element2);
-        } else if (element1 instanceof ExecutableElement) {
-            return executableEquals((ExecutableElement) element1, (ExecutableElement) element2);
-        } else if (element1 instanceof TypeElement) {
-            return typeEquals(element1.asType(), element2.asType());
-        } else if (element1 instanceof PackageElement) {
-            return element1.getSimpleName().equals(element2.getSimpleName());
-        } else if (element1 instanceof TypeParameterElement) {
-            return element1.getSimpleName().toString().equals(element2.getSimpleName().toString());
-        } else {
-            throw new AssertionError("unsupported element type");
+        }
+        switch (element1.getKind()) {
+            case FIELD:
+            case ENUM_CONSTANT:
+            case PARAMETER:
+            case LOCAL_VARIABLE:
+            case EXCEPTION_PARAMETER:
+            case RESOURCE_VARIABLE:
+                return variableEquals((VariableElement) element1, (VariableElement) element2);
+            case CONSTRUCTOR:
+            case METHOD:
+            case INSTANCE_INIT:
+            case STATIC_INIT:
+                return executableEquals((ExecutableElement) element1, (ExecutableElement) element2);
+            case CLASS:
+            case ENUM:
+            case INTERFACE:
+            case ANNOTATION_TYPE:
+                return typeEquals(element1.asType(), element2.asType());
+            case PACKAGE:
+                return ((PackageElement) element1).getQualifiedName().equals(((PackageElement) element2).getQualifiedName());
+            case TYPE_PARAMETER:
+                return element1.getSimpleName().toString().equals(element2.getSimpleName().toString());
+            default:
+                throw new AssertionError("unsupported element type");
         }
     }
 
@@ -1507,20 +1573,21 @@ public class ElementUtils {
     }
 
     public static List<TypeMirror> uniqueSortedTypes(Collection<TypeMirror> types, boolean reverse) {
+        return sortTypes(new ArrayList<>(uniqueTypes(types)), reverse);
+    }
+
+    @SuppressWarnings("cast")
+    public static Collection<TypeMirror> uniqueTypes(Collection<TypeMirror> types) {
         if (types.isEmpty()) {
-            return new ArrayList<>(0);
+            return types;
         } else if (types.size() <= 1) {
-            if (types instanceof List) {
-                return (List<TypeMirror>) types;
-            } else {
-                return new ArrayList<>(types);
-            }
+            return types;
         }
-        Map<String, TypeMirror> sourceTypes = new HashMap<>();
+        Map<String, TypeMirror> uniqueTypeMap = new LinkedHashMap<>();
         for (TypeMirror type : types) {
-            sourceTypes.put(ElementUtils.getUniqueIdentifier(type), type);
+            uniqueTypeMap.put(ElementUtils.getUniqueIdentifier(type), type);
         }
-        return sortTypes(new ArrayList<>(sourceTypes.values()), reverse);
+        return uniqueTypeMap.values();
     }
 
     public static int compareMethod(ExecutableElement method1, ExecutableElement method2) {

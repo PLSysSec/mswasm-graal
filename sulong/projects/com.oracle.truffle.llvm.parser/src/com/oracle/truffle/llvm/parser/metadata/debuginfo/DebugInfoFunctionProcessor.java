@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,16 +29,13 @@
  */
 package com.oracle.truffle.llvm.parser.metadata.debuginfo;
 
-import static com.oracle.truffle.llvm.parser.metadata.debuginfo.DebugInfoCache.getDebugInfo;
-
-import java.util.List;
-
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.llvm.parser.metadata.MDBaseNode;
 import com.oracle.truffle.llvm.parser.metadata.MDExpression;
 import com.oracle.truffle.llvm.parser.metadata.MDLocalVariable;
 import com.oracle.truffle.llvm.parser.metadata.MDLocation;
+import com.oracle.truffle.llvm.parser.metadata.MDNode;
 import com.oracle.truffle.llvm.parser.metadata.MDValue;
 import com.oracle.truffle.llvm.parser.metadata.MetadataSymbol;
 import com.oracle.truffle.llvm.parser.metadata.MetadataVisitor;
@@ -55,12 +52,16 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.DebugTrapInstru
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.Instruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.VoidCallInstruction;
 import com.oracle.truffle.llvm.parser.nodes.LLVMSymbolReadResolver;
-import com.oracle.truffle.llvm.runtime.LLVMContext;
 import com.oracle.truffle.llvm.runtime.debug.scope.LLVMSourceLocation;
 import com.oracle.truffle.llvm.runtime.debug.scope.LLVMSourceSymbol;
 import com.oracle.truffle.llvm.runtime.debug.type.LLVMSourceFunctionType;
 import com.oracle.truffle.llvm.runtime.debug.type.LLVMSourceType;
 import com.oracle.truffle.llvm.runtime.types.MetaType;
+
+import java.util.List;
+
+import static com.oracle.truffle.llvm.parser.metadata.debuginfo.DebugInfoCache.getDebugInfo;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.DbgNoaliasScopeDeclInstruction;
 
 public final class DebugInfoFunctionProcessor {
 
@@ -91,8 +92,8 @@ public final class DebugInfoFunctionProcessor {
         this.cache = cache;
     }
 
-    public void process(FunctionDefinition function, IRScope scope, Source bitcodeSource, LLVMContext context) {
-        ImportsProcessor.process(scope.getMetadata(), context, cache);
+    public void process(FunctionDefinition function, IRScope scope, Source bitcodeSource) {
+        ImportsProcessor.process(scope.getMetadata(), cache);
         initSourceFunction(function, bitcodeSource);
 
         for (InstructionBlock block : function.getBlocks()) {
@@ -181,6 +182,9 @@ public final class DebugInfoFunctionProcessor {
 
                 case LLVM_DEBUGTRAP_NAME:
                     return visitDebugTrap(call);
+
+                case "llvm.experimental.noalias.scope.decl":
+                    return handleNoaliasScopeDecl(call);
             }
         }
 
@@ -210,31 +214,41 @@ public final class DebugInfoFunctionProcessor {
          * The call target is actually an LLVM bitcode debugging metadata call, so we should attach
          * argument information to the corresponding function.
          */
-        try {
-            if (LLVM_DBG_VALUE_NAME.equals(((FunctionDeclaration) callTarget).getName())) {
-                FunctionParameter p = (FunctionParameter) ((MDValue) ((MetadataSymbol) call.getArguments()[LLVM_DBG_INTRINSICS_VALUE_ARGINDEX]).getNode()).getValue();
-                MDLocalVariable v = (MDLocalVariable) ((MetadataSymbol) call.getArguments()[mdLocalArgIndex]).getNode();
-                MDExpression e = (MDExpression) ((MetadataSymbol) call.getArguments()[mdExprArgIndex]).getNode();
-                ValueFragment f = ValueFragment.parse(e);
-                if (!f.isComplete()) {
-                    long sourceArgIndex = v.getArg();
-
-                    if (Long.compareUnsigned(sourceArgIndex, Integer.MAX_VALUE) > 0) {
-                        throw new IndexOutOfBoundsException(String.format("Source argument index (%s) is out of integer range", Long.toUnsignedString(sourceArgIndex)));
-                    }
-
-                    /*
-                     * Attach the argument info to the source function type: sourceArgIndex needs to
-                     * be decremented by 1 because the 0th index belongs to the return type.
-                     */
-                    function.getSourceFunction().getSourceType().attachSourceArgumentInformation(p.getArgIndex(), (int) sourceArgIndex - 1, f.getOffset(), f.getLength());
-                }
+        if (LLVM_DBG_VALUE_NAME.equals(((FunctionDeclaration) callTarget).getName())) {
+            SymbolImpl intrinsicValueArg = call.getArguments()[LLVM_DBG_INTRINSICS_VALUE_ARGINDEX];
+            SymbolImpl localArg = call.getArguments()[mdLocalArgIndex];
+            SymbolImpl exprArg = call.getArguments()[mdExprArgIndex];
+            if (!(intrinsicValueArg instanceof MetadataSymbol && localArg instanceof MetadataSymbol && exprArg instanceof MetadataSymbol)) {
+                return;
             }
-        } catch (ClassCastException ignored) {
-            /*
-             * Ignore class cast exceptions since we're looking for that particular exact sequence
-             * of types.
-             */
+            MDBaseNode intrinsicValueNode = ((MetadataSymbol) intrinsicValueArg).getNode();
+            MDBaseNode localNode = ((MetadataSymbol) localArg).getNode();
+            MDBaseNode exprNode = ((MetadataSymbol) exprArg).getNode();
+            if (!(intrinsicValueNode instanceof MDValue && localNode instanceof MDLocalVariable && exprNode instanceof MDExpression)) {
+                return;
+            }
+            SymbolImpl intrinsicValue = ((MDValue) intrinsicValueNode).getValue();
+            MDLocalVariable local = (MDLocalVariable) localNode;
+            MDExpression expr = (MDExpression) exprNode;
+            if (!(intrinsicValue instanceof FunctionParameter)) {
+                return;
+            }
+            FunctionParameter parameter = (FunctionParameter) intrinsicValue;
+
+            ValueFragment fragment = ValueFragment.parse(expr);
+            if (!fragment.isComplete()) {
+                long sourceArgIndex = local.getArg();
+
+                if (Long.compareUnsigned(sourceArgIndex, Integer.MAX_VALUE) > 0) {
+                    throw new IndexOutOfBoundsException(String.format("Source argument index (%s) is out of integer range", Long.toUnsignedString(sourceArgIndex)));
+                }
+
+                /*
+                 * Attach the argument info to the source function type: sourceArgIndex needs to be
+                 * decremented by 1 because the 0th index belongs to the return type.
+                 */
+                function.getSourceFunction().getSourceType().attachSourceArgumentInformation(parameter.getArgIndex(), (int) sourceArgIndex - 1, fragment.getOffset(), fragment.getLength());
+            }
         }
     }
 
@@ -251,6 +265,12 @@ public final class DebugInfoFunctionProcessor {
         }
 
         return null;
+    }
+
+    private static Instruction handleNoaliasScopeDecl(VoidCallInstruction call) {
+        SymbolImpl value = getArg(call, 0);
+        MDNode node = (MDNode) ((MetadataSymbol) value).getNode();
+        return new DbgNoaliasScopeDeclInstruction(node);
     }
 
     private Instruction handleDebugIntrinsic(FunctionDefinition function, VoidCallInstruction call, boolean isDeclaration) {
@@ -297,9 +317,7 @@ public final class DebugInfoFunctionProcessor {
         }
 
         if (isDeclaration) {
-            final DbgDeclareInstruction dbgDeclare = new DbgDeclareInstruction(value, variable, expression);
-            variable.addDeclaration(dbgDeclare);
-            return dbgDeclare;
+            return new DbgDeclareInstruction(value, variable, expression);
 
         } else {
             long index = 0;
@@ -310,9 +328,7 @@ public final class DebugInfoFunctionProcessor {
                     index = l;
                 }
             }
-            final DbgValueInstruction dbgValue = new DbgValueInstruction(value, variable, index, expression);
-            variable.addValue(dbgValue);
-            return dbgValue;
+            return new DbgValueInstruction(value, variable, index, expression);
         }
     }
 

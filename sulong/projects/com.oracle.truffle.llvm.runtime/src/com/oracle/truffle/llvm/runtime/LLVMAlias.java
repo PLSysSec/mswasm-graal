@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,19 +29,18 @@
  */
 package com.oracle.truffle.llvm.runtime;
 
-import org.graalvm.collections.EconomicSet;
-import org.graalvm.collections.Equivalence;
-
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.llvm.runtime.except.LLVMLinkerException;
 import com.oracle.truffle.llvm.runtime.global.LLVMGlobal;
+import org.graalvm.collections.EconomicSet;
+import org.graalvm.collections.Equivalence;
 
 public class LLVMAlias extends LLVMSymbol {
 
     @CompilationFinal private LLVMSymbol target;
 
-    public LLVMAlias(ExternalLibrary library, String name, LLVMSymbol target) {
-        super(name, library, LLVMSymbol.INVALID_ID, LLVMSymbol.INVALID_ID);
+    public LLVMAlias(String name, LLVMSymbol target, boolean exported) {
+        super(name, IDGenerater.INVALID_ID, LLVMSymbol.INVALID_INDEX, exported, false);
         setTarget(target);
     }
 
@@ -55,11 +54,6 @@ public class LLVMAlias extends LLVMSymbol {
             EconomicSet<LLVMAlias> visited = EconomicSet.create(Equivalence.IDENTITY);
             checkForCycle(this, visited);
         }
-    }
-
-    @Override
-    public boolean isDefined() {
-        return true;
     }
 
     @Override
@@ -100,5 +94,26 @@ public class LLVMAlias extends LLVMSymbol {
         if (alias.getTarget() instanceof LLVMAlias) {
             checkForCycle((LLVMAlias) alias.getTarget(), visited);
         }
+    }
+
+    public static LLVMSymbol resolveAlias(LLVMSymbol symbol) {
+        if (symbol == null) {
+            return null;
+        }
+        LLVMSymbol tmp = symbol;
+        while (tmp.isAlias()) {
+            tmp = ((LLVMAlias) tmp).getTarget();
+        }
+        return tmp;
+    }
+
+    @Override
+    public boolean isElemPtrExpression() {
+        return target.isElemPtrExpression();
+    }
+
+    @Override
+    public LLVMElemPtrSymbol asElemPtrExpression() {
+        return target.asElemPtrExpression();
     }
 }

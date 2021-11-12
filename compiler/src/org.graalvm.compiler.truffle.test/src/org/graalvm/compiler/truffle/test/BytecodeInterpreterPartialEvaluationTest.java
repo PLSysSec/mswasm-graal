@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,7 +40,6 @@ import com.oracle.truffle.api.CompilerAsserts;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlot;
 import com.oracle.truffle.api.frame.FrameSlotKind;
@@ -257,13 +256,13 @@ public class BytecodeInterpreterPartialEvaluationTest extends PartialEvaluationT
     }
 
     private static void assertReturns42(RootNode program) {
-        Object result = Truffle.getRuntime().createCallTarget(program).call();
+        Object result = program.getCallTarget().call();
         Assert.assertEquals(Integer.valueOf(42), result);
     }
 
     private void assertPartialEvalEqualsAndRunsCorrect(RootNode program) {
         assertReturns42(program);
-        assertPartialEvalEquals("constant42", program);
+        assertPartialEvalEquals(BytecodeInterpreterPartialEvaluationTest::constant42, program);
     }
 
     @Test
@@ -609,7 +608,7 @@ public class BytecodeInterpreterPartialEvaluationTest extends PartialEvaluationT
             times[i] = duration;
             Map<MetricKey, Long> metrics = lastDebug.getMetricsSnapshot();
             List<Map.Entry<MetricKey, Long>> entries = new ArrayList<>(metrics.entrySet());
-            entries.sort((o1, o2) -> ((int) (o2.getValue() - o1.getValue())));
+            entries.sort((o1, o2) -> (o2.getValue().compareTo(o1.getValue())));
             int printed = 0;
             Formatter buf = new Formatter();
             for (Map.Entry<MetricKey, Long> e : entries) {
@@ -647,8 +646,8 @@ public class BytecodeInterpreterPartialEvaluationTest extends PartialEvaluationT
     }
 
     @Override
-    protected OptionValues getOptions() {
-        return new OptionValues(super.getOptions(), DebugOptions.Count, "", DebugOptions.Time, "");
+    protected OptionValues getGraalOptions() {
+        return new OptionValues(super.getGraalOptions(), DebugOptions.Count, "", DebugOptions.Time, "");
     }
 
     public abstract static class Inst {

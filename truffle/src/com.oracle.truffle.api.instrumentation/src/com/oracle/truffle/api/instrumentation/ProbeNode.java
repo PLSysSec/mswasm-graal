@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -334,7 +334,7 @@ public final class ProbeNode extends Node {
     WrapperNode findWrapper() throws AssertionError {
         Node parent = getParent();
         if (!(parent instanceof WrapperNode)) {
-            CompilerDirectives.transferToInterpreter();
+            CompilerDirectives.transferToInterpreterAndInvalidate();
             if (parent == null) {
                 throw new AssertionError("Probe node disconnected from AST.");
             } else {
@@ -371,22 +371,28 @@ public final class ProbeNode extends Node {
             if (localVersion != null && localVersion.isValid()) {
                 return this.chain;
             }
-            nextChain = handler.createBindings(frame, ProbeNode.this);
-            if (nextChain == null) {
-                // chain is null -> remove wrapper;
-                // Note: never set child nodes to null, can cause races
-                if (retiredNodeReference == null) {
-                    InstrumentationHandler.removeWrapper(ProbeNode.this);
-                    return null;
+            EventBinding.Source<?>[] executionBindingsSnapshot;
+            do {
+                executionBindingsSnapshot = handler.getExecutionBindingsSnapshot();
+                nextChain = handler.createBindings(frame, ProbeNode.this, executionBindingsSnapshot);
+                if (nextChain == null) {
+                    // chain is null -> remove wrapper;
+                    // Note: never set child nodes to null, can cause races
+                    if (retiredNodeReference == null) {
+                        InstrumentationHandler.removeWrapper(ProbeNode.this);
+                        return null;
+                    } else {
+                        oldChain = this.chain;
+                        this.chain = null;
+                    }
                 } else {
                     oldChain = this.chain;
-                    this.chain = null;
+                    this.chain = insert(nextChain);
                 }
-            } else {
-                oldChain = this.chain;
-                this.chain = insert(nextChain);
-            }
-            this.version = Truffle.getRuntime().createAssumption("Instruments unchanged");
+                this.version = Truffle.getRuntime().createAssumption("Instruments unchanged");
+            } while (executionBindingsSnapshot != handler.getExecutionBindingsSnapshot());
+
+            assert context.validEventContextOnLazyUpdate();
         } finally {
             lock.unlock();
         }
@@ -621,15 +627,6 @@ public final class ProbeNode extends Node {
                 throw new IllegalStateException(String.format("Returned EventNode %s was already adopted by another AST.", eventNode));
             }
         } catch (Throwable t) {
-            if (t instanceof InstrumentException) {
-                CompilerDirectives.transferToInterpreter();
-                throw new IllegalStateException(
-                                String.format("Error propagation is not supported in %s.create(%s). "//
-                                                + "Errors propagated in this method may result in an AST that never stabilizes. "//
-                                                + "Propagate the error in one of the execution event node events like onEnter, onInputValue, onReturn or onReturnExceptional to resolve this problem.",
-                                                ExecutionEventNodeFactory.class.getSimpleName(),
-                                                EventContext.class.getSimpleName()));
-            }
             exceptionEventForClientInstrument(binding, "ProbeNodeFactory.create", t);
             return null;
         }
@@ -679,7 +676,7 @@ public final class ProbeNode extends Node {
                             clazz == Character.class ||
                             clazz == Boolean.class ||
                             clazz == String.class)) {
-                CompilerDirectives.transferToInterpreter();
+                CompilerDirectives.transferToInterpreterAndInvalidate();
                 ClassCastException ccex = new ClassCastException(clazz.getName() + " isn't allowed Truffle interop type!");
                 if (binding.isLanguageBinding()) {
                     throw ccex;
@@ -815,7 +812,6 @@ public final class ProbeNode extends Node {
         private static final int SEEN_EXCEPTION_ON_INPUT_VALUE = 0b1000;
         private static final int SEEN_EXCEPTION_ON_UNWIND = 0b10000;
         private static final int SEEN_EXCEPTION_HAS_NEXT = 0b100000;
-        private static final int SEEN_EXCEPTION_INSTRUMENT = 0b1000000;
         private static final int SEEN_EXCEPTION_OTHER = 0b10000000;
 
         private static final int SEEN_UNWIND_ON_ENTER = 0b100000000;
@@ -875,7 +871,7 @@ public final class ProbeNode extends Node {
                     chainNode.innerOnDispose(context, frame);
                 } catch (Throwable t) {
                     // no profiling necessary
-                    prevError = chainNode.handleError(context, "onDispose", prevError, t);
+                    prevError = chainNode.handleError("onDispose", prevError, t);
                 }
                 chainNode = chainNode.next;
             }
@@ -884,7 +880,7 @@ public final class ProbeNode extends Node {
             }
         }
 
-        private RuntimeException handleError(EventContext context, String eventName, RuntimeException previousError, Throwable newError) {
+        private RuntimeException handleError(String eventName, RuntimeException previousError, Throwable newError) {
             if (binding.isLanguageBinding()) {
                 if (previousError != null) {
                     profileBranch(SEEN_EXCEPTION_HAS_NEXT);
@@ -893,18 +889,6 @@ public final class ProbeNode extends Node {
                 }
                 return (RuntimeException) newError;
             } else {
-                if (newError instanceof InstrumentException) {
-                    profileBranch(SEEN_EXCEPTION_INSTRUMENT);
-                    if (((InstrumentException) newError).context == context) {
-                        RuntimeException unwrapped = ((InstrumentException) newError).delegate;
-                        if (previousError != null) {
-                            profileBranch(SEEN_EXCEPTION_HAS_NEXT);
-                            addSuppressedException(previousError, unwrapped);
-                            return previousError;
-                        }
-                        return unwrapped;
-                    }
-                }
                 profileBranch(SEEN_EXCEPTION_OTHER);
                 exceptionEventForClientInstrument(binding, eventName, newError);
             }
@@ -931,7 +915,7 @@ public final class ProbeNode extends Node {
                     unwind = handleUnwind(current, unwind, ex);
                 } catch (Throwable t) {
                     current.profileBranch(SEEN_EXCEPTION_ON_ENTER);
-                    prevError = current.handleError(context, "onEnter", prevError, t);
+                    prevError = current.handleError("onEnter", prevError, t);
                 }
                 current = current.next;
             }
@@ -960,7 +944,7 @@ public final class ProbeNode extends Node {
                     unwind = handleUnwind(current, unwind, ex);
                 } catch (Throwable t) {
                     current.profileBranch(SEEN_EXCEPTION_ON_INPUT_VALUE);
-                    prevError = current.handleError(context, "onInputValue", prevError, t);
+                    prevError = current.handleError("onInputValue", prevError, t);
                 }
                 current = current.previous;
             }
@@ -1013,7 +997,7 @@ public final class ProbeNode extends Node {
                     unwind = handleUnwind(current, unwind, ex);
                 } catch (Throwable t) {
                     current.profileBranch(SEEN_EXCEPTION_ON_RETURN);
-                    prevError = current.handleError(context, "onInputValue", prevError, t);
+                    prevError = current.handleError("onInputValue", prevError, t);
                 }
                 current = current.previous;
             }
@@ -1041,7 +1025,7 @@ public final class ProbeNode extends Node {
                     unwind = handleUnwind(current, unwind, ex);
                 } catch (Throwable t) {
                     current.profileBranch(SEEN_EXCEPTION_ON_RETURN_EXCEPTIONAL);
-                    prevError = current.handleError(context, "onInputValue", prevError, t);
+                    prevError = current.handleError("onInputValue", prevError, t);
                 }
                 current = current.previous;
             }
@@ -1118,7 +1102,7 @@ public final class ProbeNode extends Node {
                         nextRet = current.innerOnUnwind(context, frame, current.getInfo(unwind));
                     } catch (Throwable t) {
                         current.profileBranch(SEEN_EXCEPTION_ON_UNWIND);
-                        prevError = current.handleError(context, "onUnwind", prevError, t);
+                        prevError = current.handleError("onUnwind", prevError, t);
                     }
                     if (nextRet != null) {
                         assert checkInteropType(nextRet, current.binding);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,13 +32,13 @@ import org.graalvm.compiler.core.common.type.ArithmeticOpTable.BinaryOp.Mul;
 import org.graalvm.compiler.core.common.type.IntegerStamp;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.graph.NodeClass;
-import org.graalvm.compiler.graph.spi.Canonicalizable.BinaryCommutative;
-import org.graalvm.compiler.graph.spi.CanonicalizerTool;
 import org.graalvm.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.ConstantNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.ValueNode;
+import org.graalvm.compiler.nodes.spi.Canonicalizable.BinaryCommutative;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.nodes.spi.NodeLIRBuilderTool;
 
 import jdk.vm.ci.code.CodeUtil;
@@ -90,6 +90,12 @@ public class MulNode extends BinaryArithmeticNode<Mul> implements NarrowableArit
             // if this fails we only swap
             return new MulNode(forY, forX);
         }
+
+        // convert "(-a)*(-b)" into "a*b"
+        if (forX instanceof NegateNode && forY instanceof NegateNode) {
+            return new MulNode(((NegateNode) forX).getValue(), ((NegateNode) forY).getValue()).maybeCommuteInputs();
+        }
+
         BinaryOp<Mul> op = getOp(forX, forY);
         NodeView view = NodeView.from(tool);
         return canonical(this, op, stamp(view), forX, forY, view);
@@ -102,17 +108,19 @@ public class MulNode extends BinaryArithmeticNode<Mul> implements NarrowableArit
                 return forX;
             }
 
+            if (op.isAssociative()) {
+                // Canonicalize expressions like "(a * 2) * 4" => "(a * 8)"
+                ValueNode reassociated = reassociateMatchedValues(self != null ? self : (MulNode) new MulNode(forX, forY).maybeCommuteInputs(), ValueNode.isConstantPredicate(), forX, forY, view);
+                if (reassociated != self) {
+                    return reassociated;
+                }
+            }
             if (c instanceof PrimitiveConstant && ((PrimitiveConstant) c).getJavaKind().isNumericInteger()) {
                 long i = ((PrimitiveConstant) c).asLong();
                 ValueNode result = canonical(stamp, forX, i, view);
                 if (result != null) {
                     return result;
                 }
-            }
-
-            if (op.isAssociative()) {
-                // canonicalize expressions like "(a * 1) * 2"
-                return reassociate(self != null ? self : (MulNode) new MulNode(forX, forY).maybeCommuteInputs(), ValueNode.isConstantPredicate(), forX, forY, view);
             }
         }
         return self != null ? self : new MulNode(forX, forY).maybeCommuteInputs();
@@ -172,5 +180,9 @@ public class MulNode extends BinaryArithmeticNode<Mul> implements NarrowableArit
             op2 = tmp;
         }
         nodeValueMap.setResult(this, gen.emitMul(op1, op2, false));
+    }
+
+    protected boolean isExact() {
+        return false;
     }
 }

@@ -24,8 +24,8 @@
  */
 package com.oracle.svm.core.heap;
 
-import java.lang.management.MemoryMXBean;
 import java.lang.ref.Reference;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.graalvm.compiler.api.replacements.Fold;
@@ -35,8 +35,14 @@ import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.word.Pointer;
+import org.graalvm.word.UnsignedWord;
 
 import com.oracle.svm.core.annotate.Uninterruptible;
+import com.oracle.svm.core.hub.DynamicHub;
+import com.oracle.svm.core.hub.PredefinedClassesSupport;
+import com.oracle.svm.core.log.Log;
+import com.oracle.svm.core.os.CommittedMemoryProvider;
+import com.oracle.svm.core.os.ImageHeapProvider;
 
 import jdk.vm.ci.meta.MetaAccessProvider;
 
@@ -63,6 +69,7 @@ public abstract class Heap {
      * heap-specific resources, e.g., the TLAB. This method is called for every thread except the
      * main thread (i.e., the one that maps the image heap).
      */
+    @Uninterruptible(reason = "Thread is detaching and holds the THREAD_MUTEX.")
     public abstract void detachThread(IsolateThread isolateThread);
 
     public abstract void suspendAllocation();
@@ -73,6 +80,8 @@ public abstract class Heap {
     public abstract boolean isAllocationDisallowed();
 
     public abstract GC getGC();
+
+    public abstract RuntimeCodeInfoGCSupport getRuntimeCodeInfoGCSupport();
 
     /**
      * Walk all the objects in the heap. Must only be executed as part of a VM operation that causes
@@ -92,8 +101,26 @@ public abstract class Heap {
      */
     public abstract boolean walkCollectedHeapObjects(ObjectVisitor visitor);
 
-    /** Return a list of all the classes in the heap. */
-    public abstract List<Class<?>> getClassList();
+    /** Returns the number of classes in the heap (initialized as well as uninitialized). */
+    public abstract int getClassCount();
+
+    /** Returns all loaded classes in the heap (see {@link PredefinedClassesSupport}). */
+    public List<Class<?>> getLoadedClasses() {
+        List<Class<?>> all = getAllClasses();
+        ArrayList<Class<?>> loaded = new ArrayList<>(all.size());
+        for (Class<?> clazz : all) {
+            if (DynamicHub.fromClass(clazz).isLoaded()) {
+                loaded.add(clazz);
+            }
+        }
+        return loaded;
+    }
+
+    /**
+     * Get all known classes. Intentionally protected to prevent access to classes that have not
+     * been "loaded" yet, see {@link PredefinedClassesSupport}.
+     */
+    protected abstract List<Class<?>> getAllClasses();
 
     /**
      * Get the ObjectHeader implementation that this Heap uses.
@@ -106,9 +133,6 @@ public abstract class Heap {
      */
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public abstract ObjectHeader getObjectHeader();
-
-    /** Get the MemoryMXBean for this heap. */
-    public abstract MemoryMXBean getMemoryMXBean();
 
     /** Tear down the heap and free all allocated virtual memory chunks. */
     @Uninterruptible(reason = "Tear-down in progress.")
@@ -126,11 +150,28 @@ public abstract class Heap {
     public abstract BarrierSet createBarrierSet(MetaAccessProvider metaAccess);
 
     /**
-     * Returns the offset that the image heap should have when mapping the native image file to the
-     * address space in memory.
+     * Returns a multiple to which the heap address space should be aligned to at runtime.
+     *
+     * @see CommittedMemoryProvider#guaranteesHeapPreferredAddressSpaceAlignment()
+     */
+    @Fold
+    public abstract int getPreferredAddressSpaceAlignment();
+
+    /**
+     * Returns an offset relative to the heap base, at which the image heap should be mapped into
+     * the address space.
      */
     @Fold
     public abstract int getImageHeapOffsetInAddressSpace();
+
+    /**
+     * Returns the number of null bytes that should be prepended to the image heap during the image
+     * build. This value must be a multiple of the page size. When the image heap is mapped at
+     * runtime, this extra memory gets mapped as well but is marked as inaccessible (see
+     * {@link ImageHeapProvider} for more details).
+     */
+    @Fold
+    public abstract int getImageHeapNullRegionSize();
 
     /**
      * Returns true if the given object is located in the image heap.
@@ -138,9 +179,21 @@ public abstract class Heap {
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public abstract boolean isInImageHeap(Object object);
 
-    /** Returns true if the object at the given address is located in the image heap. */
+    /**
+     * Returns true if the object at the given address is located in the image heap. Depending on
+     * the used GC, this method may only work reliably for pointers that point to the start of an
+     * object.
+     */
     @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
     public abstract boolean isInImageHeap(Pointer objectPtr);
+
+    /** Whether the object is in the primary image heap, as opposed to an auxiliary image heap. */
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    public abstract boolean isInPrimaryImageHeap(Object object);
+
+    /** Whether the object is in the primary image heap, as opposed to an auxiliary image heap. */
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    public abstract boolean isInPrimaryImageHeap(Pointer objectPtr);
 
     /**
      * Determines if the heap currently has {@link Reference} objects that are pending to be
@@ -159,4 +212,16 @@ public abstract class Heap {
      * May return {@code null}.
      */
     public abstract Reference<?> getAndClearReferencePendingList();
+
+    /**
+     * If the passed value is within the Java heap, this method prints some information about that
+     * value and returns true. Otherwise, the method returns false.
+     */
+    public abstract boolean printLocationInfo(Log log, UnsignedWord value, boolean allowJavaHeapAccess, boolean allowUnsafeOperations);
+
+    /**
+     * (Re)computes minimum/maximum/initial sizes of space based on the available
+     * {@linkplain PhysicalMemory physical memory} and current runtime option values.
+     */
+    public abstract void updateSizeParameters();
 }

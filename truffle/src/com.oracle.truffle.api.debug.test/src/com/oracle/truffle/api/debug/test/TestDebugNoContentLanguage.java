@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -41,7 +41,6 @@
 package com.oracle.truffle.api.debug.test;
 
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameSlot;
 import com.oracle.truffle.api.frame.FrameSlotKind;
@@ -77,8 +76,8 @@ public final class TestDebugNoContentLanguage extends ProxyLanguage {
 
     @Override
     protected CallTarget parse(TruffleLanguage.ParsingRequest request) throws Exception {
-        sourceInfo.createSource(getCurrentContext().getEnv());
         Source source = request.getSource();
+        sourceInfo.createSource(LanguageContext.get(null).getEnv(), source);
         CharSequence characters = source.getCharacters();
         int varStartPos = source.getLength() - 1;
         while (varStartPos > 0) {
@@ -90,7 +89,7 @@ public final class TestDebugNoContentLanguage extends ProxyLanguage {
             }
         }
         varLocation = sourceInfo.copySection(source.createSection(varStartPos, source.getLength() - varStartPos));
-        return Truffle.getRuntime().createCallTarget(new TestRootNode(languageInstance, source, sourceInfo));
+        return new TestRootNode(languageInstance, source, sourceInfo).getCallTarget();
     }
 
     @Override
@@ -114,8 +113,9 @@ public final class TestDebugNoContentLanguage extends ProxyLanguage {
             this.columnInfo = columnInfo;
         }
 
-        void createSource(Env env) {
-            this.source = Source.newBuilder(ProxyLanguage.ID, env.getPublicTruffleFile(path)).content(Source.CONTENT_NONE).cached(false).build();
+        void createSource(Env env, Source parsedSource) {
+            this.source = Source.newBuilder(ProxyLanguage.ID, env.getPublicTruffleFile(path)).content(Source.CONTENT_NONE).cached(false).interactive(parsedSource.isInteractive()).internal(
+                            parsedSource.isInternal()).mimeType(parsedSource.getMimeType()).build();
         }
 
         private SourceSection copySection(SourceSection section) {

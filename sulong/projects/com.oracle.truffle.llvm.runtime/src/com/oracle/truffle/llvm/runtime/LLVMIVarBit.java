@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -30,7 +30,11 @@
 package com.oracle.truffle.llvm.runtime;
 
 import java.math.BigInteger;
-import java.nio.ByteBuffer;
+
+import com.oracle.truffle.api.CompilerAsserts;
+import com.oracle.truffle.api.memory.ByteArraySupport;
+import com.oracle.truffle.api.nodes.ExplodeLoop;
+import com.oracle.truffle.llvm.runtime.vector.LLVMI1Vector;
 
 /**
  * Abstract type for variable width integers. Depending on the concrete bit width, either the
@@ -108,24 +112,24 @@ public abstract class LLVMIVarBit {
         if (bits <= LLVMIVarBitSmall.MAX_SIZE) {
             return new LLVMIVarBitSmall(bits, loadedValue);
         } else {
-            return new LLVMIVarBitLarge(bits, ByteBuffer.allocate(Long.BYTES).putLong(loadedValue).array(), loadedArrBits, signExtend);
+            return new LLVMIVarBitLarge(bits, longToArray(loadedValue), loadedArrBits, signExtend);
         }
     }
 
     public static LLVMIVarBit createZeroExt(int bits, byte from) {
-        return create(bits, ByteBuffer.allocate(Byte.BYTES).put(from).array(), Byte.SIZE, false);
+        return create(bits, byteToArray(from), Byte.SIZE, false);
     }
 
     public static LLVMIVarBit createZeroExt(int bits, short from) {
-        return create(bits, ByteBuffer.allocate(Short.BYTES).putShort(from).array(), Short.SIZE, false);
+        return create(bits, shortToArray(from), Short.SIZE, false);
     }
 
     public static LLVMIVarBit createZeroExt(int bits, int from) {
-        return create(bits, ByteBuffer.allocate(Integer.BYTES).putInt(from).array(), Integer.SIZE, false);
+        return create(bits, intToArray(from), Integer.SIZE, false);
     }
 
     public static LLVMIVarBit createZeroExt(int bits, long from) {
-        return create(bits, ByteBuffer.allocate(Long.BYTES).putLong(from).array(), Long.SIZE, false);
+        return create(bits, longToArray(from), Long.SIZE, false);
     }
 
     public static LLVMIVarBit fromBigInteger(int bits, BigInteger from) {
@@ -134,19 +138,62 @@ public abstract class LLVMIVarBit {
     }
 
     public static LLVMIVarBit fromByte(int bits, byte from) {
-        return create(bits, ByteBuffer.allocate(Byte.BYTES).put(from).array(), Byte.SIZE, true);
+        return create(bits, byteToArray(from), Byte.SIZE, true);
     }
 
     public static LLVMIVarBit fromShort(int bits, short from) {
-        return create(bits, ByteBuffer.allocate(Short.BYTES).putShort(from).array(), Short.SIZE, true);
+        return create(bits, shortToArray(from), Short.SIZE, true);
     }
 
     public static LLVMIVarBit fromInt(int bits, int from) {
-        return create(bits, ByteBuffer.allocate(Integer.BYTES).putInt(from).array(), Integer.SIZE, true);
+        return create(bits, intToArray(from), Integer.SIZE, true);
     }
 
     public static LLVMIVarBit fromLong(int bits, long from) {
-        return create(bits, ByteBuffer.allocate(Long.BYTES).putLong(from).array(), Long.SIZE, true);
+        return create(bits, longToArray(from), Long.SIZE, true);
     }
 
+    private static byte[] byteToArray(byte from) {
+        return new byte[]{from};
+    }
+
+    private static byte[] shortToArray(short from) {
+        byte[] array = new byte[Short.BYTES];
+        ByteArraySupport.bigEndian().putShort(array, 0, from);
+        return array;
+    }
+
+    private static byte[] intToArray(int from) {
+        byte[] array = new byte[Integer.BYTES];
+        ByteArraySupport.bigEndian().putInt(array, 0, from);
+        return array;
+    }
+
+    private static byte[] longToArray(long from) {
+        byte[] array = new byte[Long.BYTES];
+        ByteArraySupport.bigEndian().putLong(array, 0, from);
+        return array;
+    }
+
+    @ExplodeLoop
+    public static LLVMIVarBit fromI1Vector(int bits, LLVMI1Vector from) {
+        CompilerAsserts.partialEvaluationConstant(bits);
+        if (bits <= LLVMIVarBitSmall.MAX_SIZE) {
+            long value = 0;
+            for (int i = 0; i < bits; i++) {
+                if (from.getValue(i)) {
+                    value |= 1 << i;
+                }
+            }
+            return LLVMIVarBitSmall.create(bits, value, bits, false);
+        } else {
+            byte[] value = new byte[(bits + 7) >> 3];
+            for (int i = 0; i < bits; i++) {
+                if (from.getValue(i)) {
+                    value[value.length - 1 - (i >> 3)] |= 1 << (i & 7);
+                }
+            }
+            return LLVMIVarBitLarge.create(bits, value, bits, false);
+        }
+    }
 }

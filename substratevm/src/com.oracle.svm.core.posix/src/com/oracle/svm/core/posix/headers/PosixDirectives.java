@@ -43,7 +43,7 @@ public class PosixDirectives implements CContext.Directives {
                     "<pthread.h>",
                     "<pwd.h>",
                     "<signal.h>",
-                    "<sys/errno.h>",
+                    "<errno.h>",
                     "<sys/mman.h>",
                     "<sys/resource.h>",
                     "<sys/stat.h>",
@@ -65,7 +65,6 @@ public class PosixDirectives implements CContext.Directives {
 
     private static final String[] linuxLibs = new String[]{
                     "<mntent.h>",
-                    "<paths.h>",
     };
 
     @Override
@@ -96,6 +95,6 @@ public class PosixDirectives implements CContext.Directives {
 
     @Override
     public List<String> getMacroDefinitions() {
-        return Arrays.asList("_GNU_SOURCE", "_LARGEFILE64_SOURCE");
+        return Arrays.asList("_GNU_SOURCE", "_LARGEFILE64_SOURCE", "_DARWIN_USE_64_BIT_INODE");
     }
 }

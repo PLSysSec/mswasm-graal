@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -44,7 +44,6 @@ import java.util.Objects;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.object.DynamicObject;
-import com.oracle.truffle.api.object.FinalLocationException;
 import com.oracle.truffle.api.object.IncompatibleLocationException;
 import com.oracle.truffle.api.object.Location;
 import com.oracle.truffle.api.object.Property;
@@ -95,31 +94,26 @@ public abstract class Locations {
 
         /** @since 0.17 or earlier */
         @Override
-        public final Object get(DynamicObject store, boolean condition) {
+        public final Object get(DynamicObject store, boolean guard) {
             return value;
-        }
-
-        /** @since 0.17 or earlier */
-        @Override
-        public final void set(DynamicObject store, Object value, Shape shape) throws IncompatibleLocationException, FinalLocationException {
-            if (!canStore(value)) {
-                throw finalLocation();
-            }
         }
 
         /** @since 0.17 or earlier */
         @SuppressWarnings("deprecation")
         @Override
         public boolean canStore(Object val) {
-            return valueEquals(this.value, val);
+            return CoreLocation.valueEquals(this.value, val);
         }
 
-        /** @since 0.17 or earlier */
         @Override
-        public final void setInternal(DynamicObject store, Object value) throws IncompatibleLocationException {
+        public final void set(DynamicObject store, Object value, boolean guard, boolean init) throws IncompatibleLocationException {
             if (!canStore(value)) {
-                CompilerDirectives.transferToInterpreter();
-                throw new UnsupportedOperationException();
+                if (init) {
+                    CompilerDirectives.transferToInterpreterAndInvalidate();
+                    throw new UnsupportedOperationException();
+                } else {
+                    throw incompatibleLocation();
+                }
             }
         }
 

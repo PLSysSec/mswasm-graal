@@ -80,7 +80,7 @@ public class SubstrateStackIntrospection implements StackIntrospection {
     }
 }
 
-class PhysicalStackFrameVisitor<T> implements StackFrameVisitor {
+class PhysicalStackFrameVisitor<T> extends StackFrameVisitor {
 
     private ResolvedJavaMethod[] curMatchingMethods;
     private final ResolvedJavaMethod[] laterMatchingMethods;
@@ -202,7 +202,7 @@ class SubstrateInspectedFrame implements InspectedFrame {
     private Deoptimizer getDeoptimizer() {
         assert virtualFrame == null;
         if (deoptimizer == null) {
-            deoptimizer = new Deoptimizer(sp, codeInfo);
+            deoptimizer = new Deoptimizer(sp, codeInfo, CurrentIsolate.getCurrentThread());
         }
         return deoptimizer;
     }
@@ -219,7 +219,7 @@ class SubstrateInspectedFrame implements InspectedFrame {
         if (result.getJavaKind() != JavaKind.Object) {
             throw new IllegalArgumentException("can only access Object local variables for now: " + result.getJavaKind());
         }
-        return KnownIntrinsics.convertUnknownValue(SubstrateObjectConstant.asObject(Object.class, result), Object.class);
+        return SubstrateObjectConstant.asObject(Object.class, result);
     }
 
     private JavaConstant getLocalConstant(int index) {
@@ -300,7 +300,7 @@ class SubstrateInspectedFrame implements InspectedFrame {
     @Override
     public void materializeVirtualObjects(boolean invalidateCode) {
         if (virtualFrame == null) {
-            DeoptimizedFrame deoptimizedFrame = getDeoptimizer().deoptSourceFrame(ip, false, CurrentIsolate.getCurrentThread());
+            DeoptimizedFrame deoptimizedFrame = getDeoptimizer().deoptSourceFrame(ip, false);
             assert deoptimizedFrame == Deoptimizer.checkDeoptimized(sp);
         }
 
@@ -362,10 +362,6 @@ class SubstrateInspectedFrame implements InspectedFrame {
             JavaConstant con = getLocalConstant(i);
             if (con.getJavaKind() != JavaKind.Illegal) {
                 result.append("\n    local ").append(i);
-                String name = frameInfo.getLocalVariableName(i);
-                if (name != null) {
-                    result.append(" ").append(name);
-                }
                 if (con.getJavaKind() == JavaKind.Object) {
                     if (isVirtual(i)) {
                         result.append("  [virtual object]");

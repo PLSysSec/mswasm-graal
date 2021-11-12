@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@ import static jdk.vm.ci.code.ValueUtil.isLegal;
 import static jdk.vm.ci.code.ValueUtil.isStackSlot;
 import static org.graalvm.compiler.lir.LIRValueUtil.asConstant;
 import static org.graalvm.compiler.lir.LIRValueUtil.isConstantValue;
+import static org.graalvm.compiler.lir.LIRValueUtil.asVariable;
 import static org.graalvm.compiler.lir.LIRValueUtil.isVariable;
 import static org.graalvm.compiler.lir.LIRValueUtil.isVirtualStackSlot;
 
@@ -59,7 +60,6 @@ import org.graalvm.compiler.lir.LabelRef;
 import org.graalvm.compiler.lir.StandardOp;
 import org.graalvm.compiler.lir.StandardOp.BlockEndOp;
 import org.graalvm.compiler.lir.StandardOp.LabelOp;
-import org.graalvm.compiler.lir.StandardOp.ZapRegistersOp;
 import org.graalvm.compiler.lir.SwitchStrategy;
 import org.graalvm.compiler.lir.Variable;
 import org.graalvm.compiler.lir.hashing.IntHasher;
@@ -217,7 +217,7 @@ public abstract class LIRGenerator implements LIRGeneratorTool {
 
     @Override
     public Variable emitMove(Value input) {
-        assert !(input instanceof Variable) : "Creating a copy of a variable via this method is not supported (and potentially a bug): " + input;
+        assert !isVariable(input) : "Creating a copy of a variable via this method is not supported (and potentially a bug): " + input;
         Variable result = newVariable(input.getValueKind());
         emitMove(result, input);
         return result;
@@ -290,7 +290,7 @@ public abstract class LIRGenerator implements LIRGeneratorTool {
         if (!isVariable(value)) {
             return emitMove(value);
         }
-        return (Variable) value;
+        return asVariable(value);
     }
 
     public Value loadNonConst(Value value) {
@@ -438,11 +438,16 @@ public abstract class LIRGenerator implements LIRGeneratorTool {
     @Override
     public abstract Variable emitIntegerTestMove(Value leftVal, Value right, Value trueValue, Value falseValue);
 
+    /** Loads the target address for indirect {@linkplain #emitForeignCall foreign calls}. */
+    protected Value emitIndirectForeignCallAddress(@SuppressWarnings("unused") ForeignCallLinkage linkage) {
+        return null;
+    }
+
     /**
      * Emits the single call operation at the heart of generating LIR for a
-     * {@linkplain #emitForeignCall(ForeignCallLinkage, LIRFrameState, Value...) foreign call}.
+     * {@linkplain #emitForeignCall foreign call}.
      */
-    protected abstract void emitForeignCallOp(ForeignCallLinkage linkage, Value result, Value[] arguments, Value[] temps, LIRFrameState info);
+    protected abstract void emitForeignCallOp(ForeignCallLinkage linkage, Value targetAddress, Value result, Value[] arguments, Value[] temps, LIRFrameState info);
 
     @Override
     public Variable emitForeignCall(ForeignCallLinkage linkage, LIRFrameState frameState, Value... args) {
@@ -456,6 +461,8 @@ public abstract class LIRGenerator implements LIRGeneratorTool {
             }
         }
 
+        Value targetAddress = emitIndirectForeignCallAddress(linkage);
+
         // move the arguments into the correct location
         CallingConvention linkageCc = linkage.getOutgoingCallingConvention();
         res.getFrameMapBuilder().callsMethod(linkageCc);
@@ -467,8 +474,9 @@ public abstract class LIRGenerator implements LIRGeneratorTool {
             emitMove(loc, arg);
             argLocations[i] = loc;
         }
+
         res.setForeignCall(true);
-        emitForeignCallOp(linkage, linkageCc.getReturn(), argLocations, linkage.getTemporaries(), state);
+        emitForeignCallOp(linkage, targetAddress, linkageCc.getReturn(), argLocations, linkage.getTemporaries(), state);
 
         if (isLegal(linkageCc.getReturn())) {
             return emitMove(linkageCc.getReturn());
@@ -593,16 +601,16 @@ public abstract class LIRGenerator implements LIRGeneratorTool {
     }
 
     @Override
-    public abstract ZapRegistersOp createZapRegisters(Register[] zappedRegisters, JavaConstant[] zapValues);
+    public abstract LIRInstruction createZapRegisters(Register[] zappedRegisters, JavaConstant[] zapValues);
 
     @Override
-    public ZapRegistersOp createZapRegisters() {
+    public LIRInstruction createZapRegisters() {
         Register[] zappedRegisters = getResult().getFrameMap().getRegisterConfig().getAllocatableRegisters().toArray();
         return createZapRegisters(zappedRegisters);
     }
 
     @Override
-    public ZapRegistersOp createZapRegisters(Register[] zappedRegisters) {
+    public LIRInstruction createZapRegisters(Register[] zappedRegisters) {
         JavaConstant[] zapValues = new JavaConstant[zappedRegisters.length];
         for (int i = 0; i < zappedRegisters.length; i++) {
             PlatformKind kind = target().arch.getLargestStorableKind(zappedRegisters[i].getRegisterCategory());

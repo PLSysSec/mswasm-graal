@@ -29,11 +29,12 @@ import static org.graalvm.compiler.nodeinfo.InputType.Memory;
 import static org.graalvm.compiler.nodeinfo.InputType.State;
 import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_UNKNOWN;
 import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_UNKNOWN;
+import static org.graalvm.compiler.nodes.Invoke.CYCLES_UNKNOWN_RATIONALE;
+import static org.graalvm.compiler.nodes.Invoke.SIZE_UNKNOWN_RATIONALE;
 
 import java.util.Map;
 
 import org.graalvm.compiler.core.common.type.Stamp;
-import org.graalvm.compiler.debug.DebugCloseable;
 import org.graalvm.compiler.graph.IterableNodeType;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.NodeClass;
@@ -42,16 +43,22 @@ import org.graalvm.compiler.nodeinfo.Verbosity;
 import org.graalvm.compiler.nodes.java.MethodCallTargetNode;
 import org.graalvm.compiler.nodes.memory.SingleMemoryKill;
 import org.graalvm.compiler.nodes.spi.LIRLowerable;
-import org.graalvm.compiler.nodes.spi.LoweringTool;
 import org.graalvm.compiler.nodes.spi.NodeLIRBuilderTool;
+import org.graalvm.compiler.nodes.spi.Simplifiable;
+import org.graalvm.compiler.nodes.spi.SimplifierTool;
 import org.graalvm.compiler.nodes.spi.UncheckedInterfaceProvider;
 import org.graalvm.compiler.nodes.util.GraphUtil;
 import org.graalvm.word.LocationIdentity;
 
 import jdk.vm.ci.code.BytecodeFrame;
 
-@NodeInfo(nameTemplate = "Invoke!#{p#targetMethod/s}", allowedUsageTypes = {Memory}, cycles = CYCLES_UNKNOWN, size = SIZE_UNKNOWN)
-public final class InvokeWithExceptionNode extends WithExceptionNode implements Invoke, IterableNodeType, SingleMemoryKill, LIRLowerable, UncheckedInterfaceProvider {
+// @formatter:off
+@NodeInfo(nameTemplate = "Invoke!#{p#targetMethod/s}",
+          allowedUsageTypes = {Memory},
+          cycles = CYCLES_UNKNOWN, cyclesRationale = CYCLES_UNKNOWN_RATIONALE,
+          size   = SIZE_UNKNOWN,   sizeRationale   = SIZE_UNKNOWN_RATIONALE)
+// @formatter:on
+public final class InvokeWithExceptionNode extends WithExceptionNode implements Invoke, IterableNodeType, SingleMemoryKill, LIRLowerable, UncheckedInterfaceProvider, Simplifiable {
     public static final NodeClass<InvokeWithExceptionNode> TYPE = NodeClass.create(InvokeWithExceptionNode.class);
 
     @OptionalInput ValueNode classInit;
@@ -60,7 +67,7 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
     @OptionalInput(State) FrameState stateAfter;
     protected int bci;
     protected boolean polymorphic;
-    protected boolean useForInlining;
+    protected InlineControl inlineControl;
 
     public InvokeWithExceptionNode(CallTargetNode callTarget, AbstractBeginNode exceptionEdge, int bci) {
         super(TYPE, callTarget.returnStamp().getTrustedStamp());
@@ -68,17 +75,12 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
         this.bci = bci;
         this.callTarget = callTarget;
         this.polymorphic = false;
-        this.useForInlining = true;
+        this.inlineControl = InlineControl.Normal;
     }
 
     @Override
     protected void afterClone(Node other) {
         updateInliningLogAfterClone(other);
-    }
-
-    @Override
-    public FixedNode asFixedNode() {
-        return this;
     }
 
     @Override
@@ -106,13 +108,13 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
     }
 
     @Override
-    public boolean useForInlining() {
-        return useForInlining;
+    public void setInlineControl(InlineControl control) {
+        this.inlineControl = control;
     }
 
     @Override
-    public void setUseForInlining(boolean value) {
-        this.useForInlining = value;
+    public InlineControl getInlineControl() {
+        return inlineControl;
     }
 
     @Override
@@ -134,15 +136,10 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
     @Override
     public void setNext(FixedNode x) {
         if (x != null) {
-            this.setNext(KillingBeginNode.begin(x, this.getKilledLocationIdentity()));
+            this.setNext(BeginNode.begin(x));
         } else {
             this.setNext(null);
         }
-    }
-
-    @Override
-    public void lower(LoweringTool tool) {
-        tool.getLowerer().lower(this, tool);
     }
 
     @Override
@@ -178,21 +175,6 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
             debugProperties.put("targetMethod", callTarget.targetName());
         }
         return debugProperties;
-    }
-
-    @SuppressWarnings("try")
-    public AbstractBeginNode killKillingBegin() {
-        AbstractBeginNode begin = next();
-        if (begin instanceof KillingBeginNode) {
-            try (DebugCloseable position = begin.withNodeSourcePosition()) {
-                AbstractBeginNode newBegin = new BeginNode();
-                graph().addAfterFixed(begin, graph().add(newBegin));
-                begin.replaceAtUsages(newBegin);
-                graph().removeFixed(begin);
-                return newBegin;
-            }
-        }
-        return begin;
     }
 
     @Override
@@ -241,9 +223,12 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
         InvokeNode newInvoke = graph().add(new InvokeNode(callTarget, bci, stamp, this.getKilledLocationIdentity()));
         newInvoke.setStateAfter(stateAfter);
         newInvoke.setStateDuring(stateDuring);
+        newInvoke.setInlineControl(inlineControl);
         AbstractBeginNode oldException = this.exceptionEdge;
         graph().replaceSplitWithFixed(this, newInvoke, this.next());
         GraphUtil.killCFG(oldException);
+        // copy across any original node source position
+        newInvoke.setNodeSourcePosition(getNodeSourcePosition());
         return newInvoke;
     }
 
@@ -253,7 +238,9 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
     }
 
     @Override
-    public AbstractBeginNode createNextBegin() {
-        return KillingBeginNode.create(getKilledLocationIdentity());
+    public void simplify(SimplifierTool tool) {
+        if (exceptionEdge() instanceof UnreachableBeginNode) {
+            replaceWithInvoke();
+        }
     }
 }

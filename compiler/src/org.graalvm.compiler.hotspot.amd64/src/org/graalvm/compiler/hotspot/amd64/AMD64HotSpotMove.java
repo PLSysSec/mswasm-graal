@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,19 +24,19 @@
  */
 package org.graalvm.compiler.hotspot.amd64;
 
-import static org.graalvm.compiler.core.common.GraalOptions.GeneratePIC;
-import static org.graalvm.compiler.lir.LIRInstruction.OperandFlag.HINT;
-import static org.graalvm.compiler.lir.LIRInstruction.OperandFlag.REG;
-import static org.graalvm.compiler.lir.LIRInstruction.OperandFlag.STACK;
 import static jdk.vm.ci.code.ValueUtil.asRegister;
 import static jdk.vm.ci.code.ValueUtil.isRegister;
 import static jdk.vm.ci.code.ValueUtil.isStackSlot;
+import static org.graalvm.compiler.lir.LIRInstruction.OperandFlag.HINT;
+import static org.graalvm.compiler.lir.LIRInstruction.OperandFlag.REG;
+import static org.graalvm.compiler.lir.LIRInstruction.OperandFlag.STACK;
 
 import org.graalvm.compiler.asm.amd64.AMD64Address;
-import org.graalvm.compiler.core.common.CompressEncoding;
 import org.graalvm.compiler.asm.amd64.AMD64MacroAssembler;
+import org.graalvm.compiler.core.common.CompressEncoding;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.hotspot.GraalHotSpotVMConfig;
+import org.graalvm.compiler.hotspot.HotSpotMarkId;
 import org.graalvm.compiler.lir.LIRInstructionClass;
 import org.graalvm.compiler.lir.StandardOp.LoadConstantOp;
 import org.graalvm.compiler.lir.amd64.AMD64LIRInstruction;
@@ -64,9 +64,6 @@ public class AMD64HotSpotMove {
 
         @Override
         public void emitCode(CompilationResultBuilder crb, AMD64MacroAssembler masm) {
-            if (GeneratePIC.getValue(crb.getOptions())) {
-                throw GraalError.shouldNotReachHere("Object constant load should not be happening directly");
-            }
             boolean compressed = input.isCompressed();
             if (crb.target.inlineObjects) {
                 crb.recordInlineDataInCode(input);
@@ -113,18 +110,16 @@ public class AMD64HotSpotMove {
         public static final LIRInstructionClass<BaseMove> TYPE = LIRInstructionClass.create(BaseMove.class);
 
         @Def({REG, HINT}) protected AllocatableValue result;
-        private final GraalHotSpotVMConfig config;
 
-        public BaseMove(AllocatableValue result, GraalHotSpotVMConfig config) {
+        public BaseMove(AllocatableValue result) {
             super(TYPE);
             this.result = result;
-            this.config = config;
         }
 
         @Override
         public void emitCode(CompilationResultBuilder crb, AMD64MacroAssembler masm) {
             masm.movq(asRegister(result), masm.getPlaceholder(-1));
-            crb.recordMark(config.MARKID_NARROW_KLASS_BASE_ADDRESS);
+            crb.recordMark(HotSpotMarkId.NARROW_KLASS_BASE_ADDRESS);
         }
 
     }
@@ -143,9 +138,6 @@ public class AMD64HotSpotMove {
 
         @Override
         public void emitCode(CompilationResultBuilder crb, AMD64MacroAssembler masm) {
-            if (GeneratePIC.getValue(crb.getOptions())) {
-                throw GraalError.shouldNotReachHere("Metaspace constant load should not be happening directly");
-            }
             boolean compressed = input.isCompressed();
             if (isRegister(result)) {
                 if (compressed) {
@@ -177,21 +169,15 @@ public class AMD64HotSpotMove {
         }
     }
 
-    public static void decodeKlassPointer(CompilationResultBuilder crb, AMD64MacroAssembler masm, Register register, Register scratch, AMD64Address address, GraalHotSpotVMConfig config) {
+    public static void decodeKlassPointer(AMD64MacroAssembler masm, Register register, Register scratch, AMD64Address address, GraalHotSpotVMConfig config) {
         CompressEncoding encoding = config.getKlassEncoding();
         masm.movl(register, address);
         if (encoding.getShift() != 0) {
             masm.shlq(register, encoding.getShift());
         }
-        boolean pic = GeneratePIC.getValue(crb.getOptions());
-        if (pic || encoding.hasBase()) {
-            if (pic) {
-                masm.movq(scratch, masm.getPlaceholder(-1));
-                crb.recordMark(config.MARKID_NARROW_KLASS_BASE_ADDRESS);
-            } else {
-                assert encoding.getBase() != 0;
-                masm.movq(scratch, encoding.getBase());
-            }
+        if (encoding.hasBase()) {
+            assert encoding.getBase() != 0;
+            masm.movq(scratch, encoding.getBase());
             masm.addq(register, scratch);
         }
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,7 +26,11 @@ package org.graalvm.compiler.code;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Method;
 import java.util.Arrays;
+
+import org.graalvm.compiler.options.OptionValues;
+import org.graalvm.compiler.serviceprovider.ServiceProvider;
 
 import jdk.vm.ci.code.CodeCacheProvider;
 import jdk.vm.ci.code.CodeUtil;
@@ -40,9 +44,7 @@ import jdk.vm.ci.code.site.Call;
 import jdk.vm.ci.code.site.DataPatch;
 import jdk.vm.ci.code.site.ExceptionHandler;
 import jdk.vm.ci.code.site.Infopoint;
-import jdk.vm.ci.code.site.Mark;
-
-import org.graalvm.compiler.serviceprovider.ServiceProvider;
+import jdk.vm.ci.services.Services;
 
 /**
  * {@link HexCodeFile} based implementation of {@link DisassemblerProvider}.
@@ -51,7 +53,7 @@ import org.graalvm.compiler.serviceprovider.ServiceProvider;
 public class HexCodeFileDisassemblerProvider implements DisassemblerProvider {
 
     @Override
-    public String disassembleCompiledCode(CodeCacheProvider codeCache, CompilationResult compResult) {
+    public String disassembleCompiledCode(OptionValues options, CodeCacheProvider codeCache, CompilationResult compResult) {
         assert compResult != null;
         return disassemble(codeCache, compResult, null);
     }
@@ -99,8 +101,8 @@ public class HexCodeFileDisassemblerProvider implements DisassemblerProvider {
             for (DataPatch site : compResult.getDataPatches()) {
                 hcf.addOperandComment(site.pcOffset, "{" + site.reference.toString() + "}");
             }
-            for (Mark mark : compResult.getMarks()) {
-                hcf.addComment(mark.pcOffset, codeCache.getMarkName(mark));
+            for (CompilationResult.CodeMark mark : compResult.getMarks()) {
+                hcf.addComment(mark.pcOffset, mark.id.getName());
             }
         }
         String hcfEmbeddedString = hcf.toEmbeddedString();
@@ -135,10 +137,31 @@ public class HexCodeFileDisassemblerProvider implements DisassemblerProvider {
             MethodHandle toolMethod = null;
             try {
                 Class<?> toolClass = Class.forName("com.oracle.max.hcfdis.HexCodeFileDis", true, ClassLoader.getSystemClassLoader());
-                toolMethod = MethodHandles.lookup().unreflect(toolClass.getDeclaredMethod("processEmbeddedString", String.class));
+                Method reflectMethod = toolClass.getDeclaredMethod("processEmbeddedString", String.class);
+                reflectMethod.setAccessible(true);
+                toolMethod = MethodHandles.lookup().unreflect(reflectMethod);
             } catch (Exception e) {
                 // Tool not available on the class path
             }
+
+            // Try disassemble a zero-length code array to see if the disassembler
+            // can really be used (e.g., the Capstone native support may be not available on the
+            // current platform).
+            if (toolMethod != null) {
+                byte[] code = {};
+                String arch = Services.getSavedProperties().get("os.arch");
+                if (arch.equals("x86_64")) {
+                    arch = "amd64";
+                }
+                int wordWidth = arch.endsWith("64") ? 64 : Integer.parseInt(Services.getSavedProperties().getOrDefault("sun.arch.data.model", "64"));
+                String hcf = new HexCodeFile(code, 0L, arch.toLowerCase(), wordWidth).toEmbeddedString();
+                try {
+                    toolMethod.invokeExact(hcf);
+                } catch (Throwable e) {
+                    toolMethod = null;
+                }
+            }
+
             processMethod = toolMethod;
         }
 

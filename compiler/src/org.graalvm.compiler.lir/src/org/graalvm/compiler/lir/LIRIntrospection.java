@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -103,7 +103,7 @@ abstract class LIRIntrospection<T> extends FieldIntrospection<T> {
         }
 
         protected void setValue(Object obj, int index, Value value) {
-            putObject(obj, index, value);
+            putObjectChecked(obj, index, value);
         }
 
         protected Value[] getValueArray(Object obj, int index) {
@@ -111,7 +111,7 @@ abstract class LIRIntrospection<T> extends FieldIntrospection<T> {
         }
 
         protected void setValueArray(Object obj, int index, Value[] valueArray) {
-            putObject(obj, index, valueArray);
+            putObjectChecked(obj, index, valueArray);
         }
     }
 

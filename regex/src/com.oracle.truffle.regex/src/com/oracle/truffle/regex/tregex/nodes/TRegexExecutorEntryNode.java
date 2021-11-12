@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -44,7 +44,6 @@ import java.lang.reflect.Field;
 
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Specialization;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.profiles.ValueProfile;
 
@@ -52,12 +51,11 @@ import sun.misc.Unsafe;
 
 /**
  * This class wraps {@link TRegexExecutorNode} and specializes on the type of the input strings
- * provided to {@link TRegexExecRootNode}.
+ * provided to {@link TRegexExecNode}.
  */
 public abstract class TRegexExecutorEntryNode extends Node {
 
     private static final sun.misc.Unsafe UNSAFE;
-    private static final Field coderField;
     private static final long coderFieldOffset;
 
     static {
@@ -66,20 +64,14 @@ public abstract class TRegexExecutorEntryNode extends Node {
             // UNSAFE is needed for detecting compact strings, which are not implemented prior to
             // java9
             UNSAFE = null;
-            coderField = null;
             coderFieldOffset = 0;
         } else {
             UNSAFE = getUnsafe();
-            Field field = null;
-            for (Field f : String.class.getDeclaredFields()) {
-                if (f.getName().equals("coder")) {
-                    field = f;
-                    break;
-                }
-            }
-            coderField = field;
-            if (coderField == null) {
-                throw new RuntimeException("failed to get coder field offset");
+            Field coderField;
+            try {
+                coderField = String.class.getDeclaredField("coder");
+            } catch (NoSuchFieldException e) {
+                throw new RuntimeException("failed to get coder field offset", e);
             }
             coderFieldOffset = UNSAFE.objectFieldOffset(coderField);
         }
@@ -118,6 +110,11 @@ public abstract class TRegexExecutorEntryNode extends Node {
 
     public abstract Object execute(Object input, int fromIndex, int index, int maxIndex);
 
+    @Specialization
+    Object doByteArray(byte[] input, int fromIndex, int index, int maxIndex) {
+        return executor.execute(executor.createLocals(input, fromIndex, index, maxIndex), false);
+    }
+
     @Specialization(guards = "isCompactString(input)")
     Object doStringCompact(String input, int fromIndex, int index, int maxIndex) {
         return executor.execute(executor.createLocals(input, fromIndex, index, maxIndex), true);
@@ -128,8 +125,8 @@ public abstract class TRegexExecutorEntryNode extends Node {
         return executor.execute(executor.createLocals(input, fromIndex, index, maxIndex), false);
     }
 
-    @Specialization
-    Object doTruffleObject(TruffleObject input, int fromIndex, int index, int maxIndex,
+    @Specialization(guards = "neitherByteArrayNorString(input)")
+    Object doTruffleObject(Object input, int fromIndex, int index, int maxIndex,
                     @Cached("createClassProfile()") ValueProfile inputClassProfile) {
         // conservatively disable compact string optimizations.
         // TODO: maybe add an interface for TruffleObjects to announce if they are compact / ascii
@@ -139,5 +136,9 @@ public abstract class TRegexExecutorEntryNode extends Node {
 
     static boolean isCompactString(String str) {
         return UNSAFE != null && UNSAFE.getByte(str, coderFieldOffset) == 0;
+    }
+
+    protected static boolean neitherByteArrayNorString(Object obj) {
+        return !(obj instanceof byte[]) && !(obj instanceof String);
     }
 }

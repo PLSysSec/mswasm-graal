@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -108,7 +108,7 @@ public final class AArch64HotSpotConstantRetrievalOp extends AArch64LIRInstructi
         // metadata_adr
         for (int i = 0; i < constants.length; i++) {
             crb.recordInlineDataInCodeWithNote(constants[i], notes[i]);
-            masm.addressOf(asRegister(gotSlotOffsetParameters[i]));
+            masm.adrpAdd(asRegister(gotSlotOffsetParameters[i]));
         }
 
         for (int i = 0; i < constantDescriptions.length; i++) {
@@ -116,7 +116,8 @@ public final class AArch64HotSpotConstantRetrievalOp extends AArch64LIRInstructi
         }
 
         final int before = masm.position();
-        masm.bl(before);
+        // address is fixed up by HotSpot.
+        masm.bl();
         final int after = masm.position();
         crb.recordDirectCall(before, after, callLinkage, frameState);
     }

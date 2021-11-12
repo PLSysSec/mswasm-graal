@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,14 +29,11 @@
  */
 package com.oracle.truffle.llvm.runtime.nodes.asm.syscall;
 
-import com.oracle.truffle.api.dsl.CachedContext;
-import com.oracle.truffle.api.dsl.CachedLanguage;
+import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Specialization;
-import com.oracle.truffle.llvm.runtime.nodes.asm.support.LLVMString;
-import com.oracle.truffle.llvm.runtime.LLVMContext;
-import com.oracle.truffle.llvm.runtime.LLVMLanguage;
 import com.oracle.truffle.llvm.runtime.memory.LLVMSyscallOperationNode;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMNativePointer;
+import com.oracle.truffle.llvm.runtime.pointer.LLVMPointer;
 
 public abstract class LLVMAMD64SyscallGetcwdNode extends LLVMSyscallOperationNode {
 
@@ -46,22 +43,20 @@ public abstract class LLVMAMD64SyscallGetcwdNode extends LLVMSyscallOperationNod
     }
 
     @Specialization
-    protected long doOp(LLVMNativePointer buf, long size,
-                    @CachedLanguage LLVMLanguage language,
-                    @CachedContext(LLVMLanguage.class) LLVMContext ctx) {
-        String cwd = ctx.getEnv().getCurrentWorkingDirectory().getPath();
+    protected long doOp(LLVMPointer buf, long size,
+                    @Cached LLVMStringHelper strcpy) {
+        String cwd = getContext().getEnv().getCurrentWorkingDirectory().getPath();
         if (cwd.length() >= size) {
             return -LLVMAMD64Error.ERANGE;
         } else {
-            LLVMString.strcpy(language.getLLVMMemory(), buf, cwd);
+            strcpy.execute(buf, size, cwd);
             return cwd.length() + 1L;
         }
     }
 
     @Specialization
     protected long doOp(long buf, long size,
-                    @CachedLanguage LLVMLanguage language,
-                    @CachedContext(LLVMLanguage.class) LLVMContext ctx) {
-        return doOp(LLVMNativePointer.create(buf), size, language, ctx);
+                    @Cached LLVMStringHelper strcpy) {
+        return doOp(LLVMNativePointer.create(buf), size, strcpy);
     }
 }

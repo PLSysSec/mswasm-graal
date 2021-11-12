@@ -27,12 +27,24 @@ package com.oracle.svm.hosted.c.util;
 import static com.oracle.svm.core.util.VMError.shouldNotReachHere;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+
+import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.nativeimage.ImageSingletons;
+
+import com.oracle.svm.core.SubstrateOptions;
+import com.oracle.svm.core.SubstrateUtil;
+import com.oracle.svm.core.c.libc.TemporaryBuildDirectoryProvider;
 
 public class FileUtils {
 
@@ -65,6 +77,73 @@ public class FileUtils {
             return result;
         } catch (IOException ex) {
             throw shouldNotReachHere(ex);
+        }
+    }
+
+    public static int executeCommand(String... args) throws IOException, InterruptedException {
+        return executeCommand(Arrays.asList(args));
+    }
+
+    @SuppressWarnings("try")
+    public static int executeCommand(List<String> args) throws IOException, InterruptedException {
+        ProcessBuilder command = prepareCommand(args, null).redirectErrorStream(true);
+
+        traceCommand(command);
+
+        Process process = command.start();
+        try (Closeable ignored = process::destroy) {
+
+            try (InputStream inputStream = process.getInputStream()) {
+                traceCommandOutput(readAllLines(inputStream));
+            }
+
+            return process.waitFor();
+        }
+    }
+
+    public static ProcessBuilder prepareCommand(List<String> args, Path commandDir) throws IOException {
+        ProcessBuilder command = new ProcessBuilder().command(args);
+
+        Path tempDir;
+        if (commandDir != null) {
+            tempDir = commandDir;
+        } else {
+            Path temp = ImageSingletons.lookup(TemporaryBuildDirectoryProvider.class).getTemporaryBuildDirectory();
+            tempDir = temp.resolve(Paths.get(args.get(0)).getFileName());
+        }
+        Files.createDirectories(tempDir);
+        command.directory(tempDir.toFile());
+
+        return command;
+    }
+
+    public static void traceCommand(ProcessBuilder command) {
+        if (isTraceEnabled()) {
+            String commandLine = SubstrateUtil.getShellCommandString(command.command(), false);
+            trace(">> %s", commandLine);
+        }
+    }
+
+    public static void traceCommandOutput(List<String> lines) {
+        if (isTraceEnabled()) {
+            for (String line : lines) {
+                trace("># %s", line);
+            }
+        }
+    }
+
+    private static boolean isTraceEnabled() {
+        return SubstrateOptions.TraceNativeToolUsage.getValue() ||
+                        DebugContext.forCurrentThread().isLogEnabled(DebugContext.VERBOSE_LEVEL);
+    }
+
+    private static void trace(String format, String arg) {
+        assert isTraceEnabled();
+        DebugContext debug = DebugContext.forCurrentThread();
+        if (debug.isLogEnabled(DebugContext.VERBOSE_LEVEL)) {
+            debug.log(format, arg);
+        } else {
+            System.out.printf(format + "%n", arg);
         }
     }
 }

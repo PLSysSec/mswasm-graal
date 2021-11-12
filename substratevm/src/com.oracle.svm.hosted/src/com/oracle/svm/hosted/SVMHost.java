@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,20 +24,30 @@
  */
 package com.oracle.svm.hosted;
 
+import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
+import java.lang.ref.SoftReference;
+import java.lang.ref.WeakReference;
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
 import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
 import org.graalvm.compiler.core.common.spi.ForeignCallsProvider;
+import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.java.GraphBuilderPhase.Instance;
 import org.graalvm.compiler.nodes.StaticDeoptimizingNode;
@@ -47,51 +57,72 @@ import org.graalvm.compiler.nodes.extended.UnsafeAccessNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration;
 import org.graalvm.compiler.nodes.graphbuilderconf.IntrinsicContext;
 import org.graalvm.compiler.nodes.java.AccessFieldNode;
+import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.phases.OptimisticOptimizations;
 import org.graalvm.compiler.serviceprovider.JavaVersionUtil;
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
 import org.graalvm.nativeimage.c.function.RelocatedPointer;
 import org.graalvm.nativeimage.hosted.Feature.DuringAnalysisAccess;
+import org.graalvm.util.GuardedAnnotationAccess;
 
 import com.oracle.graal.pointsto.BigBang;
+import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.api.HostVM;
 import com.oracle.graal.pointsto.api.PointstoOptions;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
+import com.oracle.graal.pointsto.infrastructure.OriginalClassProvider;
 import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.meta.HostedProviders;
+import com.oracle.graal.pointsto.phases.InlineBeforeAnalysisPolicy;
+import com.oracle.graal.pointsto.util.GraalAccess;
+import com.oracle.svm.core.RuntimeAssertionsSupport;
 import com.oracle.svm.core.SubstrateOptions;
+import com.oracle.svm.core.SubstrateUtil;
+import com.oracle.svm.core.annotate.NeverInline;
 import com.oracle.svm.core.annotate.UnknownClass;
 import com.oracle.svm.core.annotate.UnknownObjectField;
 import com.oracle.svm.core.annotate.UnknownPrimitiveField;
+import com.oracle.svm.core.classinitialization.EnsureClassInitializedNode;
 import com.oracle.svm.core.graal.meta.SubstrateForeignCallLinkage;
 import com.oracle.svm.core.graal.meta.SubstrateForeignCallsProvider;
 import com.oracle.svm.core.graal.stackvalue.StackValueNode;
+import com.oracle.svm.core.graal.thread.VMThreadLocalAccess;
+import com.oracle.svm.core.heap.StoredContinuation;
 import com.oracle.svm.core.heap.Target_java_lang_ref_Reference;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.hub.HubType;
+import com.oracle.svm.core.hub.ReferenceType;
+import com.oracle.svm.core.jdk.ClassLoaderSupport;
+import com.oracle.svm.core.jdk.RecordSupport;
+import com.oracle.svm.core.option.HostedOptionKey;
 import com.oracle.svm.core.option.SubstrateOptionsParser;
 import com.oracle.svm.core.util.HostedStringDeduplication;
 import com.oracle.svm.core.util.VMError;
-import com.oracle.svm.hosted.c.GraalAccess;
 import com.oracle.svm.hosted.classinitialization.ClassInitializationSupport;
 import com.oracle.svm.hosted.code.InliningUtilities;
 import com.oracle.svm.hosted.meta.HostedType;
 import com.oracle.svm.hosted.phases.AnalysisGraphBuilderPhase;
+import com.oracle.svm.hosted.phases.ImplicitAssertionsPhase;
+import com.oracle.svm.hosted.phases.InlineBeforeAnalysisPolicyImpl;
 import com.oracle.svm.hosted.substitute.UnsafeAutomaticSubstitutionProcessor;
+import com.oracle.svm.util.ReflectionUtil;
 
 import jdk.vm.ci.meta.DeoptimizationReason;
 import jdk.vm.ci.meta.ResolvedJavaField;
+import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 
-public final class SVMHost implements HostVM {
+public class SVMHost implements HostVM {
     private final ConcurrentHashMap<AnalysisType, DynamicHub> typeToHub = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<DynamicHub, AnalysisType> hubToType = new ConcurrentHashMap<>();
 
     private final Map<String, EnumSet<AnalysisType.UsageKind>> forbiddenTypes;
-
+    private final Platform platform;
     private final OptionValues options;
     private final ClassLoader classLoader;
     private final ClassInitializationSupport classInitializationSupport;
@@ -111,9 +142,13 @@ public final class SVMHost implements HostVM {
      */
     private final ConcurrentMap<AnalysisMethod, Boolean> containsStackValueNode = new ConcurrentHashMap<>();
     private final ConcurrentMap<AnalysisMethod, Boolean> classInitializerSideEffect = new ConcurrentHashMap<>();
+    private final ConcurrentMap<AnalysisMethod, Set<AnalysisType>> initializedClasses = new ConcurrentHashMap<>();
     private final ConcurrentMap<AnalysisMethod, Boolean> analysisTrivialMethods = new ConcurrentHashMap<>();
 
-    public SVMHost(OptionValues options, ClassLoader classLoader, ClassInitializationSupport classInitializationSupport, UnsafeAutomaticSubstitutionProcessor automaticSubstitutions) {
+    private static final Method getNestHostMethod = JavaVersionUtil.JAVA_SPEC >= 11 ? ReflectionUtil.lookupMethod(Class.class, "getNestHost") : null;
+
+    public SVMHost(OptionValues options, ClassLoader classLoader, ClassInitializationSupport classInitializationSupport,
+                    UnsafeAutomaticSubstitutionProcessor automaticSubstitutions, Platform platform) {
         this.options = options;
         this.classLoader = classLoader;
         this.classInitializationSupport = classInitializationSupport;
@@ -121,10 +156,11 @@ public final class SVMHost implements HostVM {
         this.classReachabilityListeners = new ArrayList<>();
         this.forbiddenTypes = setupForbiddenTypes(options);
         this.automaticSubstitutions = automaticSubstitutions;
+        this.platform = platform;
     }
 
     private static Map<String, EnumSet<AnalysisType.UsageKind>> setupForbiddenTypes(OptionValues options) {
-        String[] forbiddenTypesOptionValues = SubstrateOptions.ReportAnalysisForbiddenType.getValue(options);
+        List<String> forbiddenTypesOptionValues = SubstrateOptions.ReportAnalysisForbiddenType.getValue(options).values();
         Map<String, EnumSet<AnalysisType.UsageKind>> forbiddenTypes = new HashMap<>();
         for (String forbiddenTypesOptionValue : forbiddenTypesOptionValues) {
             String[] typeNameUsageKind = forbiddenTypesOptionValue.split(":", 2);
@@ -199,14 +235,12 @@ public final class SVMHost implements HostVM {
 
     @Override
     public void clearInThread() {
-        Thread.currentThread().setContextClassLoader(SVMHost.class.getClassLoader());
-        ImageSingletonsSupportImpl.HostedManagement.clearInThread();
     }
 
     @Override
     public void installInThread(Object vmConfig) {
         Thread.currentThread().setContextClassLoader(classLoader);
-        ImageSingletonsSupportImpl.HostedManagement.installInThread((ImageSingletonsSupportImpl.HostedManagement) vmConfig);
+        assert vmConfig == ImageSingletonsSupportImpl.HostedManagement.get();
     }
 
     @Override
@@ -216,13 +250,46 @@ public final class SVMHost implements HostVM {
 
     @Override
     public void registerType(AnalysisType analysisType) {
-        classInitializationSupport.maybeInitializeHosted(analysisType);
 
         DynamicHub hub = createHub(analysisType);
+        /* Register the hub->type and type->hub mappings. */
         Object existing = typeToHub.put(analysisType, hub);
         assert existing == null;
         existing = hubToType.put(hub, analysisType);
         assert existing == null;
+
+    }
+
+    @Override
+    public void initializeType(AnalysisType analysisType) {
+        if (!analysisType.isReachable()) {
+            throw VMError.shouldNotReachHere("Registering and initializing a type that was not yet marked as reachable: " + analysisType);
+        }
+
+        /* Decide when the type should be initialized. */
+        classInitializationSupport.maybeInitializeHosted(analysisType);
+
+        /*
+         * For reachable classes, registering class's package in appropriate class loader.
+         */
+        Class<?> javaClass = analysisType.getJavaClass();
+        /**
+         * Due to using {@link NativeImageSystemClassLoader}, a class's ClassLoader during runtime
+         * may be different than the class used to load it during native-image generation.
+         */
+        ClassLoader classloader = javaClass.getClassLoader();
+        if (classloader == null) {
+            classloader = BootLoaderSupport.getBootLoader();
+        }
+        ClassLoader runtimeClassLoader = ClassLoaderFeature.getRuntimeClassLoader(classloader);
+        if (runtimeClassLoader != null) {
+            Package packageValue = javaClass.getPackage();
+            if (packageValue != null) {
+                DynamicHub typeHub = typeToHub.get(analysisType);
+                String packageName = typeHub.getPackageName();
+                ClassLoaderSupport.registerPackage(runtimeClassLoader, packageName, packageValue);
+            }
+        }
 
         /* Compute the automatic substitutions. */
         automaticSubstitutions.computeSubstitutions(this, GraalAccess.getOriginalProviders().getMetaAccess().lookupJavaType(analysisType.getJavaClass()), options);
@@ -234,6 +301,37 @@ public final class SVMHost implements HostVM {
         assert shouldInitializeAtRuntime || type.getWrapped().isInitialized() : "Types that are not marked for runtime initializations must have been initialized: " + type;
 
         return !shouldInitializeAtRuntime;
+    }
+
+    private final boolean parseOnce = SubstrateOptions.parseOnce();
+
+    @Override
+    public GraphBuilderConfiguration updateGraphBuilderConfiguration(GraphBuilderConfiguration config, AnalysisMethod method) {
+        return config.withRetainLocalVariables(retainLocalVariables());
+    }
+
+    private boolean retainLocalVariables() {
+        if (parseOnce) {
+            /*
+             * Disabling liveness analysis preserves the values of local variables beyond the
+             * bytecode-liveness. This greatly helps debugging. When local variable numbers are
+             * reused by javac, local variables can still get illegal values. Since we cannot
+             * "restore" such illegal values during deoptimization, we cannot disable liveness
+             * analysis for deoptimization target methods.
+             * 
+             * TODO: ParseOnce does not support deoptimization targets yet, this needs to be added
+             * later.
+             */
+            return SubstrateOptions.Optimize.getValue() <= 0;
+
+        } else {
+            /*
+             * We want to always disable the liveness analysis, since we want the points-to analysis
+             * to be as conservative as possible. The analysis results can then be used with the
+             * liveness analysis enabled or disabled.
+             */
+            return true;
+        }
     }
 
     @Override
@@ -257,6 +355,7 @@ public final class SVMHost implements HostVM {
         } else {
             throw VMError.shouldNotReachHere("Found unsupported type: " + type);
         }
+        /* Ensure that the hub is registered in both typeToHub and hubToType. */
         return typeToHub.get(aType);
     }
 
@@ -292,33 +391,66 @@ public final class SVMHost implements HostVM {
          */
         String sourceFileName = stringTable.deduplicate(type.getSourceFileName(), true);
 
-        final DynamicHub dynamicHub = new DynamicHub(className, computeHubType(type), type.isLocal(), isAnonymousClass(javaClass), superHub, componentHub, sourceFileName, modifiers, hubClassLoader);
+        Class<?> nestHost = null;
+        if (JavaVersionUtil.JAVA_SPEC >= 11) {
+            try {
+                nestHost = (Class<?>) getNestHostMethod.invoke(javaClass);
+            } catch (ReflectiveOperationException ex) {
+                throw VMError.shouldNotReachHere(ex);
+            }
+        }
+
+        boolean isHidden = SubstrateUtil.isHiddenClass(javaClass);
+        boolean isRecord = RecordSupport.singleton().isRecord(javaClass);
+        boolean assertionStatus = RuntimeAssertionsSupport.singleton().desiredAssertionStatus(javaClass);
+
+        final DynamicHub dynamicHub = new DynamicHub(javaClass, className, computeHubType(type), computeReferenceType(type),
+                        isLocalClass(javaClass), isAnonymousClass(javaClass), superHub, componentHub, sourceFileName,
+                        modifiers, hubClassLoader, isHidden, isRecord, nestHost, assertionStatus, type.hasDefaultMethods(), type.declaresDefaultMethods());
         if (JavaVersionUtil.JAVA_SPEC > 8) {
             ModuleAccess.extractAndSetModule(dynamicHub, javaClass);
         }
         return dynamicHub;
     }
 
+    private static Object isLocalClass(Class<?> javaClass) {
+        try {
+            return javaClass.isLocalClass();
+        } catch (InternalError e) {
+            return e;
+        } catch (LinkageError e) {
+            if (NativeImageOptions.AllowIncompleteClasspath.getValue()) {
+                return e;
+            } else {
+                return unsupportedMethod(javaClass, "isLocalClass");
+            }
+        }
+    }
+
     /**
-     * @return boolean if class is available or NoClassDefFoundError if class' parents are not on
-     *         the classpath or InternalError if the class is invalid.
+     * @return boolean if class is available or LinkageError if class' parents are not on the
+     *         classpath or InternalError if the class is invalid.
      */
     private static Object isAnonymousClass(Class<?> javaClass) {
         try {
             return javaClass.isAnonymousClass();
         } catch (InternalError e) {
             return e;
-        } catch (NoClassDefFoundError e) {
+        } catch (LinkageError e) {
             if (NativeImageOptions.AllowIncompleteClasspath.getValue()) {
                 return e;
             } else {
-                String message = "Discovered a type for which isAnonymousClass can't be called: " + javaClass.getTypeName() +
-                                ". To avoid this issue at build time use the " +
-                                SubstrateOptionsParser.commandArgument(NativeImageOptions.AllowIncompleteClasspath, "+") +
-                                " option. The NoClassDefFoundError will then be reported at run time when this method is called for the first time.";
-                throw new UnsupportedFeatureException(message);
+                return unsupportedMethod(javaClass, "isAnonymousClass");
             }
         }
+    }
+
+    private static Object unsupportedMethod(Class<?> javaClass, String methodName) {
+        String message = "Discovered a type for which " + methodName + " can't be called: " + javaClass.getTypeName() +
+                        ". To avoid this issue at build time use the " +
+                        SubstrateOptionsParser.commandArgument(NativeImageOptions.AllowIncompleteClasspath, "+") +
+                        " option. The LinkageError will then be reported at run time when this method is called for the first time.";
+        throw new UnsupportedFeatureException(message);
     }
 
     public static boolean isUnknownClass(ResolvedJavaType resolvedJavaType) {
@@ -337,9 +469,9 @@ public final class SVMHost implements HostVM {
         classReachabilityListeners.add(listener);
     }
 
-    void notifyClassReachabilityListener(AnalysisUniverse universe, DuringAnalysisAccess access) {
+    public void notifyClassReachabilityListener(AnalysisUniverse universe, DuringAnalysisAccess access) {
         for (AnalysisType type : universe.getTypes()) {
-            if ((type.isInTypeCheck() || type.isInstantiated()) && !type.getReachabilityListenerNotified()) {
+            if (type.isReachable() && !type.getReachabilityListenerNotified()) {
                 type.setReachabilityListenerNotified(true);
 
                 for (BiConsumer<DuringAnalysisAccess, Class<?>> listener : classReachabilityListeners) {
@@ -365,20 +497,69 @@ public final class SVMHost implements HostVM {
                 return HubType.ObjectArray;
             }
         } else if (type.isInstanceClass()) {
-            if (SubstrateOptions.UseCardRememberedSetHeap.getValue()) {
-                if (Reference.class.isAssignableFrom(type.getJavaClass())) {
-                    return HubType.InstanceReference;
-                }
-                assert !Target_java_lang_ref_Reference.class.isAssignableFrom(type.getJavaClass()) : "should not see substitution type here";
+            if (Reference.class.isAssignableFrom(type.getJavaClass())) {
+                return HubType.InstanceReference;
+            } else if (type.getJavaClass().equals(StoredContinuation.class)) {
+                return HubType.StoredContinuation;
             }
+            assert !Target_java_lang_ref_Reference.class.isAssignableFrom(type.getJavaClass()) : "should not see substitution type here";
             return HubType.Instance;
         } else {
             return HubType.Other;
         }
     }
 
+    private static ReferenceType computeReferenceType(AnalysisType type) {
+        Class<?> clazz = type.getJavaClass();
+        if (PhantomReference.class.isAssignableFrom(clazz)) {
+            return ReferenceType.Phantom;
+        } else if (WeakReference.class.isAssignableFrom(clazz)) {
+            return ReferenceType.Weak;
+        } else if (SoftReference.class.isAssignableFrom(clazz)) {
+            return ReferenceType.Soft;
+        } else if (Reference.class.isAssignableFrom(clazz)) {
+            return ReferenceType.Other;
+        }
+        return ReferenceType.None;
+    }
+
     @Override
-    public void checkMethod(BigBang bb, AnalysisMethod method, StructuredGraph graph) {
+    public void checkType(ResolvedJavaType type, AnalysisUniverse universe) {
+        Class<?> originalClass = OriginalClassProvider.getJavaClass(universe.getOriginalSnippetReflection(), type);
+        ClassLoader originalClassLoader = originalClass.getClassLoader();
+        if (NativeImageSystemClassLoader.singleton().isDisallowedClassLoader(originalClassLoader)) {
+            String message = "Class " + originalClass.getName() + " was loaded by " + originalClassLoader + " and not by the current image class loader " + classLoader + ". ";
+            message += "This usually means that some objects from a previous build leaked in the current build. ";
+            message += "This can happen when using the image build server. ";
+            message += "To fix the issue you must reset all static state from the bootclasspath and application classpath that points to the application objects. ";
+            message += "If the offending code is in JDK code please file a bug with GraalVM. ";
+            throw new UnsupportedFeatureException(message);
+        }
+    }
+
+    private final List<BiConsumer<AnalysisMethod, StructuredGraph>> methodAfterParsingHooks = new CopyOnWriteArrayList<>();
+
+    public void addMethodAfterParsingHook(BiConsumer<AnalysisMethod, StructuredGraph> methodAfterParsingHook) {
+        methodAfterParsingHooks.add(methodAfterParsingHook);
+    }
+
+    @Override
+    public void methodAfterParsingHook(BigBang bb, AnalysisMethod method, StructuredGraph graph) {
+        if (graph != null) {
+            graph.setGuardsStage(StructuredGraph.GuardsStage.FIXED_DEOPTS);
+
+            if (parseOnce) {
+                new ImplicitAssertionsPhase().apply(graph, bb.getProviders());
+            }
+
+            for (BiConsumer<AnalysisMethod, StructuredGraph> methodAfterParsingHook : methodAfterParsingHooks) {
+                methodAfterParsingHook.accept(method, graph);
+            }
+        }
+    }
+
+    @Override
+    public void methodBeforeTypeFlowCreationHook(PointsToAnalysis bb, AnalysisMethod method, StructuredGraph graph) {
         if (method.isEntryPoint() && !Modifier.isStatic(graph.method().getModifiers())) {
             ValueNode receiver = graph.start().stateAfter().localAt(0);
             if (receiver != null && receiver.hasUsages()) {
@@ -426,7 +607,7 @@ public final class SVMHost implements HostVM {
             if (n instanceof StackValueNode) {
                 containsStackValueNode.put(method, true);
             }
-            checkClassInitializerSideEffect(method, n);
+            checkClassInitializerSideEffect(bb, method, n);
         }
     }
 
@@ -449,18 +630,28 @@ public final class SVMHost implements HostVM {
      * call chain is the class initializer. But this does not fit well into the current approach
      * where each method has a `Safety` flag.
      */
-    private void checkClassInitializerSideEffect(AnalysisMethod method, Node n) {
+    private void checkClassInitializerSideEffect(PointsToAnalysis bb, AnalysisMethod method, Node n) {
         if (n instanceof AccessFieldNode) {
             ResolvedJavaField field = ((AccessFieldNode) n).field();
             if (field.isStatic() && (!method.isClassInitializer() || !field.getDeclaringClass().equals(method.getDeclaringClass()))) {
                 classInitializerSideEffect.put(method, true);
             }
-        } else if (n instanceof UnsafeAccessNode) {
+        } else if (n instanceof UnsafeAccessNode || n instanceof VMThreadLocalAccess) {
             /*
              * Unsafe memory access nodes are rare, so it does not pay off to check what kind of
              * field they are accessing.
+             * 
+             * Methods that access a thread-local value cannot be initialized at image build time
+             * because such values are not available yet.
              */
             classInitializerSideEffect.put(method, true);
+        } else if (n instanceof EnsureClassInitializedNode) {
+            ResolvedJavaType type = ((EnsureClassInitializedNode) n).constantTypeOrNull(bb.getProviders());
+            if (type != null) {
+                initializedClasses.computeIfAbsent(method, k -> new HashSet<>()).add((AnalysisType) type);
+            } else {
+                classInitializerSideEffect.put(method, true);
+            }
         }
     }
 
@@ -483,7 +674,88 @@ public final class SVMHost implements HostVM {
         return classInitializerSideEffect.containsKey(method);
     }
 
+    public Set<AnalysisType> getInitializedClasses(AnalysisMethod method) {
+        Set<AnalysisType> result = initializedClasses.get(method);
+        if (result != null) {
+            return result;
+        } else {
+            return Collections.emptySet();
+        }
+    }
+
     public boolean isAnalysisTrivialMethod(AnalysisMethod method) {
         return analysisTrivialMethods.containsKey(method);
+    }
+
+    @Override
+    public boolean hasNeverInlineDirective(ResolvedJavaMethod method) {
+        if (GuardedAnnotationAccess.isAnnotationPresent(method, NeverInline.class)) {
+            return true;
+        }
+
+        List<String> neverInline = SubstrateOptions.NeverInline.getValue().values();
+        if (neverInline != null && neverInline.stream().anyMatch(re -> MethodFilter.parse(re).matches(method))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private final InlineBeforeAnalysisPolicy<?> inlineBeforeAnalysisPolicy = new InlineBeforeAnalysisPolicyImpl();
+
+    @Override
+    public InlineBeforeAnalysisPolicy<?> inlineBeforeAnalysisPolicy() {
+        return inlineBeforeAnalysisPolicy;
+    }
+
+    public static class Options {
+        @Option(help = "Enable the behavior of old GraalVM versions. When enabled, interfaces not available for the current platform are filtered.")//
+        public static final HostedOptionKey<Boolean> PlatformInterfaceCompatibilityMode = new HostedOptionKey<>(false);
+    }
+
+    @Override
+    public boolean skipInterface(AnalysisUniverse universe, ResolvedJavaType interfaceType, ResolvedJavaType implementingType) {
+        if (!platformSupported(universe, interfaceType)) {
+            String message = "The interface " + interfaceType.toJavaName(true) + " is not available in the current platform, but used by " + implementingType.toJavaName(true) + ". " +
+                            "GraalVM before version 21.2 ignored such interfaces, but this was an oversight.";
+
+            String commandArgument = SubstrateOptionsParser.commandArgument(Options.PlatformInterfaceCompatibilityMode, "+");
+            if (Options.PlatformInterfaceCompatibilityMode.getValue()) {
+                System.out.println("Warning: " + message + " The interface is filtered because the compatibility option " + commandArgument +
+                                " is used. This option will be removed in a future GraalVM version.");
+                return true;
+            } else {
+                throw new UnsupportedFeatureException(
+                                message + " The old behavior can be temporarily restored using the option " + commandArgument + ". This option will be removed in a future GraalVM version.");
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean platformSupported(AnalysisUniverse universe, AnnotatedElement element) {
+        if (element instanceof ResolvedJavaType) {
+            Package p = OriginalClassProvider.getJavaClass(universe.getOriginalSnippetReflection(), (ResolvedJavaType) element).getPackage();
+            if (p != null && !platformSupported(universe, p)) {
+                return false;
+            }
+        }
+        if (element instanceof Class) {
+            Package p = ((Class<?>) element).getPackage();
+            if (p != null && !platformSupported(universe, p)) {
+                return false;
+            }
+        }
+
+        Platforms platformsAnnotation = GuardedAnnotationAccess.getAnnotation(element, Platforms.class);
+        if (platform == null || platformsAnnotation == null) {
+            return true;
+        }
+        for (Class<? extends Platform> platformGroup : platformsAnnotation.value()) {
+            if (platformGroup.isInstance(platform)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

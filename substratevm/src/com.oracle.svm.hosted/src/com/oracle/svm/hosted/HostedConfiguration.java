@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,28 +25,47 @@
 package com.oracle.svm.hosted;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.CompressEncoding;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.nodes.StructuredGraph;
+import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.nativeimage.ImageSingletons;
+import org.graalvm.nativeimage.Platform;
 
 import com.oracle.graal.pointsto.BigBang;
+import com.oracle.graal.pointsto.PointsToAnalysis;
+import com.oracle.graal.pointsto.flow.MethodTypeFlow;
+import com.oracle.graal.pointsto.flow.MethodTypeFlowBuilder;
 import com.oracle.graal.pointsto.meta.AnalysisField;
+import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.results.AbstractAnalysisResultsBuilder;
 import com.oracle.graal.pointsto.results.StaticAnalysisResultsBuilder;
+import com.oracle.graal.pointsto.typestate.TypeState;
 import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.SubstrateTargetDescription;
 import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.config.ObjectLayout;
+import com.oracle.svm.core.monitor.MultiThreadedMonitorSupport;
+import com.oracle.svm.core.util.VMError;
+import com.oracle.svm.hosted.analysis.Inflation;
+import com.oracle.svm.hosted.analysis.flow.SVMMethodTypeFlowBuilder;
+import com.oracle.svm.hosted.classinitialization.ClassInitializationSupport;
 import com.oracle.svm.hosted.code.CompileQueue;
 import com.oracle.svm.hosted.code.SharedRuntimeConfigurationBuilder;
 import com.oracle.svm.hosted.config.HybridLayout;
+import com.oracle.svm.hosted.config.HybridLayoutSupport;
 import com.oracle.svm.hosted.meta.HostedField;
 import com.oracle.svm.hosted.meta.HostedInstanceClass;
 import com.oracle.svm.hosted.meta.HostedMetaAccess;
 import com.oracle.svm.hosted.meta.HostedUniverse;
+import com.oracle.svm.hosted.substitute.UnsafeAutomaticSubstitutionProcessor;
 
 import jdk.vm.ci.meta.JavaKind;
 
@@ -59,7 +78,7 @@ public class HostedConfiguration {
         return ImageSingletons.lookup(HostedConfiguration.class);
     }
 
-    static void setDefaultIfEmpty() {
+    public static void setDefaultIfEmpty() {
         if (!ImageSingletons.contains(HostedConfiguration.class)) {
             ImageSingletons.add(HostedConfiguration.class, new HostedConfiguration());
 
@@ -68,11 +87,13 @@ public class HostedConfiguration {
 
             ObjectLayout objectLayout = createObjectLayout();
             ImageSingletons.add(ObjectLayout.class, objectLayout);
+
+            ImageSingletons.add(HybridLayoutSupport.class, new HybridLayoutSupport());
         }
     }
 
     public static ObjectLayout createObjectLayout() {
-        return createObjectLayout(0, JavaKind.Object);
+        return createObjectLayout(JavaKind.Object);
     }
 
     /**
@@ -97,27 +118,37 @@ public class HostedConfiguration {
      * The hashcode is always present in arrays. Note that on 64-bit targets it does not impose any
      * size overhead for arrays with 64-bit aligned elements (e.g. arrays of objects).
      */
-    public static ObjectLayout createObjectLayout(int hubOffset, JavaKind referenceKind) {
+    public static ObjectLayout createObjectLayout(JavaKind referenceKind) {
         SubstrateTargetDescription target = ConfigurationValues.getTarget();
         int referenceSize = target.arch.getPlatformKind(referenceKind).getSizeInBytes();
-        int objectAlignment = target.wordSize;
-        int firstFieldOffset = hubOffset + referenceSize;
-        int arrayLengthOffset = hubOffset + referenceSize;
-        int arrayIdentityHashCodeOffset = arrayLengthOffset + target.arch.getPlatformKind(JavaKind.Int).getSizeInBytes();
-        int arrayBaseOffset = arrayIdentityHashCodeOffset + target.arch.getPlatformKind(JavaKind.Int).getSizeInBytes();
-        int arrayZeroingStartOffset = arrayIdentityHashCodeOffset;
-        boolean useExplicitIdentityHashCodeField = true;
-        int instanceIdentityHashCodeOffset = -1; // depends on the hub
+        int objectAlignment = 8;
 
-        ObjectLayout objectLayout = new ObjectLayout(target, referenceSize, objectAlignment, hubOffset, firstFieldOffset, arrayLengthOffset, arrayBaseOffset, arrayZeroingStartOffset,
-                        useExplicitIdentityHashCodeField, instanceIdentityHashCodeOffset, arrayIdentityHashCodeOffset);
-        return objectLayout;
+        int hubOffset = 0;
+        int identityHashCodeOffset = hubOffset + referenceSize;
+        int firstFieldOffset = identityHashCodeOffset + target.arch.getPlatformKind(JavaKind.Int).getSizeInBytes();
+        int arrayLengthOffset = firstFieldOffset;
+        int arrayBaseOffset = arrayLengthOffset + target.arch.getPlatformKind(JavaKind.Int).getSizeInBytes();
+
+        return new ObjectLayout(target, referenceSize, objectAlignment, hubOffset, firstFieldOffset, arrayLengthOffset, arrayBaseOffset, identityHashCodeOffset);
+    }
+
+    public SVMHost createHostVM(OptionValues options, ClassLoader classLoader, ClassInitializationSupport classInitializationSupport,
+                    UnsafeAutomaticSubstitutionProcessor automaticSubstitutions, Platform platform) {
+        return new SVMHost(options, classLoader, classInitializationSupport, automaticSubstitutions, platform);
     }
 
     public CompileQueue createCompileQueue(DebugContext debug, FeatureHandler featureHandler, HostedUniverse hostedUniverse,
                     SharedRuntimeConfigurationBuilder runtime, boolean deoptimizeAll, SnippetReflectionProvider aSnippetReflection, ForkJoinPool executor) {
 
         return new CompileQueue(debug, featureHandler, hostedUniverse, runtime, deoptimizeAll, aSnippetReflection, executor);
+    }
+
+    public MethodTypeFlowBuilder createMethodTypeFlowBuilder(PointsToAnalysis bb, MethodTypeFlow methodTypeFlow) {
+        return new SVMMethodTypeFlowBuilder(bb, methodTypeFlow);
+    }
+
+    public MethodTypeFlowBuilder createMethodTypeFlowBuilder(PointsToAnalysis bb, StructuredGraph graph) {
+        return new SVMMethodTypeFlowBuilder(bb, graph);
     }
 
     public void findAllFieldsForLayout(HostedUniverse universe, @SuppressWarnings("unused") HostedMetaAccess metaAccess,
@@ -142,12 +173,57 @@ public class HostedConfiguration {
         }
     }
 
-    public StaticAnalysisResultsBuilder createStaticAnalysisResultsBuilder(BigBang bigbang, HostedUniverse universe) {
-        return new StaticAnalysisResultsBuilder(bigbang, universe);
+    public AbstractAnalysisResultsBuilder createStaticAnalysisResultsBuilder(Inflation bb, HostedUniverse universe) {
+        if (bb instanceof PointsToAnalysis) {
+            PointsToAnalysis pointsToAnalysis = (PointsToAnalysis) bb;
+            if (SubstrateOptions.parseOnce()) {
+                return new SubstrateStrengthenGraphs(pointsToAnalysis, universe);
+            } else {
+                return new StaticAnalysisResultsBuilder(pointsToAnalysis, universe);
+            }
+        } else {
+            /*- A custom result builder for Reachability analysis will probably have to be created */
+            throw VMError.shouldNotReachHere("Unsupported analysis type: " + bb.getClass());
+        }
     }
 
-    public boolean isUsingAOTProfiles() {
-        return false;
+    public void collectMonitorFieldInfo(BigBang bb, HostedUniverse hUniverse, Set<AnalysisType> immutableTypes) {
+        /* First set the monitor field for types that always need it. */
+        getForceMonitorSlotTypes(bb).forEach(type -> setMonitorField(hUniverse, type));
+
+        /* Then decide what other types may need it. */
+        processedSynchronizedTypes(bb, hUniverse, immutableTypes);
     }
 
+    private static Set<AnalysisType> getForceMonitorSlotTypes(BigBang bb) {
+        Set<AnalysisType> forceMonitorTypes = new HashSet<>();
+        for (Class<?> forceMonitorType : MultiThreadedMonitorSupport.FORCE_MONITOR_SLOT_TYPES) {
+            Optional<AnalysisType> aType = bb.getMetaAccess().optionalLookupJavaType(forceMonitorType);
+            aType.ifPresent(forceMonitorTypes::add);
+        }
+        return forceMonitorTypes;
+    }
+
+    /** Process the types that the analysis found as needing synchronization. */
+    protected void processedSynchronizedTypes(BigBang bb, HostedUniverse hUniverse, Set<AnalysisType> immutableTypes) {
+        TypeState allSynchronizedTypeState = bb.getAllSynchronizedTypeState();
+        for (AnalysisType type : allSynchronizedTypeState.types(bb)) {
+            maybeSetMonitorField(hUniverse, immutableTypes, type);
+        }
+    }
+
+    /**
+     * Monitor fields on arrays would increase the array header too much. Also, types that must be
+     * immutable cannot have a monitor field.
+     */
+    protected static void maybeSetMonitorField(HostedUniverse hUniverse, Set<AnalysisType> immutableTypes, AnalysisType type) {
+        if (!type.isArray() && !immutableTypes.contains(type)) {
+            setMonitorField(hUniverse, type);
+        }
+    }
+
+    private static void setMonitorField(HostedUniverse hUniverse, AnalysisType type) {
+        final HostedInstanceClass hostedInstanceClass = (HostedInstanceClass) hUniverse.lookup(type);
+        hostedInstanceClass.setNeedMonitorField();
+    }
 }

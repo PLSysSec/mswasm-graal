@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -80,7 +80,13 @@ public class NodeData extends Template implements Comparable<NodeData> {
     private final boolean generateFactory;
 
     private TypeMirror frameType;
-    private boolean reflectable;
+    private boolean generateIntrospection;
+    private boolean generateStatistics;
+    private boolean generateAOT;
+
+    private boolean generateTraceOnEnter;
+    private boolean generateTraceOnReturn;
+    private boolean generateTraceOnException;
 
     private boolean reportPolymorphism;
     private boolean isUncachable;
@@ -88,6 +94,7 @@ public class NodeData extends Template implements Comparable<NodeData> {
     private boolean generateUncached;
     private Set<String> allowedCheckedExceptions;
     private Map<CacheExpression, String> sharedCaches = Collections.emptyMap();
+    private ExecutableTypeData polymorphicExecutable;
 
     public NodeData(ProcessorContext context, TypeElement type, TypeSystemData typeSystem, boolean generateFactory, boolean generateUncached) {
         super(context, type, null);
@@ -96,10 +103,18 @@ public class NodeData extends Template implements Comparable<NodeData> {
         this.fields = new ArrayList<>();
         this.children = new ArrayList<>();
         this.childExecutions = new ArrayList<>();
-        this.thisExecution = new NodeExecutionData(new NodeChildData(null, null, "this", getNodeType(), getNodeType(), null, Cardinality.ONE, null), -1, -1);
+        this.thisExecution = new NodeExecutionData(new NodeChildData(null, null, "this", getNodeType(), getNodeType(), null, Cardinality.ONE, null, null, null), -1, -1);
         this.thisExecution.getChild().setNode(this);
         this.generateFactory = generateFactory;
         this.generateUncached = generateUncached;
+    }
+
+    public void setGenerateStatistics(boolean generateStatistics) {
+        this.generateStatistics = generateStatistics;
+    }
+
+    public boolean isGenerateStatistics() {
+        return generateStatistics;
     }
 
     public Map<CacheExpression, String> getSharedCaches() {
@@ -156,16 +171,42 @@ public class NodeData extends Template implements Comparable<NodeData> {
         return thisExecution;
     }
 
-    public boolean isReflectable() {
-        return reflectable;
+    public boolean isGenerateIntrospection() {
+        return generateIntrospection;
     }
 
-    public void setReflectable(boolean reflectable) {
-        this.reflectable = reflectable;
+    public void setGenerateIntrospection(boolean reflectable) {
+        this.generateIntrospection = reflectable;
+    }
+
+    public boolean isGenerateAOT() {
+        return generateAOT;
+    }
+
+    public void setGenerateAOT(boolean generateAOT) {
+        this.generateAOT = generateAOT;
+    }
+
+    public boolean isGenerateTraceOnEnter() {
+        return generateTraceOnEnter;
+    }
+
+    public boolean isGenerateTraceOnReturn() {
+        return generateTraceOnReturn;
+    }
+
+    public boolean isGenerateTraceOnException() {
+        return generateTraceOnException;
+    }
+
+    public void setGenerateExecuteTracing(boolean generateTraceOnEnter, boolean generateTraceOnReturn, boolean generateTraceOnException) {
+        this.generateTraceOnEnter = generateTraceOnEnter;
+        this.generateTraceOnReturn = generateTraceOnReturn;
+        this.generateTraceOnException = generateTraceOnException;
     }
 
     public boolean isFallbackReachable() {
-        SpecializationData generic = getGenericSpecialization();
+        SpecializationData generic = getFallbackSpecialization();
         if (generic != null) {
             return generic.isReachable();
         }
@@ -455,27 +496,9 @@ public class NodeData extends Template implements Comparable<NodeData> {
         return false;
     }
 
-    public SpecializationData getPolymorphicSpecialization() {
-        for (SpecializationData specialization : specializations) {
-            if (specialization.isPolymorphic()) {
-                return specialization;
-            }
-        }
-        return null;
-    }
-
-    public SpecializationData getGenericSpecialization() {
+    public SpecializationData getFallbackSpecialization() {
         for (SpecializationData specialization : specializations) {
             if (specialization.isFallback()) {
-                return specialization;
-            }
-        }
-        return null;
-    }
-
-    public SpecializationData getUninitializedSpecialization() {
-        for (SpecializationData specialization : specializations) {
-            if (specialization.isUninitialized()) {
                 return specialization;
             }
         }
@@ -683,6 +706,14 @@ public class NodeData extends Template implements Comparable<NodeData> {
 
     public Set<TypeMirror> getLibraryTypes() {
         return libraryTypes;
+    }
+
+    public void setPolymorphicExecutable(ExecutableTypeData polymorphicType) {
+        this.polymorphicExecutable = polymorphicType;
+    }
+
+    public ExecutableTypeData getPolymorphicExecutable() {
+        return polymorphicExecutable;
     }
 
 }

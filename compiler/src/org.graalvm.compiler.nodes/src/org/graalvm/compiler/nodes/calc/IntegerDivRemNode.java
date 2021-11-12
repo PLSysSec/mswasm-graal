@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -37,7 +37,6 @@ import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.extended.GuardingNode;
 import org.graalvm.compiler.nodes.spi.Lowerable;
-import org.graalvm.compiler.nodes.spi.LoweringTool;
 
 @NodeInfo(cycles = CYCLES_32, size = SIZE_1)
 public abstract class IntegerDivRemNode extends FixedBinaryNode implements Lowerable, IterableNodeType {
@@ -58,7 +57,7 @@ public abstract class IntegerDivRemNode extends FixedBinaryNode implements Lower
 
     private final Op op;
     private final Type type;
-    private final boolean canDeopt;
+    private boolean canDeopt;
 
     protected IntegerDivRemNode(NodeClass<? extends IntegerDivRemNode> c, Stamp stamp, Op op, Type type, ValueNode x, ValueNode y, GuardingNode zeroCheck) {
         super(c, stamp, x, y);
@@ -66,10 +65,7 @@ public abstract class IntegerDivRemNode extends FixedBinaryNode implements Lower
         this.op = op;
         this.type = type;
 
-        // Assigning canDeopt during constructor, because it must never change during lifetime of
-        // the node.
-        IntegerStamp yStamp = (IntegerStamp) getY().stamp(NodeView.DEFAULT);
-        this.canDeopt = (yStamp.contains(0) && zeroCheck == null) || yStamp.contains(-1);
+        this.canDeopt = calculateCanDeoptimize();
     }
 
     public final GuardingNode getZeroCheck() {
@@ -84,13 +80,19 @@ public abstract class IntegerDivRemNode extends FixedBinaryNode implements Lower
         return type;
     }
 
-    @Override
-    public void lower(LoweringTool tool) {
-        tool.getLowerer().lower(this, tool);
+    private boolean calculateCanDeoptimize() {
+        IntegerStamp yStamp = (IntegerStamp) getY().stamp(NodeView.DEFAULT);
+        return (yStamp.contains(0) && zeroCheck == null) || yStamp.contains(-1);
     }
 
     @Override
     public boolean canDeoptimize() {
+        /*
+         * Ensure canDeopt never gets weaker, i.e., that it never transfers from false -> true. If
+         * one were to rely exclusively on the y input's stamp, such a "weakening" could occur when
+         * PiNodes are removed during FixReadsPhase.
+         */
+        canDeopt = canDeopt && calculateCanDeoptimize();
         return canDeopt;
     }
 }

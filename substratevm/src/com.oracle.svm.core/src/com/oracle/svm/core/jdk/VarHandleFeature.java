@@ -102,7 +102,7 @@ public class VarHandleFeature implements Feature {
     private static final Unsafe UNSAFE = GraalUnsafeAccess.getUnsafe();
 
     /** The JDK 11 class VarHandleObjects got renamed to VarHandleReferences. */
-    static final String OBJECT_SUFFIX = JavaVersionUtil.JAVA_SPEC > 11 ? "References" : "Objects";
+    static final String OBJECT_SUFFIX = JavaVersionUtil.JAVA_SPEC <= 11 ? "Objects" : "References";
 
     private final Map<Class<?>, VarHandleInfo> infos = new HashMap<>();
 
@@ -202,17 +202,7 @@ public class VarHandleFeature implements Feature {
             VMError.guarantee(markAsUnsafeAccessed != null, "New VarHandle found after static analysis");
 
             Field field = findVarHandleField(obj);
-            if (info.isStatic) {
-                /*
-                 * GR-10238 implements Unsafe access for static fields, then this branch can be
-                 * removed and static fields can be properly marked for Unsafe access too.
-                 */
-                // Checkstyle: stop
-                System.out.println("WARNING GR-10238: VarHandle for static field is currently not fully supported. Static field " + field + " is not properly marked for Unsafe access!");
-                // Checkstyle: resume
-            } else {
-                markAsUnsafeAccessed.accept(field);
-            }
+            markAsUnsafeAccessed.accept(field);
         }
         return obj;
     }
@@ -245,11 +235,21 @@ class VarHandleFieldStaticBasePrimitiveAccessor {
     static Object get(@SuppressWarnings("unused") Object varHandle) {
         return StaticFieldsSupport.getStaticPrimitiveFields();
     }
+
+    @SuppressWarnings("unused")
+    static void set(Object varHandle, Object value) {
+        assert value == StaticFieldsSupport.getStaticPrimitiveFields();
+    }
 }
 
 class VarHandleFieldStaticBaseObjectAccessor {
     static Object get(@SuppressWarnings("unused") Object varHandle) {
         return StaticFieldsSupport.getStaticObjectFields();
+    }
+
+    @SuppressWarnings("unused")
+    static void set(Object varHandle, Object value) {
+        assert value == StaticFieldsSupport.getStaticObjectFields();
     }
 }
 
@@ -489,7 +489,7 @@ final class Target_java_lang_invoke_VarHandle {
      * collects details about the MemberName, which are method handle internals that must not be
      * reachable.
      */
-    @TargetElement(onlyWith = JDK14OrLater.class)
+    @TargetElement(onlyWith = JDK17OrLater.class)
     @Substitute
     @Override
     public String toString() {

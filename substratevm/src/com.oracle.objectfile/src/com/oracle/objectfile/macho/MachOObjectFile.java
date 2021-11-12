@@ -52,6 +52,8 @@ import com.oracle.objectfile.ObjectFile;
 import com.oracle.objectfile.SymbolTable;
 import com.oracle.objectfile.io.AssemblyBuffer;
 import com.oracle.objectfile.io.OutputAssembler;
+import org.graalvm.nativeimage.ImageSingletons;
+import org.graalvm.nativeimage.Platform;
 
 /**
  * Models a Mach-O relocatable object file.
@@ -80,7 +82,7 @@ public final class MachOObjectFile extends ObjectFile {
      * Create an empty Mach-O object file.
      */
     public MachOObjectFile(int pageSize) {
-        this(pageSize, MachOCpuType.from(System.getProperty("svm.targetArch") == null ? System.getProperty("os.arch") : System.getProperty("svm.targetArch")));
+        this(pageSize, MachOCpuType.from(ImageSingletons.lookup(Platform.class).getArchitecture()));
     }
 
     public MachOObjectFile(int pageSize, MachOCpuType cpuType) {
@@ -427,7 +429,7 @@ public final class MachOObjectFile extends ObjectFile {
         return relocs;
     }
 
-    public MachORelocationElement getOrCreateRelocationElement(@SuppressWarnings("unused") boolean useImplicitAddend) {
+    public MachORelocationElement getOrCreateRelocationElement() {
         if (relocs == null) {
             final Segment64Command containingSegment = getOrCreateSegment(getUnnamedSegmentName(), null, false, false);
             relocs = new MachORelocationElement(containingSegment);
@@ -1896,7 +1898,9 @@ public final class MachOObjectFile extends ObjectFile {
             // our constituent loadable sections.
             Map<Element, LayoutDecisionMap> decidedAboutOurElements = new HashMap<>();
             for (Element e : elementsInSegment) {
-                decidedAboutOurElements.put(e, alreadyDecided.get(e));
+                if (e instanceof MachOSection) {
+                    decidedAboutOurElements.put(e, alreadyDecided.get(e));
+                }
             }
             List<LayoutDecision> minVaddrDecisions = ObjectFile.minimalDecisionValues(decidedAboutOurElements, LayoutDecision.Kind.VADDR, new IntegerDecisionComparator(true));
             int minVaddr = (minVaddrDecisions == null || minVaddrDecisions.size() == 0) ? 0 : (int) minVaddrDecisions.get(0).getValue();

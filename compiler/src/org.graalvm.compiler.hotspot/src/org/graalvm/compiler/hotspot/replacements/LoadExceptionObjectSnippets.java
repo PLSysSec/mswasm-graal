@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -97,8 +97,9 @@ public class LoadExceptionObjectSnippets implements Snippets {
                 Stamp stamp = wordTypes.getWordStamp(wordType);
                 ReadRegisterNode thread = graph.add(new ReadRegisterNode(stamp, registers.getThreadRegister(), true, false));
                 graph.addBeforeFixed(loadExceptionObject, thread);
-                ForeignCallNode loadExceptionC = graph.add(new ForeignCallNode(providers.getForeignCalls(), LOAD_AND_CLEAR_EXCEPTION, thread));
+                ForeignCallNode loadExceptionC = graph.add(new ForeignCallNode(LOAD_AND_CLEAR_EXCEPTION, thread));
                 loadExceptionC.setStateAfter(loadExceptionObject.stateAfter());
+                loadExceptionC.computeStateDuring(loadExceptionObject.stateAfter());
                 graph.replaceFixedWithFixed(loadExceptionObject, loadExceptionC);
             } else {
                 Arguments args = new Arguments(loadException, loadExceptionObject.graph().getGuardsStage(), tool.getLoweringStage());

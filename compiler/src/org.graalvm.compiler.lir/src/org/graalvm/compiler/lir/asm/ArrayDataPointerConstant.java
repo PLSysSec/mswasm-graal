@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,6 +40,14 @@ public class ArrayDataPointerConstant extends DataPointerConstant {
     public ArrayDataPointerConstant(byte[] array, int alignment) {
         super(alignment);
         data = array.clone();
+    }
+
+    public ArrayDataPointerConstant(char[] array, int alignment) {
+        super(alignment);
+        ByteBuffer byteBuffer = ByteBuffer.allocate(array.length * 2);
+        byteBuffer.order(ByteOrder.nativeOrder());
+        byteBuffer.asCharBuffer().put(array);
+        data = byteBuffer.array();
     }
 
     public ArrayDataPointerConstant(short[] array, int alignment) {
@@ -100,5 +108,31 @@ public class ArrayDataPointerConstant extends DataPointerConstant {
     @Override
     public String toValueString() {
         return "ArrayDataPointerConstant" + Arrays.toString(data);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        ArrayDataPointerConstant that = (ArrayDataPointerConstant) o;
+        return Arrays.equals(data, that.data);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(data);
+    }
+
+    @Override
+    public String toString() {
+        return "ArrayDataPointerConstant{" +
+                        "data=" + Arrays.toString(data) +
+                        ", size=" + getSerializedSize() +
+                        ", alignment=" + getAlignment() +
+                        '}';
     }
 }

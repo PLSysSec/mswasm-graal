@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -34,7 +34,6 @@ import com.oracle.objectfile.ElementImpl;
 import com.oracle.objectfile.LayoutDecisionMap;
 import com.oracle.objectfile.ObjectFile;
 import com.oracle.objectfile.ObjectFile.Element;
-import com.oracle.objectfile.ObjectFile.RelocationRecord;
 import com.oracle.objectfile.elf.ELFObjectFile.ELFSection;
 import com.oracle.objectfile.elf.ELFObjectFile.ELFSectionFlag;
 import com.oracle.objectfile.elf.ELFObjectFile.SectionType;
@@ -127,45 +126,35 @@ public class ELFUserDefinedSection extends ELFSection implements ObjectFile.Relo
     }
 
     @Override
-    public Element getOrCreateRelocationElement(boolean useImplicitAddend) {
+    public Element getOrCreateRelocationElement(long addend) {
         ELFSymtab syms = (ELFSymtab) getOwner().elementForName(".symtab");
         if (syms == null) {
             throw new IllegalStateException("cannot create a relocation section without corresponding symtab");
         }
-        boolean withExplicitAddends = !useImplicitAddend;
-        ELFRelocationSection rs = withExplicitAddends ? rela : rel;
-        if (rs == null) {
-            // we have to create the section if it doesn't exist
-            rs = getOwner().getOrCreateRelocSection(this, syms, withExplicitAddends);
-            assert rs != null;
-            if (withExplicitAddends) {
-                rela = rs;
-            } else {
-                rel = rs;
+
+        if (ELFObjectFile.useExplicitAddend(addend)) {
+            if (rela == null) {
+                rela = getOwner().getOrCreateRelocSection(this, syms, true);
+                assert rela != null;
             }
+            return rela;
+        } else {
+            // use implicit addend
+            if (rel == null) {
+                rel = getOwner().getOrCreateRelocSection(this, syms, false);
+                assert rel != null;
+            }
+            return rel;
         }
-        return rs;
     }
 
     @Override
-    public RelocationRecord markRelocationSite(int offset, int length, ByteBuffer bb, ObjectFile.RelocationKind k, String symbolName, boolean useImplicitAddend, Long explicitAddend) {
-        if (useImplicitAddend != (explicitAddend == null)) {
-            throw new IllegalArgumentException("must have either an explicit or implicit addend");
-        }
+    public void markRelocationSite(int offset, ByteBuffer bb, ObjectFile.RelocationKind k, String symbolName, long addend) {
         ELFSymtab syms = (ELFSymtab) getOwner().elementForName(".symtab");
-        ELFRelocationSection rs = (ELFRelocationSection) getOrCreateRelocationElement(useImplicitAddend);
-        ELFSymtab.Entry ent;
-        if (symbolName != null) {
-            ent = syms.getSymbol(symbolName);
-            assert ent != null;
-        } else {
-            // else we're a reloc type that doesn't need a symbol
-            // assert this about the reloc type
-            assert !k.usesSymbolValue();
-            // use the null symtab entry
-            ent = syms.getNullEntry();
-            assert ent.isNull();
-        }
-        return rs.addEntry(this, offset, ELFMachine.getRelocation(getOwner().getMachine(), k, length), ent, explicitAddend);
+        ELFRelocationSection rs = (ELFRelocationSection) getOrCreateRelocationElement(addend);
+        assert symbolName != null;
+        ELFSymtab.Entry ent = syms.getSymbol(symbolName);
+        assert ent != null;
+        rs.addEntry(this, offset, ELFMachine.getRelocation(getOwner().getMachine(), k), ent, addend);
     }
 }

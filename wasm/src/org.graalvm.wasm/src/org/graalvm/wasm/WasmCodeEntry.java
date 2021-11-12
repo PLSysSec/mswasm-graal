@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,31 +40,34 @@
  */
 package org.graalvm.wasm;
 
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlot;
 import com.oracle.truffle.api.frame.FrameSlotKind;
+import com.oracle.truffle.api.profiles.BranchProfile;
+
+import org.graalvm.wasm.collection.IntArrayList;
 
 public final class WasmCodeEntry {
+    private static final Object STACK_LOCALS_SLOT_INDEX = 0;
+
     private final WasmFunction function;
     @CompilationFinal(dimensions = 1) private final byte[] data;
-    @CompilationFinal(dimensions = 1) private FrameSlot[] localSlots;
-    @CompilationFinal(dimensions = 1) private FrameSlot[] stackSlots;
     @CompilationFinal(dimensions = 1) private byte[] localTypes;
-    @CompilationFinal(dimensions = 1) private byte[] byteConstants;
     @CompilationFinal(dimensions = 1) private int[] intConstants;
-    @CompilationFinal(dimensions = 1) private long[] longConstants;
     @CompilationFinal(dimensions = 2) private int[][] branchTables;
+    @CompilationFinal(dimensions = 1) private int[] profileCounters;
+    @CompilationFinal private FrameSlot stackLocalsSlot;
+    @CompilationFinal private int maxStackSize;
+    private final BranchProfile errorBranch = BranchProfile.create();
 
     public WasmCodeEntry(WasmFunction function, byte[] data) {
         this.function = function;
         this.data = data;
-        this.localSlots = null;
-        this.stackSlots = null;
         this.localTypes = null;
-        this.byteConstants = null;
         this.intConstants = null;
-        this.longConstants = null;
+        this.profileCounters = null;
     }
 
     public WasmFunction function() {
@@ -75,47 +78,17 @@ public final class WasmCodeEntry {
         return data;
     }
 
-    public FrameSlot localSlot(int index) {
-        return localSlots[index];
+    public void initStackLocals(FrameDescriptor frameDescriptor, int maximumStackSize) {
+        this.stackLocalsSlot = frameDescriptor.addFrameSlot(STACK_LOCALS_SLOT_INDEX, FrameSlotKind.Object);
+        this.maxStackSize = maximumStackSize;
     }
 
-    public FrameSlot stackSlot(int index) {
-        return stackSlots[index];
+    public int maxStackSize() {
+        return maxStackSize;
     }
 
-    public void initLocalSlots(FrameDescriptor frameDescriptor) {
-        localSlots = new FrameSlot[localTypes.length];
-        for (int i = 0; i != localTypes.length; ++i) {
-            FrameSlot localSlot = frameDescriptor.addFrameSlot(i, frameSlotKind(localTypes[i]));
-            localSlots[i] = localSlot;
-        }
-    }
-
-    private static FrameSlotKind frameSlotKind(byte valueType) {
-        switch (valueType) {
-            case ValueTypes.I32_TYPE:
-                return FrameSlotKind.Int;
-            case ValueTypes.I64_TYPE:
-                return FrameSlotKind.Long;
-            case ValueTypes.F32_TYPE:
-                return FrameSlotKind.Float;
-            case ValueTypes.F64_TYPE:
-                return FrameSlotKind.Double;
-            case ValueTypes.HANDLE_TYPE:
-                // MSWasm
-                return FrameSlotKind.Object;
-            default:
-                Assert.fail(String.format("Unknown value type: 0x%02X", valueType));
-        }
-        return null;
-    }
-
-    public void initStackSlots(FrameDescriptor frameDescriptor, int maxStackSize) {
-        stackSlots = new FrameSlot[maxStackSize];
-        for (int i = 0; i != maxStackSize; ++i) {
-            FrameSlot stackSlot = frameDescriptor.addFrameSlot(localSlots.length + i, FrameSlotKind.Long);
-            stackSlots[i] = stackSlot;
-        }
+    public FrameSlot stackLocalsSlot() {
+        return stackLocalsSlot;
     }
 
     public void setLocalTypes(byte[] localTypes) {
@@ -126,14 +99,7 @@ public final class WasmCodeEntry {
         return localTypes[index];
     }
 
-    public byte byteConstant(int index) {
-        return byteConstants[index];
-    }
-
-    public void setByteConstants(byte[] byteConstants) {
-        this.byteConstants = byteConstants;
-    }
-
+    @SuppressWarnings("unused")
     public int intConstant(int index) {
         return intConstants[index];
     }
@@ -142,12 +108,8 @@ public final class WasmCodeEntry {
         this.intConstants = intConstants;
     }
 
-    public long longConstant(int index) {
-        return longConstants[index];
-    }
-
-    public void setLongConstants(long[] longConstants) {
-        this.longConstants = longConstants;
+    public int[] intConstants() {
+        return intConstants;
     }
 
     public int[] branchTable(int index) {
@@ -158,12 +120,87 @@ public final class WasmCodeEntry {
         this.branchTables = branchTables;
     }
 
+    public void setProfileCount(int size) {
+        if (size > 0) {
+            this.profileCounters = new int[size];
+        } else {
+            this.profileCounters = IntArrayList.EMPTY_INT_ARRAY;
+        }
+    }
+
+    public int[] profileCounters() {
+        return profileCounters;
+    }
+
     public int numLocals() {
         return localTypes.length;
     }
 
     public int functionIndex() {
         return function.index();
+    }
+
+    /**
+     * A constant holding the maximum value an {@code int} can have, 2<sup>15</sup>-1. The sum of
+     * the true and false count must not overflow. This constant is used to check whether one of the
+     * counts does not exceed the required maximum value.
+     */
+    public static final int CONDITION_COUNT_MAX_VALUE = 0x3fff;
+
+    /**
+     * Same logic as in {@link com.oracle.truffle.api.profiles.ConditionProfile#profile}.
+     *
+     * @param index Condition index
+     * @param condition Condition value
+     * @return {@code condition}
+     */
+    public static boolean profileCondition(int[] counters, int index, boolean condition) {
+        // locals required to guarantee no overflow in multi-threaded environments
+        int tf = counters[index];
+        int t = tf >>> 16;
+        int f = tf & 0xffff;
+        boolean val = condition;
+        if (val) {
+            if (!CompilerDirectives.inInterpreter()) {
+                if (t == 0) {
+                    CompilerDirectives.transferToInterpreterAndInvalidate();
+                }
+                if (f == 0) {
+                    // Make this branch fold during PE
+                    val = true;
+                }
+            } else {
+                if (t < CONDITION_COUNT_MAX_VALUE) {
+                    counters[index] = ((t + 1) << 16) | f;
+                }
+            }
+        } else {
+            if (!CompilerDirectives.inInterpreter()) {
+                if (f == 0) {
+                    CompilerDirectives.transferToInterpreterAndInvalidate();
+                }
+                if (t == 0) {
+                    // Make this branch fold during PE
+                    val = false;
+                }
+            } else {
+                if (f < CONDITION_COUNT_MAX_VALUE) {
+                    counters[index] = (t << 16) | (f + 1);
+                }
+            }
+        }
+
+        if (CompilerDirectives.inInterpreter()) {
+            // no branch probability calculation in the interpreter
+            return val;
+        } else {
+            int sum = t + f;
+            return CompilerDirectives.injectBranchProbability((double) t / (double) sum, val);
+        }
+    }
+
+    public void errorBranch() {
+        errorBranch.enter();
     }
 
     @Override

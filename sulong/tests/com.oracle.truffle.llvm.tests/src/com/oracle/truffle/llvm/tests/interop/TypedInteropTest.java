@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -30,12 +30,11 @@
 package com.oracle.truffle.llvm.tests.interop;
 
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.llvm.tests.interop.values.ArrayObject;
 import com.oracle.truffle.llvm.tests.interop.values.NullValue;
 import com.oracle.truffle.llvm.tests.interop.values.StructObject;
 import com.oracle.truffle.llvm.tests.interop.values.TestCallback;
-import com.oracle.truffle.llvm.tests.Platform;
 import com.oracle.truffle.tck.TruffleRunner;
 import com.oracle.truffle.tck.TruffleRunner.Inject;
 import java.util.HashMap;
@@ -45,7 +44,6 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import org.junit.BeforeClass;
 import org.junit.Assert;
-import org.junit.Assume;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -53,7 +51,7 @@ import org.junit.runner.RunWith;
 @RunWith(TruffleRunner.class)
 public class TypedInteropTest extends InteropTestBase {
 
-    private static TruffleObject testLibrary;
+    private static Object testLibrary;
 
     @BeforeClass
     public static void loadTestBitcode() {
@@ -285,6 +283,29 @@ public class TypedInteropTest extends InteropTestBase {
         Assert.assertEquals("y", 42, point.get("y"));
     }
 
+    public static class GetPointTypeNode extends SulongTestNode {
+
+        public GetPointTypeNode() {
+            super(testLibrary, "getPointType");
+        }
+    }
+
+    public static class FlipPointDynamicNode extends SulongTestNode {
+
+        public FlipPointDynamicNode() {
+            super(testLibrary, "flipPointDynamic");
+        }
+    }
+
+    @Test
+    public void testFlipPointDynamic(@Inject(GetPointTypeNode.class) CallTarget getPointType, @Inject(FlipPointDynamicNode.class) CallTarget flipPointDynamic) {
+        StructObject point = makePoint(123, 321);
+        Object type = getPointType.call();
+        flipPointDynamic.call(point, type);
+        Assert.assertEquals("x", 321, point.get("x"));
+        Assert.assertEquals("y", 123, point.get("y"));
+    }
+
     public static class SumPointsNode extends SulongTestNode {
 
         public SumPointsNode() {
@@ -294,7 +315,6 @@ public class TypedInteropTest extends InteropTestBase {
 
     @Test
     public void testSumPoints(@Inject(SumPointsNode.class) CallTarget sumPoints) {
-        Assume.assumeFalse("Skipping AArch64 failing test", Platform.isAArch64());
         ArrayObject array = new ArrayObject(makePoint(13, 7), makePoint(3, 6), makePoint(8, 5));
         Object ret = sumPoints.call(array);
         Assert.assertEquals(42, ret);
@@ -309,7 +329,6 @@ public class TypedInteropTest extends InteropTestBase {
 
     @Test
     public void testFillPoints(@Inject(FillPointsNode.class) CallTarget fillPoints) {
-        Assume.assumeFalse("Skipping AArch64 failing test", Platform.isAArch64());
         StructObject[] arr = new StructObject[42];
         for (int i = 0; i < arr.length; i++) {
             arr[i] = makePoint(0, 0);
@@ -348,7 +367,6 @@ public class TypedInteropTest extends InteropTestBase {
 
     @Test
     public void testAddAndSwapPoint(@Inject(AddAndSwapPoint.class) CallTarget addAndSwapPoint) {
-        Assume.assumeFalse("Skipping AArch64 failing test", Platform.isAArch64());
         StructObject point = makePoint(39, 17);
         Object ret = addAndSwapPoint.call(point, 3, 7);
 
@@ -375,7 +393,7 @@ public class TypedInteropTest extends InteropTestBase {
         return ret;
     }
 
-    private static void checkNested(Object ret) {
+    private static void checkNested(Object ret) throws InvalidArrayIndexException {
         int value = 42;
         Object obj = ret;
         while (obj instanceof StructObject) {
@@ -396,8 +414,7 @@ public class TypedInteropTest extends InteropTestBase {
     }
 
     @Test
-    public void testFillNested(@Inject(FillNestedNode.class) CallTarget fillNested) {
-        Assume.assumeFalse("Skipping AArch64 failing test", Platform.isAArch64());
+    public void testFillNested(@Inject(FillNestedNode.class) CallTarget fillNested) throws InvalidArrayIndexException {
         Object nested = createNested();
         fillNested.call(nested);
         checkNested(nested);
@@ -443,7 +460,7 @@ public class TypedInteropTest extends InteropTestBase {
         return new StructObject(ret);
     }
 
-    private static void checkFusedArray(Object res) {
+    private static void checkFusedArray(Object res) throws InvalidArrayIndexException {
         Assert.assertTrue(res instanceof StructObject);
         if (res instanceof StructObject) {
             StructObject struct = (StructObject) res;
@@ -457,8 +474,7 @@ public class TypedInteropTest extends InteropTestBase {
     }
 
     @Test
-    public void testFillFusedArray(@Inject(FillFusedArrayNode.class) CallTarget fillFusedArray) {
-        Assume.assumeFalse("Skipping AArch64 failing test", Platform.isAArch64());
+    public void testFillFusedArray(@Inject(FillFusedArrayNode.class) CallTarget fillFusedArray) throws InvalidArrayIndexException {
         Object fusedArray = createFusedArray();
         fillFusedArray.call(fusedArray);
         checkFusedArray(fusedArray);

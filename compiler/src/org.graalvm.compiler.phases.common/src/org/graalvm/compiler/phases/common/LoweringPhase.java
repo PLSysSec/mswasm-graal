@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -37,8 +37,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.graalvm.compiler.core.common.spi.ConstantFieldProvider;
-import org.graalvm.compiler.core.common.spi.ForeignCallsProvider;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.debug.DebugCloseable;
 import org.graalvm.compiler.debug.GraalError;
@@ -63,6 +61,7 @@ import org.graalvm.compiler.nodes.PhiNode;
 import org.graalvm.compiler.nodes.ProxyNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.StructuredGraph.ScheduleResult;
+import org.graalvm.compiler.nodes.StructuredGraph.StageFlag;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.calc.FloatingNode;
 import org.graalvm.compiler.nodes.cfg.Block;
@@ -73,21 +72,17 @@ import org.graalvm.compiler.nodes.memory.MemoryKill;
 import org.graalvm.compiler.nodes.memory.MultiMemoryKill;
 import org.graalvm.compiler.nodes.memory.SingleMemoryKill;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
+import org.graalvm.compiler.nodes.spi.CoreProvidersDelegate;
 import org.graalvm.compiler.nodes.spi.Lowerable;
-import org.graalvm.compiler.nodes.spi.LoweringProvider;
 import org.graalvm.compiler.nodes.spi.LoweringTool;
-import org.graalvm.compiler.nodes.spi.Replacements;
-import org.graalvm.compiler.nodes.spi.StampProvider;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.phases.BasePhase;
 import org.graalvm.compiler.phases.Phase;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import org.graalvm.word.LocationIdentity;
 
-import jdk.vm.ci.meta.ConstantReflectionProvider;
 import jdk.vm.ci.meta.DeoptimizationAction;
 import jdk.vm.ci.meta.DeoptimizationReason;
-import jdk.vm.ci.meta.MetaAccessProvider;
 import jdk.vm.ci.meta.SpeculationLog;
 import jdk.vm.ci.meta.SpeculationLog.Speculation;
 
@@ -116,11 +111,6 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
             updateUsagesInterface(this.guard, guard);
             this.guard = guard;
         }
-
-        @Override
-        public ValueNode asNode() {
-            return this;
-        }
     }
 
     @Override
@@ -128,16 +118,15 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
         return false;
     }
 
-    final class LoweringToolImpl implements LoweringTool {
+    final class LoweringToolImpl extends CoreProvidersDelegate implements LoweringTool {
 
-        private final CoreProviders context;
         private final NodeBitMap activeGuards;
         private AnchoringNode guardAnchor;
         private FixedWithNextNode lastFixedNode;
         private NodeMap<Block> nodeMap;
 
         LoweringToolImpl(CoreProviders context, AnchoringNode guardAnchor, NodeBitMap activeGuards, FixedWithNextNode lastFixedNode, NodeMap<Block> nodeMap) {
-            this.context = context;
+            super(context);
             this.guardAnchor = guardAnchor;
             this.activeGuards = activeGuards;
             this.lastFixedNode = lastFixedNode;
@@ -150,52 +139,18 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
         }
 
         @Override
-        public CoreProviders getProviders() {
-            return context;
-        }
-
-        @Override
-        public ConstantReflectionProvider getConstantReflection() {
-            return context.getConstantReflection();
-        }
-
-        @Override
-        public ConstantFieldProvider getConstantFieldProvider() {
-            return context.getConstantFieldProvider();
-        }
-
-        @Override
-        public MetaAccessProvider getMetaAccess() {
-            return context.getMetaAccess();
-        }
-
-        @Override
-        public LoweringProvider getLowerer() {
-            return context.getLowerer();
-        }
-
-        @Override
-        public Replacements getReplacements() {
-            return context.getReplacements();
-        }
-
-        public ForeignCallsProvider getForeignCalls() {
-            return context.getForeignCalls();
-        }
-
-        @Override
         public AnchoringNode getCurrentGuardAnchor() {
             return guardAnchor;
         }
 
         @Override
-        public GuardingNode createGuard(FixedNode before, LogicNode condition, DeoptimizationReason deoptReason, DeoptimizationAction action) {
-            return createGuard(before, condition, deoptReason, action, SpeculationLog.NO_SPECULATION, false, null);
+        public boolean lowerOptimizableMacroNodes() {
+            return lowerOptimizableMacroNodes;
         }
 
         @Override
-        public StampProvider getStampProvider() {
-            return context.getStampProvider();
+        public GuardingNode createGuard(FixedNode before, LogicNode condition, DeoptimizationReason deoptReason, DeoptimizationAction action) {
+            return createGuard(before, condition, deoptReason, action, SpeculationLog.NO_SPECULATION, false, null);
         }
 
         @Override
@@ -205,7 +160,8 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
             if (OptEliminateGuards.getValue(graph.getOptions())) {
                 for (Node usage : condition.usages()) {
                     if (!activeGuards.isNew(usage) && activeGuards.isMarked(usage) && ((GuardNode) usage).isNegated() == negated &&
-                                    (!before.graph().hasValueProxies() || nodeMap.get(((GuardNode) usage).getAnchor().asNode()).isInSameOrOuterLoopOf(nodeMap.get(before)))) {
+                                    (before.graph().isAfterStage(StageFlag.VALUE_PROXY_REMOVAL) ||
+                                                    nodeMap.get(((GuardNode) usage).getAnchor().asNode()).isInSameOrOuterLoopOf(nodeMap.get(before)))) {
                         return (GuardNode) usage;
                     }
                 }
@@ -229,21 +185,28 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
 
         @Override
         public FixedWithNextNode lastFixedNode() {
+            GraalError.guarantee(lastFixedNode.isAlive(), "The last fixed node %s was deleted by a previous lowering", lastFixedNode);
             return lastFixedNode;
         }
 
         private void setLastFixedNode(FixedWithNextNode n) {
-            assert n.isAlive() : n;
+            GraalError.guarantee(n.isAlive(), "Cannot add last fixed node %s because it is not alive", n);
             lastFixedNode = n;
         }
     }
 
     private final CanonicalizerPhase canonicalizer;
     private final LoweringTool.LoweringStage loweringStage;
+    private final boolean lowerOptimizableMacroNodes;
 
-    public LoweringPhase(CanonicalizerPhase canonicalizer, LoweringTool.LoweringStage loweringStage) {
+    public LoweringPhase(CanonicalizerPhase canonicalizer, LoweringTool.LoweringStage loweringStage, boolean lowerOptimizableMacroNodes) {
         this.canonicalizer = canonicalizer;
         this.loweringStage = loweringStage;
+        this.lowerOptimizableMacroNodes = lowerOptimizableMacroNodes;
+    }
+
+    public LoweringPhase(CanonicalizerPhase canonicalizer, LoweringTool.LoweringStage loweringStage) {
+        this(canonicalizer, loweringStage, false);
     }
 
     @Override
@@ -269,6 +232,9 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
     protected void run(final StructuredGraph graph, CoreProviders context) {
         lower(graph, context, LoweringMode.LOWERING);
         assert checkPostLowering(graph, context);
+        if (loweringStage == LoweringTool.StandardLoweringStage.HIGH_TIER) {
+            graph.setAfterStage(StageFlag.HIGH_TIER);
+        }
     }
 
     private void lower(StructuredGraph graph, CoreProviders context, LoweringMode mode) {
@@ -308,7 +274,7 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
                 assert postLoweringMark.equals(mark) : graph + ": lowering of " + node + " produced lowerable " + n + " that should have been recursively lowered as it introduces these new nodes: " +
                                 graph.getNewNodes(postLoweringMark).snapshot();
             }
-            if (graph.isAfterFloatingReadPhase() && n instanceof MemoryKill && !(node instanceof MemoryKill) && !(node instanceof ControlSinkNode)) {
+            if (graph.isAfterStage(StageFlag.FLOATING_READS) && n instanceof MemoryKill && !(node instanceof MemoryKill) && !(node instanceof ControlSinkNode)) {
                 /*
                  * The lowering introduced a MemoryCheckpoint but the current node isn't a
                  * checkpoint. This is only OK if the locations involved don't affect the memory
@@ -400,7 +366,7 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
 
         @Override
         public void run(StructuredGraph graph) {
-            schedulePhase.apply(graph, false);
+            schedulePhase.apply(graph, context, false);
             schedule = graph.getLastSchedule();
             schedule.getCFG().computePostdominators();
             Block startBlock = schedule.getCFG().getStartBlock();
@@ -569,7 +535,7 @@ public class LoweringPhase extends BasePhase<CoreProviders> {
      * }
      * </pre>
      *
-     * This is necessary, as the recursive implementation quickly exceed the stack depth on SPARC.
+     * This is necessary, as the recursive implementation can quickly exceed the stack depth.
      *
      * @param rootFrame contains the starting block.
      */

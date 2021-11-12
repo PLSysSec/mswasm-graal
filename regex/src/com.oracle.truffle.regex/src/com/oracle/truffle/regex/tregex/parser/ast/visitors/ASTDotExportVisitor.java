@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -45,7 +45,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
-import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.regex.tregex.parser.ast.BackReference;
 import com.oracle.truffle.regex.tregex.parser.ast.CharacterClass;
 import com.oracle.truffle.regex.tregex.parser.ast.Group;
@@ -67,7 +67,7 @@ public final class ASTDotExportVisitor extends DepthFirstTraversalRegexASTVisito
         this.showParentPointers = showParentPointers;
     }
 
-    @CompilerDirectives.TruffleBoundary
+    @TruffleBoundary
     public static void exportDot(RegexASTNode root, String path, boolean showParentPointers) {
         try (BufferedWriter writer = Files.newBufferedWriter(Paths.get(path))) {
             ASTDotExportVisitor visitor = new ASTDotExportVisitor(writer, showParentPointers);
@@ -85,6 +85,7 @@ public final class ASTDotExportVisitor extends DepthFirstTraversalRegexASTVisito
         return node.isDead() ? ", style=filled, color=grey" : "";
     }
 
+    @TruffleBoundary
     private void writeln(String s) {
         try {
             writer.write(s);

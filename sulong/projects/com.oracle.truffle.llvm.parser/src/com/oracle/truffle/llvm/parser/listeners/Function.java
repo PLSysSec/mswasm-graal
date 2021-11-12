@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,10 +29,6 @@
  */
 package com.oracle.truffle.llvm.parser.listeners;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
 import com.oracle.truffle.llvm.parser.metadata.MDBaseNode;
 import com.oracle.truffle.llvm.parser.metadata.MDKind;
 import com.oracle.truffle.llvm.parser.metadata.MDLocation;
@@ -53,6 +49,7 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.ConditionalBran
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ExtractElementInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ExtractValueInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.FenceInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.FreezeInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.GetElementPointerInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.IndirectBranchInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.InsertElementInstruction;
@@ -60,6 +57,7 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.InsertValueInst
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.InvokeInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.LandingpadInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.LoadInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.OperandBundle;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.PhiInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ReadModifyWriteInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ResumeInstruction;
@@ -69,7 +67,9 @@ import com.oracle.truffle.llvm.parser.model.symbols.instructions.ShuffleVectorIn
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.StoreInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.SwitchInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.SwitchOldInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.UnaryOperationInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.UnreachableInstruction;
+import com.oracle.truffle.llvm.parser.model.symbols.instructions.VaArgInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.ValueInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.VoidCallInstruction;
 import com.oracle.truffle.llvm.parser.model.symbols.instructions.VoidInstruction;
@@ -87,6 +87,11 @@ import com.oracle.truffle.llvm.runtime.types.StructureType;
 import com.oracle.truffle.llvm.runtime.types.Type;
 import com.oracle.truffle.llvm.runtime.types.VectorType;
 import com.oracle.truffle.llvm.runtime.types.VoidType;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public final class Function implements ParserListener {
 
@@ -136,6 +141,9 @@ public final class Function implements ParserListener {
     private static final int INSTRUCTION_CLEANUPPAD = 51;
     private static final int INSTRUCTION_CATCHSWITCH = 52;
     private static final int INSTRUCTION_OPERAND_BUNDLE = 55;
+    private static final int INSTRUCTION_UNOP = 56;
+    private static final int INSTRUCTION_CALLBR = 57;
+    private static final int INSTRUCTION_FREEZE = 58;
 
     private final FunctionDefinition function;
 
@@ -146,6 +154,8 @@ public final class Function implements ParserListener {
     private InstructionBlock instructionBlock = null;
 
     private boolean isLastBlockTerminated = true;
+
+    private OperandBundle operandBundle = null;
 
     private MDLocation lastLocation = null;
 
@@ -166,7 +176,8 @@ public final class Function implements ParserListener {
     public void setupScope() {
         scope.startLocalScope(function);
         final FunctionType functionType = function.getType();
-        for (Type argType : functionType.getArgumentTypes()) {
+        for (int i = 0; i < functionType.getNumberOfArguments(); i++) {
+            Type argType = functionType.getArgumentType(i);
             scope.addSymbol(function.createParameter(argType), argType);
         }
     }
@@ -198,9 +209,13 @@ public final class Function implements ParserListener {
                 ((MDSubprogram) md).setFunction(MDValue.create(function));
             }
         }
+        if (operandBundle != null) {
+            throw new LLVMParserException("Operand bundle found with no consumer");
+        }
         scope.exitLocalScope();
     }
 
+    @SuppressWarnings("fallthrough")
     @Override
     public void record(RecordBuffer buffer) {
         int opCode = buffer.getId();
@@ -231,6 +246,10 @@ public final class Function implements ParserListener {
 
             case INSTRUCTION_BINOP:
                 createBinaryOperation(buffer);
+                break;
+
+            case INSTRUCTION_UNOP:
+                createUnaryOperation(buffer);
                 break;
 
             case INSTRUCTION_CAST:
@@ -358,23 +377,42 @@ public final class Function implements ParserListener {
                 createFence(buffer);
                 break;
 
+            case INSTRUCTION_VAARG:
+                createVaArg(buffer);
+                break;
+
+            case INSTRUCTION_OPERAND_BUNDLE:
+                /*
+                 * Ignore for now, but record it's presence. Currently we only support operand
+                 * bundles for llvm.assume, and we don't actually do anything for them.
+                 */
+                operandBundle = OperandBundle.PRESENT;
+                break;
+
+            case INSTRUCTION_FREEZE:
+                createFreeze(buffer);
+                break;
+
             default:
                 // differentiate between unknown and unsupported instructions
                 switch (opCode) {
                     case INSTRUCTION_SELECT:
                     case INSTRUCTION_CMP:
-                    case INSTRUCTION_VAARG:
                     case INSTRUCTION_STOREATOMIC_OLD:
                     case INSTRUCTION_CLEANUPRET:
                     case INSTRUCTION_CATCHRET:
                     case INSTRUCTION_CATCHPAD:
                     case INSTRUCTION_CLEANUPPAD:
                     case INSTRUCTION_CATCHSWITCH:
-                    case INSTRUCTION_OPERAND_BUNDLE:
+                    case INSTRUCTION_CALLBR:
                         throw new LLVMParserException("Unsupported opCode in function block: " + opCode);
                     default:
                         throw new LLVMParserException("Unknown opCode in function block: " + opCode);
                 }
+        }
+
+        if (operandBundle != null && opCode != INSTRUCTION_OPERAND_BUNDLE) {
+            throw new LLVMParserException("Operand bundle found with no consumer");
         }
     }
 
@@ -419,7 +457,7 @@ public final class Function implements ParserListener {
         int[] args = new int[buffer.remaining()];
         int j = 0;
         // the formal parameters are read without forward types
-        while (j < functionType.getArgumentTypes().length && buffer.remaining() > 0) {
+        while (j < functionType.getNumberOfArguments() && buffer.remaining() > 0) {
             args[j++] = readIndex(buffer);
         }
         // now varargs are read with forward types
@@ -432,10 +470,11 @@ public final class Function implements ParserListener {
 
         final Type returnType = functionType.getReturnType();
         if (returnType == VoidType.INSTANCE) {
-            emit(VoidInvokeInstruction.fromSymbols(scope, target, args, normalSuccessor, unwindSuccessor, paramAttr));
+            emit(VoidInvokeInstruction.fromSymbols(scope, target, args, normalSuccessor, unwindSuccessor, paramAttr, operandBundle));
         } else {
-            emit(InvokeInstruction.fromSymbols(scope, returnType, target, args, normalSuccessor, unwindSuccessor, paramAttr));
+            emit(InvokeInstruction.fromSymbols(scope, returnType, target, args, normalSuccessor, unwindSuccessor, paramAttr, operandBundle));
         }
+        operandBundle = null;
         isLastBlockTerminated = true;
     }
 
@@ -502,7 +541,7 @@ public final class Function implements ParserListener {
 
         int[] args = new int[buffer.remaining()];
         int j = 0;
-        while (j < functionType.getArgumentTypes().length && buffer.remaining() > 0) {
+        while (j < functionType.getNumberOfArguments() && buffer.remaining() > 0) {
             args[j++] = readIndex(buffer);
         }
         while (buffer.remaining() > 0) {
@@ -515,10 +554,11 @@ public final class Function implements ParserListener {
         final Type returnType = functionType.getReturnType();
 
         if (returnType == VoidType.INSTANCE) {
-            emit(VoidCallInstruction.fromSymbols(scope, callee, args, paramAttr));
+            emit(VoidCallInstruction.fromSymbols(scope, callee, args, paramAttr, operandBundle));
         } else {
-            emit(CallInstruction.fromSymbols(scope, returnType, callee, args, paramAttr));
+            emit(CallInstruction.fromSymbols(scope, returnType, callee, args, paramAttr, operandBundle));
         }
+        operandBundle = null;
     }
 
     private static final long SWITCH_CASERANGE_SHIFT = 16;
@@ -659,14 +699,14 @@ public final class Function implements ParserListener {
         // type table
         for (Type t : types) {
             if (t instanceof StructureType) {
-                final Type[] elts = ((StructureType) t).getElementTypes();
-                if (elts.length == CMPXCHG_TYPE_LENGTH && elementType == elts[CMPXCHG_TYPE_ELEMENTTYPE] && PrimitiveType.I1 == elts[CMPXCHG_TYPE_BOOLTYPE]) {
-                    return (AggregateType) t;
+                StructureType st = (StructureType) t;
+                if (st.getNumberOfElementsInt() == CMPXCHG_TYPE_LENGTH && elementType == st.getElementType(CMPXCHG_TYPE_ELEMENTTYPE) && PrimitiveType.I1 == st.getElementType(CMPXCHG_TYPE_BOOLTYPE)) {
+                    return st;
                 }
             }
         }
         // the type may not exist if the value is not being used
-        return new StructureType(true, new Type[]{elementType, PrimitiveType.I1});
+        return StructureType.createUnnamed(true, elementType, PrimitiveType.I1);
     }
 
     private void parseDebugLocation(RecordBuffer buffer) {
@@ -712,6 +752,19 @@ public final class Function implements ParserListener {
         emit(FenceInstruction.generate(atomicOrdering, synchronizationScope));
     }
 
+    private void createFreeze(RecordBuffer buffer) {
+        int value = readIndex(buffer);
+        Type type = readValueType(buffer, value);
+        emit(FreezeInstruction.fromSymbols(scope.getSymbols(), type, value));
+    }
+
+    private void createVaArg(RecordBuffer buffer) {
+        readType(buffer);
+        int source = readIndex(buffer);
+        Type type = readType(buffer);
+        emit(VaArgInstruction.fromSymbols(scope.getSymbols(), type, source));
+    }
+
     private void createBinaryOperation(RecordBuffer buffer) {
         int lhs = readIndex(buffer);
         Type type = readValueType(buffer, lhs);
@@ -720,6 +773,15 @@ public final class Function implements ParserListener {
         int flags = buffer.remaining() > 0 ? buffer.readInt() : 0;
 
         emit(BinaryOperationInstruction.fromSymbols(scope.getSymbols(), type, opcode, flags, lhs, rhs));
+    }
+
+    private void createUnaryOperation(RecordBuffer buffer) {
+        int operand = readIndex(buffer);
+        Type type = readValueType(buffer, operand);
+        int opcode = buffer.readInt();
+        int flags = buffer.remaining() > 0 ? buffer.readInt() : 0;
+
+        emit(UnaryOperationInstruction.fromSymbols(scope.getSymbols(), type, opcode, flags, operand));
     }
 
     private void createBranch(RecordBuffer buffer) {
@@ -764,12 +826,19 @@ public final class Function implements ParserListener {
 
     private void createExtractValue(RecordBuffer buffer) {
         int aggregate = readIndex(buffer);
-        Type aggregateType = readValueType(buffer, aggregate);
-        int index = buffer.readInt();
-        buffer.checkEnd("Multiple indices for extractvalue are not yet supported!");
-
-        Type elementType = Types.castToAggregate(aggregateType).getElementType(index);
-        emit(ExtractValueInstruction.fromSymbols(scope.getSymbols(), elementType, aggregate, index));
+        Type elementType = readValueType(buffer, aggregate);
+        ArrayDeque<Long> indicesList = new ArrayDeque<>();
+        /*
+         * We need to populate the indices list in the reverse order as it is expected by
+         * CommonNodeFactory.getTargetAddress called from
+         * LLVMBitcodeInstructionVisitor.visit(ExtractValueInstruction).
+         */
+        while (buffer.remaining() > 0) {
+            int index = buffer.readInt();
+            elementType = Types.castToAggregate(elementType).getElementType(index);
+            indicesList.addFirst((long) index);
+        }
+        emit(ExtractValueInstruction.fromSymbols(scope.getSymbols(), elementType, aggregate, indicesList));
     }
 
     private void createGetElementPointer(RecordBuffer buffer) {

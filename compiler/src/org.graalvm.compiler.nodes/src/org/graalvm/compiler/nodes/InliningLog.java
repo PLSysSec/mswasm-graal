@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -97,7 +97,7 @@ public class InliningLog {
         }
     }
 
-    private class Callsite {
+    class Callsite {
         public final List<Decision> decisions;
         public final List<Callsite> children;
         public Callsite parent;
@@ -151,7 +151,7 @@ public class InliningLog {
     public InliningLog(ResolvedJavaMethod rootMethod, boolean enabled, DebugContext debug) {
         this.root = new Callsite(null, null);
         this.root.target = rootMethod;
-        this.leaves = EconomicMap.create(Equivalence.IDENTITY_WITH_SYSTEM_HASHCODE);
+        this.leaves = EconomicMap.create();
         this.enabled = enabled;
         this.debug = debug;
     }
@@ -171,7 +171,7 @@ public class InliningLog {
         if (!enabled) {
             return;
         }
-        assert leaves.containsKey(invoke);
+        assert leaves.containsKey(invoke) : invoke;
         assert (!positive && replacements == null && calleeLog == null) || (positive && replacements != null && calleeLog != null) ||
                         (positive && replacements == null && calleeLog == null);
         Callsite callsite = leaves.get(invoke);
@@ -190,13 +190,13 @@ public class InliningLog {
             }
             MapCursor<Invokable, Callsite> entries = calleeLog.leaves.getEntries();
             while (entries.advance()) {
-                Invokable invokeFromCallee = entries.getKey();
+                FixedNode invokeFromCallee = entries.getKey().asFixedNodeOrNull();
                 Callsite callsiteFromCallee = entries.getValue();
-                if (invokeFromCallee.asFixedNode().isDeleted()) {
+                if (invokeFromCallee == null || invokeFromCallee.isDeleted()) {
                     // Some invoke nodes could have been removed by optimizations.
                     continue;
                 }
-                Invokable inlinedInvokeFromCallee = (Invokable) replacements.get(invokeFromCallee.asFixedNode());
+                Invokable inlinedInvokeFromCallee = (Invokable) replacements.get(invokeFromCallee);
                 Callsite descendant = mapping.get(callsiteFromCallee);
                 leaves.put(inlinedInvokeFromCallee, descendant);
             }
@@ -219,13 +219,13 @@ public class InliningLog {
         }
         MapCursor<Invokable, Callsite> entries = replacementLog.leaves.getEntries();
         while (entries.advance()) {
-            Invokable replacementInvoke = entries.getKey();
+            FixedNode replacementInvoke = entries.getKey().asFixedNodeOrNull();
             Callsite replacementCallsite = entries.getValue();
-            if (replacementInvoke.asFixedNode().isDeleted()) {
+            if (replacementInvoke == null || replacementInvoke.isDeleted()) {
                 // Some invoke nodes could have been removed by optimizations.
                 continue;
             }
-            Invokable invoke = (Invokable) replacements.get(replacementInvoke.asFixedNode());
+            Invokable invoke = (Invokable) replacements.get(replacementInvoke);
             Callsite callsite = mapping.get(replacementCallsite);
             leaves.put(invoke, callsite);
         }
@@ -247,10 +247,10 @@ public class InliningLog {
         copyTree(root, replacementLog.root, replacements, mapping);
         MapCursor<Invokable, Callsite> replacementEntries = replacementLog.leaves.getEntries();
         while (replacementEntries.advance()) {
-            Invokable replacementInvoke = replacementEntries.getKey();
+            FixedNode replacementInvoke = replacementEntries.getKey().asFixedNodeOrNull();
             Callsite replacementSite = replacementEntries.getValue();
-            if (replacementInvoke.isAlive()) {
-                Invokable invoke = (Invokable) replacements.get((Node) replacementInvoke);
+            if (replacementInvoke != null && replacementInvoke.isAlive()) {
+                Invokable invoke = (Invokable) replacements.get(replacementInvoke);
                 Callsite site = mapping.get(replacementSite);
                 leaves.put(invoke, site);
             }
@@ -261,7 +261,8 @@ public class InliningLog {
         mapping.put(replacementSite, site);
         site.target = replacementSite.target;
         site.decisions.addAll(replacementSite.decisions);
-        site.invoke = replacementSite.invoke != null && replacementSite.invoke.isAlive() ? (Invokable) replacements.get(replacementSite.invoke.asFixedNode()) : null;
+        FixedNode replacementSiteInvoke = replacementSite.invoke != null ? replacementSite.invoke.asFixedNodeOrNull() : null;
+        site.invoke = replacementSiteInvoke != null && replacementSiteInvoke.isAlive() ? (Invokable) replacements.get(replacementSiteInvoke) : null;
         for (Callsite replacementChild : replacementSite.children) {
             Callsite child = new Callsite(site, null);
             site.children.add(child);
@@ -435,18 +436,32 @@ public class InliningLog {
         }
 
         @Override
-        public boolean isAlive() {
-            return false;
-        }
-
-        @Override
-        public FixedNode asFixedNode() {
-            throw new UnsupportedOperationException("Parsed invokable is a placeholder, not a concrete node.");
+        public FixedNode asFixedNodeOrNull() {
+            return null;
         }
 
         @Override
         public ResolvedJavaMethod getContextMethod() {
             return callerMethod;
+        }
+
+        @Override
+        public int hashCode() {
+            return Integer.hashCode(bci) ^ callerMethod.hashCode() ^ method.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj instanceof PlaceholderInvokable) {
+                final PlaceholderInvokable that = (PlaceholderInvokable) obj;
+                return that.bci == this.bci && that.method.equals(this.method) && that.callerMethod.equals(this.callerMethod);
+            }
+            return false;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("Invokable(caller: %s, bci: %d, method: %s)", callerMethod.format("%H.%n"), bci, method.format("%H.%n"));
         }
     }
 
@@ -473,8 +488,15 @@ public class InliningLog {
         return leaves.containsKey(invokable);
     }
 
-    public void removeLeafCallsite(Invokable invokable) {
-        leaves.removeKey(invokable);
+    public Callsite removeLeafCallsite(Invokable invokable) {
+        return leaves.removeKey(invokable);
+    }
+
+    /**
+     * This method must be called during graph compression, or other node-id changes.
+     */
+    public void addLeafCallsite(Invokable invokable, Callsite callsite) {
+        leaves.put(invokable, callsite);
     }
 
     public void trackNewCallsite(Invokable invoke) {

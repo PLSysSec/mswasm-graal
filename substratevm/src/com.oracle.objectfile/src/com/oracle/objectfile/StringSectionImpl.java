@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,7 +35,6 @@ import java.util.stream.StreamSupport;
 import com.oracle.objectfile.ObjectFile.Element;
 import com.oracle.objectfile.ObjectFile.ProgbitsSectionImpl;
 import com.oracle.objectfile.ObjectFile.RelocationKind;
-import com.oracle.objectfile.ObjectFile.RelocationRecord;
 import com.oracle.objectfile.io.AssemblyBuffer;
 import com.oracle.objectfile.io.OutputAssembler;
 
@@ -120,17 +119,17 @@ public abstract class StringSectionImpl extends BasicElementImpl implements Prog
      */
 
     @Override
-    public Element getOrCreateRelocationElement(boolean useImplicitAddend) {
+    public Element getOrCreateRelocationElement(long addend) {
         throw new UnsupportedOperationException("can't mark relocaction sites in string section");
     }
 
     @Override
-    public RelocationRecord markRelocationSite(int offset, int length, RelocationKind k, String symbolName, boolean useImplicitAddend, Long explicitAddend) {
+    public void markRelocationSite(int offset, RelocationKind k, String symbolName, long addend) {
         throw new UnsupportedOperationException("can't mark relocaction sites in string section");
     }
 
     @Override
-    public RelocationRecord markRelocationSite(int offset, int length, ByteBuffer bb, RelocationKind k, String symbolName, boolean useImplicitAddend, Long explicitAddend) {
+    public void markRelocationSite(int offset, ByteBuffer bb, RelocationKind k, String symbolName, long addend) {
         throw new UnsupportedOperationException("can't mark relocaction sites in string section");
     }
 

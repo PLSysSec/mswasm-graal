@@ -66,6 +66,9 @@ public class Unistd {
     public static native int _SC_CLK_TCK();
 
     @CConstant
+    public static native int _SC_OPEN_MAX();
+
+    @CConstant
     public static native int _SC_PAGESIZE();
 
     @CConstant
@@ -109,18 +112,15 @@ public class Unistd {
     @CFunction
     public static native int getpagesize();
 
-    @CFunction
-    public static native int getdtablesize();
-
-    @CFunction
-    public static native int sleep(int seconds);
-
     public static class NoTransitions {
         @CFunction(transition = Transition.NO_TRANSITION)
         public static native int close(int fd);
 
         @CFunction(transition = Transition.NO_TRANSITION)
         public static native SignedWord read(int fd, PointerBase buf, UnsignedWord nbytes);
+
+        @CFunction(transition = Transition.NO_TRANSITION)
+        public static native SignedWord write(int fd, PointerBase buf, UnsignedWord n);
 
         @CFunction(transition = Transition.NO_TRANSITION)
         public static native long sysconf(int name);

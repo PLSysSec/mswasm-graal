@@ -61,5 +61,9 @@ public interface LinkerInvocation {
 
     void addAdditionalPreOption(String option);
 
+    void addNativeLinkerOption(String option);
+
     List<String> getImageSymbols(boolean onlyGlobal);
+
+    Path getTempDirectory();
 }

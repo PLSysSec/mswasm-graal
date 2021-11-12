@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -42,6 +42,7 @@ package com.oracle.truffle.api.test.option;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
@@ -55,7 +56,9 @@ import org.graalvm.options.OptionDescriptors;
 import org.graalvm.options.OptionKey;
 import org.graalvm.options.OptionMap;
 import org.graalvm.options.OptionStability;
+import org.graalvm.options.OptionType;
 import org.graalvm.options.OptionValues;
+import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.junit.Test;
 
@@ -65,6 +68,7 @@ import com.oracle.truffle.api.TruffleLanguage.Env;
 import com.oracle.truffle.api.TruffleLanguage.Registration;
 import com.oracle.truffle.api.instrumentation.TruffleInstrument;
 import com.oracle.truffle.api.test.ExpectError;
+import com.oracle.truffle.api.test.polyglot.AbstractPolyglotTest;
 
 public class OptionProcessorTest {
 
@@ -79,10 +83,12 @@ public class OptionProcessorTest {
         OptionDescriptor descriptor3;
         OptionDescriptor descriptor4;
         OptionDescriptor descriptor5;
+        OptionDescriptor descriptor6;
 
         descriptor1 = descriptor = descriptors.get("optiontestlang1.StringOption1");
         assertNotNull(descriptor);
         assertTrue(descriptor.isDeprecated());
+        assertEquals(String.format("Deprecation message%nwith newline"), descriptor.getDeprecationMessage());
         assertFalse(descriptor.isOptionMap());
         assertSame(OptionCategory.USER, descriptor.getCategory());
         assertSame(OptionStability.EXPERIMENTAL, descriptor.getStability());
@@ -91,7 +97,7 @@ public class OptionProcessorTest {
 
         descriptor2 = descriptor = descriptors.get("optiontestlang1.StringOption2");
         assertNotNull(descriptor);
-        assertEquals("StringOption2 help", descriptor.getHelp());
+        assertEquals(String.format("StringOption2 help%nwith newline"), descriptor.getHelp());
         assertFalse(descriptor.isDeprecated());
         assertFalse(descriptor.isOptionMap());
         assertSame(OptionCategory.EXPERT, descriptor.getCategory());
@@ -120,6 +126,15 @@ public class OptionProcessorTest {
         assertTrue(descriptor.isOptionMap());
         assertSame(OptionTestLang1.Properties, descriptor.getKey());
 
+        descriptor6 = descriptor = descriptors.get("optiontestlang1.ZEnumTest");
+        OptionType<?> type = descriptor.getKey().getType();
+        assertSame(EnumValue.defaultValue, type.convert(EnumValue.defaultValue.toString()));
+        assertSame(EnumValue.otherValue, type.convert(EnumValue.otherValue.toString()));
+        AbstractPolyglotTest.assertFails(() -> type.convert("invalid"), IllegalArgumentException.class, (e) -> {
+            assertEquals("Invalid option value 'invalid'. Valid options values are: 'defaultValue', 'otherValue'", e.getMessage());
+        });
+        AbstractPolyglotTest.assertFails(() -> type.convert(null), IllegalArgumentException.class);
+
         // The options are sorted alphabetically
         Iterator<OptionDescriptor> iterator = descriptors.iterator();
         assertTrue(iterator.hasNext());
@@ -130,6 +145,8 @@ public class OptionProcessorTest {
         assertEquals(descriptor1, iterator.next());
         assertTrue(iterator.hasNext());
         assertEquals(descriptor2, iterator.next());
+        assertTrue(iterator.hasNext());
+        assertEquals(descriptor6, iterator.next());
         assertTrue(iterator.hasNext());
         assertEquals(descriptor3, iterator.next());
         assertFalse(iterator.hasNext());
@@ -152,6 +169,7 @@ public class OptionProcessorTest {
         descriptor1 = descriptor = descriptors.get("optiontestinstr1.StringOption1");
         assertNotNull(descriptor);
         assertTrue(descriptor.isDeprecated());
+        assertEquals(String.format("Deprecation message%nwith newline"), descriptor.getDeprecationMessage());
         assertFalse(descriptor.isOptionMap());
         assertSame(OptionCategory.USER, descriptor.getCategory());
         assertEquals("StringOption1 help", descriptor.getHelp());
@@ -159,7 +177,7 @@ public class OptionProcessorTest {
 
         descriptor2 = descriptor = descriptors.get("optiontestinstr1.StringOption2");
         assertNotNull(descriptor);
-        assertEquals("StringOption2 help", descriptor.getHelp());
+        assertEquals(String.format("StringOption2 help%nwith newline"), descriptor.getHelp());
         assertFalse(descriptor.isDeprecated());
         assertFalse(descriptor.isOptionMap());
         assertSame(OptionCategory.EXPERT, descriptor.getCategory());
@@ -278,6 +296,65 @@ public class OptionProcessorTest {
         assertEquals(OptionMap.empty(), descriptor.getKey().getDefaultValue());
     }
 
+    @Test
+    public void testOptionValueEqualsAndHashCode() {
+        // options are never equals if different engines are used.
+        Context c0 = Context.newBuilder().option("optiontestlang1.StableOption", "foo").build();
+        Context c1 = Context.newBuilder().option("optiontestlang1.StableOption", "foo").build();
+        assertNotEquals(getOptionValues(c0), getOptionValues(c1));
+        assertNotEquals(getOptionValues(c1), getOptionValues(c0));
+        assertNotEquals(getOptionValues(c0).hashCode(), getOptionValues(c1).hashCode());
+        c0.close();
+        c1.close();
+
+        // need to use the same engine to support comparing option values.
+        Engine engine = Engine.create();
+        c0 = Context.newBuilder().engine(engine).option("optiontestlang1.StableOption", "foo").build();
+        c1 = Context.newBuilder().engine(engine).option("optiontestlang1.StableOption", "foo").build();
+        assertEquals(getOptionValues(c0), getOptionValues(c1));
+        assertEquals(getOptionValues(c1), getOptionValues(c0));
+        assertEquals(getOptionValues(c0).hashCode(), getOptionValues(c1).hashCode());
+        c0.close();
+        c1.close();
+
+        c0 = Context.newBuilder().engine(engine).option("optiontestlang1.StableOption", "foo").build();
+        c1 = Context.newBuilder().engine(engine).option("optiontestlang1.StableOption", "bar").build();
+        assertNotEquals(getOptionValues(c0), getOptionValues(c1));
+        assertNotEquals(getOptionValues(c1), getOptionValues(c0));
+        assertNotEquals(getOptionValues(c0).hashCode(), getOptionValues(c1).hashCode());
+        c0.close();
+        c1.close();
+
+        // an option not being set makes the option values not equal
+        c0 = Context.newBuilder().engine(engine).option("optiontestlang1.StableOption", "stable").build();
+        c1 = Context.newBuilder().engine(engine).build();
+        assertNotEquals(getOptionValues(c0), getOptionValues(c1));
+        assertNotEquals(getOptionValues(c1), getOptionValues(c0));
+        assertNotEquals(getOptionValues(c0).hashCode(), getOptionValues(c1).hashCode());
+        c0.close();
+        c1.close();
+
+        // an option not being set makes the option values not equal
+        c0 = Context.newBuilder().engine(engine).option("optiontestlang1.StableOption", "stable").build();
+        c1 = Context.newBuilder().engine(engine).option("optiontestlang1.StableOption", "stable").build();
+        assertEquals(getOptionValues(c0), getOptionValues(c1));
+        assertEquals(getOptionValues(c1), getOptionValues(c0));
+        assertEquals(getOptionValues(c0).hashCode(), getOptionValues(c1).hashCode());
+        c0.close();
+        c1.close();
+
+    }
+
+    private static OptionValues getOptionValues(Context c) {
+        c.enter();
+        try {
+            c.initialize(OptionTestLang1.ID);
+            return OptionTestLang1.getCurrentContext().getOptions();
+        } finally {
+            c.leave();
+        }
+    }
+
     @Option.Group("prefix")
     public static class Prefix {
         @Option(help = "Prefix option help", category = OptionCategory.USER) //
@@ -335,13 +412,20 @@ public class OptionProcessorTest {
 
     }
 
-    @Registration(id = "optiontestlang1", version = "1.0", name = "optiontestlang1")
+    public enum EnumValue {
+        defaultValue,
+        otherValue;
+    }
+
+    @Registration(id = OptionTestLang1.ID, version = "1.0", name = OptionTestLang1.ID)
     public static class OptionTestLang1 extends TruffleLanguage<Env> {
 
-        @Option(help = "StringOption1 help", deprecated = true, category = OptionCategory.USER) //
+        public static final String ID = "optiontestlang1";
+
+        @Option(help = "StringOption1 help", deprecated = true, deprecationMessage = "Deprecation message%nwith newline", category = OptionCategory.USER) //
         static final OptionKey<String> StringOption1 = new OptionKey<>("defaultValue");
 
-        @Option(help = "StringOption2 help", deprecated = false, category = OptionCategory.EXPERT, stability = OptionStability.EXPERIMENTAL) //
+        @Option(help = "StringOption2 help%nwith newline", deprecated = false, category = OptionCategory.EXPERT, stability = OptionStability.EXPERIMENTAL) //
         public static final OptionKey<String> StringOption2 = new OptionKey<>("defaultValue");
 
         // The variable name differs from the option name on purpose, to test they can be different
@@ -354,6 +438,9 @@ public class OptionProcessorTest {
         @Option(help = "User-defined properties", category = OptionCategory.USER) //
         static final OptionKey<OptionMap<String>> Properties = OptionKey.mapOf(String.class);
 
+        @Option(help = "User-defined enum.", category = OptionCategory.USER) //
+        static final OptionKey<EnumValue> ZEnumTest = new OptionKey<>(EnumValue.defaultValue);
+
         @Override
         protected OptionDescriptors getOptionDescriptors() {
             return new OptionTestLang1OptionDescriptors();
@@ -364,8 +451,10 @@ public class OptionProcessorTest {
             return env;
         }
 
+        private static final ContextReference<Env> REFERENCE = ContextReference.create(OptionTestLang1.class);
+
         public static Env getCurrentContext() {
-            return getCurrentContext(OptionTestLang1.class);
+            return REFERENCE.get(null);
         }
 
     }
@@ -373,10 +462,10 @@ public class OptionProcessorTest {
     @TruffleInstrument.Registration(id = "optiontestinstr1", services = OptionValues.class)
     public static class OptionTestInstrument1 extends TruffleInstrument {
 
-        @Option(help = "StringOption1 help", deprecated = true, category = OptionCategory.USER, stability = OptionStability.STABLE) //
+        @Option(help = "StringOption1 help", deprecated = true, deprecationMessage = "Deprecation message%nwith newline", category = OptionCategory.USER, stability = OptionStability.STABLE) //
         public static final OptionKey<String> StringOption1 = new OptionKey<>("defaultValue");
 
-        @Option(help = "StringOption2 help", deprecated = false, category = OptionCategory.EXPERT) //
+        @Option(help = "StringOption2 help%nwith newline", deprecated = false, category = OptionCategory.EXPERT) //
         public static final OptionKey<String> StringOption2 = new OptionKey<>("defaultValue");
 
         @Option(help = "Instrument user-defined thresholds", deprecated = false, category = OptionCategory.EXPERT) //

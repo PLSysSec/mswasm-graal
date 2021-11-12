@@ -24,10 +24,14 @@
  */
 package com.oracle.svm.core.jdk;
 
+import static com.oracle.svm.core.annotate.RestrictHeapAccess.Access.NO_ALLOCATION;
+
+import org.graalvm.compiler.nodes.UnreachableNode;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.LogHandler;
+import org.graalvm.nativeimage.c.function.CodePointer;
 
-import com.oracle.svm.core.SubstrateUtil;
+import com.oracle.svm.core.SubstrateDiagnostics;
 import com.oracle.svm.core.annotate.NeverInline;
 import com.oracle.svm.core.annotate.RestrictHeapAccess;
 import com.oracle.svm.core.annotate.Substitute;
@@ -37,7 +41,7 @@ import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.snippets.KnownIntrinsics;
 import com.oracle.svm.core.stack.StackOverflowCheck;
 import com.oracle.svm.core.stack.ThreadStackPrinter;
-import com.oracle.svm.core.thread.VMThreads;
+import com.oracle.svm.core.thread.VMThreads.SafepointBehavior;
 
 @TargetClass(com.oracle.svm.core.util.VMError.class)
 final class Target_com_oracle_svm_core_util_VMError {
@@ -47,33 +51,32 @@ final class Target_com_oracle_svm_core_util_VMError {
      * VMError, which let the svm just print the type name of VMError.
      */
 
-    @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.", mayBeInlined = true)
+    @NeverInline("Accessing instruction pointer of the caller frame")
+    @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.")
     @Substitute
     private static RuntimeException shouldNotReachHere() {
-        throw shouldNotReachHere(null, null);
+        throw VMErrorSubstitutions.shouldNotReachHere(KnownIntrinsics.readReturnAddress(), null, null);
     }
 
-    @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.", mayBeInlined = true)
+    @NeverInline("Accessing instruction pointer of the caller frame")
+    @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.")
     @Substitute
     private static RuntimeException shouldNotReachHere(String msg) {
-        throw shouldNotReachHere(msg, null);
+        throw VMErrorSubstitutions.shouldNotReachHere(KnownIntrinsics.readReturnAddress(), msg, null);
     }
 
-    @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.", mayBeInlined = true)
+    @NeverInline("Accessing instruction pointer of the caller frame")
+    @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.")
     @Substitute
     private static RuntimeException shouldNotReachHere(Throwable ex) {
-        throw shouldNotReachHere(null, ex);
+        throw VMErrorSubstitutions.shouldNotReachHere(KnownIntrinsics.readReturnAddress(), null, ex);
     }
 
-    @NeverInline("Prevent change of safepoint status and disabling of stack overflow check to leak into caller, especially when caller is not uninterruptible")
+    @NeverInline("Accessing instruction pointer of the caller frame")
     @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.")
     @Substitute
     private static RuntimeException shouldNotReachHere(String msg, Throwable ex) {
-        ThreadStackPrinter.printBacktrace();
-        VMThreads.StatusSupport.setStatusIgnoreSafepoints();
-        StackOverflowCheck.singleton().disableStackOverflowChecksForFatalError();
-        VMErrorSubstitutions.shutdown(msg, ex);
-        return null;
+        throw VMErrorSubstitutions.shouldNotReachHere(KnownIntrinsics.readReturnAddress(), msg, ex);
     }
 
     @Substitute
@@ -90,50 +93,69 @@ final class Target_com_oracle_svm_core_util_VMError {
 /** Dummy class to have a class with the file's name. */
 public class VMErrorSubstitutions {
 
+    /*
+     * Must only be called from @NeverInline functions above to prevent change of safepoint status
+     * and disabling of stack overflow check to leak into caller, especially when caller is not
+     * uninterruptible
+     */
+    @Uninterruptible(reason = "Allow VMError to be used in uninterruptible code.")
+    @RestrictHeapAccess(access = NO_ALLOCATION, reason = "Must not allocate in fatal error handling.", overridesCallers = true)
+    static RuntimeException shouldNotReachHere(CodePointer callerIP, String msg, Throwable ex) {
+        ThreadStackPrinter.printBacktrace();
+
+        SafepointBehavior.preventSafepoints();
+        StackOverflowCheck.singleton().disableStackOverflowChecksForFatalError();
+
+        VMErrorSubstitutions.shutdown(callerIP, msg, ex);
+        throw UnreachableNode.unreachable();
+    }
+
     @Uninterruptible(reason = "Allow use in uninterruptible code.", calleeMustBe = false)
     @RestrictHeapAccess(access = RestrictHeapAccess.Access.NO_ALLOCATION, reason = "Must not allocate during printing diagnostics.")
-    static void shutdown(String msg, Throwable ex) {
-        doShutdown(msg, ex);
+    static void shutdown(CodePointer callerIP, String msg, Throwable ex) {
+        doShutdown(callerIP, msg, ex);
     }
 
     @NeverInline("Starting a stack walk in the caller frame")
-    private static void doShutdown(String msg, Throwable ex) {
-        try {
-            Log log = Log.log();
-            log.autoflush(true);
+    private static void doShutdown(CodePointer callerIP, String msg, Throwable ex) {
+        LogHandler logHandler = ImageSingletons.lookup(LogHandler.class);
+        Log log = Log.enterFatalContext(logHandler, callerIP, msg, ex);
+        if (log != null) {
+            try {
+                /*
+                 * Print the error message. If the diagnostic output fails, at least we printed the
+                 * most important bit of information.
+                 */
+                log.string("Fatal error");
+                if (msg != null) {
+                    log.string(": ").string(msg);
+                }
+                if (ex != null) {
+                    log.string(": ").exception(ex);
+                } else {
+                    log.newline();
+                }
 
-            /*
-             * Print the error message. If the diagnostic output fails, at least we printed the most
-             * important bit of information.
-             */
-            log.string("Fatal error");
-            if (msg != null) {
-                log.string(": ").string(msg);
-            }
-            if (ex != null) {
-                log.string(": ").exception(ex);
-            } else {
+                SubstrateDiagnostics.printFatalError(log, KnownIntrinsics.readCallerStackPointer(), KnownIntrinsics.readReturnAddress());
+
+                /*
+                 * Print the error message again, so that the most important bit of information
+                 * shows up as the last line (which is probably what users look at first).
+                 */
+                log.string("Fatal error");
+                if (msg != null) {
+                    log.string(": ").string(msg);
+                }
+                if (ex != null) {
+                    log.string(": ").string(ex.getClass().getName()).string(": ").string(JDKUtils.getRawMessage(ex));
+                }
                 log.newline();
+            } catch (Throwable ignored) {
+                /*
+                 * Ignore exceptions reported during error reporting, we are going to exit anyway.
+                 */
             }
-
-            SubstrateUtil.printDiagnostics(log, KnownIntrinsics.readCallerStackPointer(), KnownIntrinsics.readReturnAddress());
-
-            /*
-             * Print the error message again, so that the most important bit of information shows up
-             * as the last line (which is probably what users look at first).
-             */
-            log.string("Fatal error");
-            if (msg != null) {
-                log.string(": ").string(msg);
-            }
-            if (ex != null) {
-                log.string(": ").string(ex.getClass().getName()).string(": ").string(JDKUtils.getRawMessage(ex));
-            }
-            log.newline();
-
-        } catch (Throwable ignored) {
-            /* Ignore exceptions reported during error reporting, we are going to exit anyway. */
         }
-        ImageSingletons.lookup(LogHandler.class).fatalError();
+        logHandler.fatalError();
     }
 }

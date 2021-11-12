@@ -31,6 +31,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -77,6 +78,15 @@ public class JNIRegistrationUtil {
         Class<?> classByName = access.findClassByName(className);
         VMError.guarantee(classByName != null, "class " + className + " not found");
         return classByName;
+    }
+
+    protected static Optional<Class<?>> optionalClazz(FeatureAccess access, String className) {
+        Class<?> classByName = access.findClassByName(className);
+        return Optional.ofNullable(classByName);
+    }
+
+    protected static Optional<Method> optionalMethod(FeatureAccess access, String className, String methodName, Class<?>... parameterTypes) {
+        return Optional.ofNullable(ReflectionUtil.lookupMethod(true, clazz(access, className), methodName, parameterTypes));
     }
 
     protected static Method method(FeatureAccess access, String className, String methodName, Class<?>... parameterTypes) {

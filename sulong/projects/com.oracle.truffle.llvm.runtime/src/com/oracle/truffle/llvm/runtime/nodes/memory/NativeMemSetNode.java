@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -30,13 +30,13 @@
 package com.oracle.truffle.llvm.runtime.nodes.memory;
 
 import com.oracle.truffle.api.CompilerDirectives;
-import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.dsl.Cached;
-import com.oracle.truffle.api.dsl.CachedLanguage;
+import com.oracle.truffle.api.dsl.GenerateUncached;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.library.CachedLibrary;
 import com.oracle.truffle.llvm.runtime.interop.access.LLVMInteropType;
-import com.oracle.truffle.llvm.runtime.LLVMLanguage;
+import com.oracle.truffle.llvm.runtime.interop.access.LLVMInteropType.Struct;
+import com.oracle.truffle.llvm.runtime.interop.access.LLVMInteropType.StructMember;
 import com.oracle.truffle.llvm.runtime.library.internal.LLVMManagedWriteLibrary;
 import com.oracle.truffle.llvm.runtime.memory.LLVMMemSetNode;
 import com.oracle.truffle.llvm.runtime.memory.LLVMMemory;
@@ -45,57 +45,26 @@ import com.oracle.truffle.llvm.runtime.pointer.LLVMManagedPointer;
 import com.oracle.truffle.llvm.runtime.pointer.LLVMNativePointer;
 import com.oracle.truffle.llvm.spi.NativeTypeLibrary;
 
+@GenerateUncached
 public abstract class NativeMemSetNode extends LLVMMemSetNode {
-
-    protected static final long MAX_JAVA_LEN = 256;
-
-    @CompilationFinal private boolean inJava = true;
-
-    @Specialization
-    protected void memset(LLVMNativePointer address, byte value, long length,
-                    @CachedLanguage LLVMLanguage language) {
-        LLVMMemory memory = language.getLLVMMemory();
-        if (inJava) {
-            if (length <= MAX_JAVA_LEN) {
-                long current = address.asNative();
-                long i64ValuesToWrite = length >> 3;
-                if (CompilerDirectives.injectBranchProbability(CompilerDirectives.LIKELY_PROBABILITY, i64ValuesToWrite > 0)) {
-                    long v16 = ((long) value) << 8 | ((long) value & 0xFF);
-                    long v32 = v16 << 16 | v16;
-                    long v64 = v32 << 32 | v32;
-
-                    for (long i = 0; CompilerDirectives.injectBranchProbability(CompilerDirectives.LIKELY_PROBABILITY, i < i64ValuesToWrite); i++) {
-                        memory.putI64(current, v64);
-                        current += 8;
-                    }
-                }
-
-                long i8ValuesToWrite = length & 0x07;
-                for (long i = 0; CompilerDirectives.injectBranchProbability(CompilerDirectives.LIKELY_PROBABILITY, i < i8ValuesToWrite); i++) {
-                    memory.putI8(current, value);
-                    current++;
-                }
-            } else {
-                CompilerDirectives.transferToInterpreterAndInvalidate();
-                inJava = false;
-            }
-        }
-
-        nativeMemSet(memory, address, value, length);
-    }
-
-    @SuppressWarnings("deprecation")
-    private static void nativeMemSet(LLVMMemory memory, LLVMNativePointer address, byte value, long length) {
-        memory.memset(address, length, value);
-    }
-
-    long getAccessLength(LLVMManagedPointer pointer, long length, NativeTypeLibrary nativeTypes) {
+    static long getAccessLength(LLVMManagedPointer pointer, long length, NativeTypeLibrary nativeTypes) {
         Object object = pointer.getObject();
         Object type = nativeTypes.getNativeType(object);
         if (type instanceof LLVMInteropType.Array) {
-            long elementSize = ((LLVMInteropType.Array) type).getElementSize();
+            long elementSize = ((LLVMInteropType.Array) type).elementSize;
             if (length % elementSize == 0) {
                 return elementSize;
+            }
+        }
+        if (type instanceof LLVMInteropType.Struct) {
+            StructMember member = findMember((Struct) type, pointer.getOffset());
+            /*
+             * That's a bit of a guess: We assume that this tries to set 'n' members of the same
+             * size. So, we just take the size of the first member as the access length. If that
+             * isn't true, we will fail afterwards when doing actual access.
+             */
+            if (member != null && member.type instanceof LLVMInteropType.Value && length % member.type.getSize() == 0) {
+                return member.type.getSize();
             }
         }
 
@@ -106,19 +75,29 @@ public abstract class NativeMemSetNode extends LLVMMemSetNode {
         return 1;
     }
 
-    @Specialization(limit = "3", guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 1"})
+    private static StructMember findMember(LLVMInteropType.Struct struct, long offset) {
+        for (int i = 0; i < struct.getMemberCount(); i++) {
+            StructMember m = struct.getMember(i);
+            if (m.startOffset == offset) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    @Specialization(guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 1"})
     protected void memsetManagedI8(LLVMManagedPointer object, byte value, long length,
-                    @SuppressWarnings("unused") @CachedLibrary("object.getObject()") NativeTypeLibrary nativeTypes,
-                    @CachedLibrary("object.getObject()") LLVMManagedWriteLibrary nativeWrite) {
+                    @SuppressWarnings("unused") @CachedLibrary(limit = "3") NativeTypeLibrary nativeTypes,
+                    @CachedLibrary(limit = "3") LLVMManagedWriteLibrary nativeWrite) {
         for (int i = 0; i < length; i++) {
             nativeWrite.writeI8(object.getObject(), object.getOffset() + i, value);
         }
     }
 
-    @Specialization(limit = "3", guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 2"})
+    @Specialization(guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 2"})
     protected void memsetManagedI16(LLVMManagedPointer object, byte value, long length,
-                    @SuppressWarnings("unused") @CachedLibrary("object.getObject()") NativeTypeLibrary nativeTypes,
-                    @CachedLibrary("object.getObject()") LLVMManagedWriteLibrary nativeWrite) {
+                    @SuppressWarnings("unused") @CachedLibrary(limit = "3") NativeTypeLibrary nativeTypes,
+                    @CachedLibrary(limit = "3") LLVMManagedWriteLibrary nativeWrite) {
         int bValue = value & 0xFF;
         int sValue = (bValue << 8) | bValue;
         for (int i = 0; i < length; i += 2) {
@@ -126,10 +105,10 @@ public abstract class NativeMemSetNode extends LLVMMemSetNode {
         }
     }
 
-    @Specialization(limit = "3", guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 4"})
+    @Specialization(guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 4"})
     protected void memsetManagedI32(LLVMManagedPointer object, byte value, long length,
-                    @SuppressWarnings("unused") @CachedLibrary("object.getObject()") NativeTypeLibrary nativeTypes,
-                    @CachedLibrary("object.getObject()") LLVMManagedWriteLibrary nativeWrite) {
+                    @SuppressWarnings("unused") @CachedLibrary(limit = "3") NativeTypeLibrary nativeTypes,
+                    @CachedLibrary(limit = "3") LLVMManagedWriteLibrary nativeWrite) {
         int bValue = value & 0xFF;
         int sValue = (bValue << 8) | bValue;
         int iValue = (sValue << 16) | sValue;
@@ -138,10 +117,10 @@ public abstract class NativeMemSetNode extends LLVMMemSetNode {
         }
     }
 
-    @Specialization(limit = "3", guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 8"})
+    @Specialization(guards = {"nativeWrite.isWritable(object.getObject())", "getAccessLength(object, length, nativeTypes) == 8"})
     protected void memsetManagedI64(LLVMManagedPointer object, byte value, long length,
-                    @SuppressWarnings("unused") @CachedLibrary("object.getObject()") NativeTypeLibrary nativeTypes,
-                    @CachedLibrary("object.getObject()") LLVMManagedWriteLibrary nativeWrite) {
+                    @SuppressWarnings("unused") @CachedLibrary(limit = "3") NativeTypeLibrary nativeTypes,
+                    @CachedLibrary(limit = "3") LLVMManagedWriteLibrary nativeWrite) {
         long bValue = value & 0xFFL;
         long sValue = (bValue << 8) | bValue;
         long iValue = (sValue << 16) | sValue;
@@ -151,11 +130,38 @@ public abstract class NativeMemSetNode extends LLVMMemSetNode {
         }
     }
 
-    @Specialization(limit = "3", guards = {"!nativeWrite.isWritable(object.getObject())"})
-    protected void memset(LLVMManagedPointer object, byte value, long length,
-                    @Cached("createToNativeWithTarget()") LLVMToNativeNode globalAccess,
-                    @SuppressWarnings("unused") @CachedLibrary("object.getObject()") LLVMManagedWriteLibrary nativeWrite,
-                    @CachedLanguage LLVMLanguage language) {
-        memset(globalAccess.executeWithTarget(object), value, length, language);
+    protected static final long MAX_JAVA_LEN = 256;
+
+    @Specialization(guards = "length <= MAX_JAVA_LEN")
+    protected void nativeInJavaMemset(LLVMNativePointer object, byte value, long length,
+                    @Cached("createToNativeWithTarget()") LLVMToNativeNode globalAccess) {
+        LLVMMemory memory = getLanguage().getLLVMMemory();
+
+        long current = globalAccess.executeWithTarget(object).asNative();
+        long i64ValuesToWrite = length >> 3;
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.LIKELY_PROBABILITY, i64ValuesToWrite > 0)) {
+            long v16 = ((((long) value) & 0xFF) << 8) | ((long) value & 0xFF);
+            long v32 = v16 << 16 | v16;
+            long v64 = v32 << 32 | v32;
+
+            for (long i = 0; CompilerDirectives.injectBranchProbability(CompilerDirectives.LIKELY_PROBABILITY, i < i64ValuesToWrite); i++) {
+                memory.putI64(this, current, v64);
+                current += 8;
+            }
+        }
+
+        long i8ValuesToWrite = length & 0x07;
+        for (long i = 0; CompilerDirectives.injectBranchProbability(CompilerDirectives.LIKELY_PROBABILITY, i < i8ValuesToWrite); i++) {
+            memory.putI8(this, current, value);
+            current++;
+        }
+    }
+
+    @Specialization(replaces = "nativeInJavaMemset")
+    @SuppressWarnings("deprecation")
+    protected void nativeMemset(LLVMNativePointer object, byte value, long length,
+                    @Cached("createToNativeWithTarget()") LLVMToNativeNode globalAccess) {
+        LLVMMemory memory = getLanguage().getLLVMMemory();
+        memory.memset(this, globalAccess.executeWithTarget(object), length, value);
     }
 }

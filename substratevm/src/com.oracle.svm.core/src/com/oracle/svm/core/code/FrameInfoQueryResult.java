@@ -27,6 +27,7 @@ package com.oracle.svm.core.code;
 import org.graalvm.nativeimage.c.function.CodePointer;
 
 import com.oracle.svm.core.CalleeSavedRegisters;
+import com.oracle.svm.core.ReservedRegisters;
 import com.oracle.svm.core.hub.DynamicHub;
 import com.oracle.svm.core.log.Log;
 import com.oracle.svm.core.meta.SharedMethod;
@@ -60,6 +61,12 @@ public class FrameInfoQueryResult {
         Register(true),
 
         /**
+         * A reserved register that has a fixed value as defined in {@link ReservedRegisters}. The
+         * {@link ValueInfo#data} is the {@link Register#number}.
+         */
+        ReservedRegister(true),
+
+        /**
          * A {@link Constant} value. The {@link ValueInfo#data} is the primitive data value of the
          * constant for {@link JavaKind#isPrimitive()} values, or the index into the object constant
          * array for {@link JavaKind#Object} values.
@@ -89,11 +96,9 @@ public class FrameInfoQueryResult {
         protected ValueType type;
         protected JavaKind kind;
         protected boolean isCompressedReference; // for JavaKind.Object
+        protected boolean isEliminatedMonitor;
         protected long data;
         protected JavaConstant value;
-        protected String name;
-        /** Index of {@link #name} in {@link FrameInfoDecoder#decodeFrameInfo frameInfoNames}. */
-        protected int nameIndex = -1;
 
         /**
          * Returns the type of the value, describing how to access the value.
@@ -118,6 +123,15 @@ public class FrameInfoQueryResult {
         }
 
         /**
+         * When true, the value is a monitor (a {@link FrameInfoQueryResult#numLocks lock slot},
+         * located after the local variables and expression stack slots) that was eliminated and
+         * re-locking must be performed during deoptimization.
+         */
+        public boolean isEliminatedMonitor() {
+            return isEliminatedMonitor;
+        }
+
+        /**
          * Returns additional data for the value, according to the specification in
          * {@link ValueType}.
          */
@@ -139,7 +153,6 @@ public class FrameInfoQueryResult {
     protected int deoptMethodOffset;
     protected long encodedBci;
     protected boolean isDeoptEntry;
-    protected boolean needLocalValues;
     protected int numLocals;
     protected int numStack;
     protected int numLocks;
@@ -165,7 +178,6 @@ public class FrameInfoQueryResult {
         deoptMethodOffset = 0;
         encodedBci = 0;
         isDeoptEntry = false;
-        needLocalValues = false;
         numLocals = 0;
         numStack = 0;
         numLocks = 0;
@@ -226,6 +238,20 @@ public class FrameInfoQueryResult {
     }
 
     /**
+     * Returns whether the duringCall is set.
+     */
+    public boolean duringCall() {
+        return FrameInfoDecoder.decodeDuringCall(encodedBci);
+    }
+
+    /**
+     * Returns whether the rethrowException is set.
+     */
+    public boolean rethrowException() {
+        return FrameInfoDecoder.decodeRethrowException(encodedBci);
+    }
+
+    /**
      * Returns true if this frame has been marked as a valid deoptimization entry point.
      */
     public boolean isDeoptEntry() {
@@ -254,6 +280,13 @@ public class FrameInfoQueryResult {
      */
     public int getNumStack() {
         return numStack;
+    }
+
+    /**
+     * Returns whether any local value info is present.
+     */
+    public boolean hasLocalValueInfo() {
+        return valueInfos != null;
     }
 
     /**
@@ -338,12 +371,5 @@ public class FrameInfoQueryResult {
         log.string(")");
 
         return log;
-    }
-
-    /**
-     * Returns the name of the local variable with the given index, for debugging purposes only.
-     */
-    public String getLocalVariableName(int idx) {
-        return idx < valueInfos.length ? valueInfos[idx].name : null;
     }
 }

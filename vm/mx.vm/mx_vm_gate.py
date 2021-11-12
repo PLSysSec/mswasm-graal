@@ -26,15 +26,18 @@
 # ----------------------------------------------------------------------------------------------------
 
 import mx
+import mx_benchmark
 import mx_subst
 import mx_unittest
+import mx_sdk_vm
 import mx_sdk_vm_impl
 
 import functools
 import re
+import glob
 from mx_gate import Task
 
-from os import environ, listdir, remove
+from os import environ, listdir, remove, linesep
 from os.path import join, exists, dirname, isdir, isfile, getsize
 from tempfile import NamedTemporaryFile, mkdtemp
 from contextlib import contextmanager
@@ -63,8 +66,9 @@ class VmGateTasks:
 
 
 def gate_body(args, tasks):
-    # all mx_sdk_vm_impl gate tasks can also be run as vm gate tasks
-    mx_sdk_vm_impl.gate_body(args, tasks)
+    with Task('Vm: GraalVM dist names', tasks, tags=['names']) as t:
+        if t:
+            mx_sdk_vm.verify_graalvm_configs(suites=['vm', 'vm-enterprise'])
 
     with Task('Vm: Basic GraalVM Tests', tasks, tags=[VmGateTasks.compiler]) as t:
         if t and mx_sdk_vm_impl.has_component('GraalVM compiler'):
@@ -85,14 +89,70 @@ def gate_body(args, tasks):
             # run avrora on the GraalVM binary itself
             with Task('LibGraal Compiler:GraalVM DaCapo-avrora', tasks, tags=[VmGateTasks.libgraal]) as t:
                 if t:
-                    mx.run([join(mx_sdk_vm_impl.graalvm_home(), 'bin', 'java'), '-XX:+UseJVMCICompiler', '-XX:+UseJVMCINativeLibrary', '-jar', mx.library('DACAPO').get_path(True), 'avrora'])
+                    java_exe = join(mx_sdk_vm_impl.graalvm_home(), 'bin', 'java')
+                    mx.run([java_exe,
+                            '-XX:+UseJVMCICompiler',
+                            '-XX:+UseJVMCINativeLibrary',
+                            '-jar', mx.library('DACAPO').get_path(True), 'avrora', '-n', '1'])
+
+                    # Ensure that fatal errors in libgraal route back to HotSpot
+                    vmargs = ['-XX:+UseJVMCICompiler',
+                              '-XX:+UseJVMCINativeLibrary',
+                              '-XX:+PrintFlagsFinal',
+                              '-Dlibgraal.CrashAt=length,hashCode',
+                              '-Dlibgraal.CrashAtIsFatal=true']
+                    cmd = ["dacapo:avrora", "--tracker=none", "--"] + vmargs + ["--", "--preserve"]
+                    out = mx.OutputCapture()
+                    exitcode, bench_suite, _ = mx_benchmark.gate_mx_benchmark(cmd, out=out, err=out, nonZeroIsFatal=False)
+                    if exitcode == 0:
+                        if 'CrashAtIsFatal: no fatalError function pointer installed' in out.data:
+                            # Executing a VM that does not configure fatal errors handling
+                            # in libgraal to route back through the VM.
+                            pass
+                        else:
+                            mx.abort('Expected following benchmark to result in non-zero exit code: ' + ' '.join(cmd))
+                    else:
+                        if len(bench_suite.scratchDirs()) == 0:
+                            mx.abort("No scratch dir found despite error being expected!")
+                        latest_scratch_dir = bench_suite.scratchDirs()[-1]
+                        seen_libjvmci_log = False
+                        hs_errs = glob.glob(join(latest_scratch_dir, 'hs_err_pid*.log'))
+                        if not hs_errs:
+                            mx.abort('Expected a file starting with "hs_err_pid" in test directory. Entries found=' + str(listdir(latest_scratch_dir)))
+
+                        for hs_err in hs_errs:
+                            mx.log("Verifying content of {}".format(join(latest_scratch_dir, hs_err)))
+                            with open(join(latest_scratch_dir, hs_err)) as fp:
+                                contents = fp.read()
+                            if 'libjvmci' in hs_err:
+                                seen_libjvmci_log = True
+                                if 'Fatal error: Forced crash' not in contents:
+                                    mx.abort('Expected "Fatal error: Forced crash" to be in contents of ' + hs_err + ':' + linesep + contents)
+                            else:
+                                if 'Fatal error in JVMCI' not in contents:
+                                    mx.abort('Expected "Fatal error in JVMCI" to be in contents of ' + hs_err + ':' + linesep + contents)
+
+                        if 'JVMCINativeLibraryErrorFile' in out.data and not seen_libjvmci_log:
+                            mx.abort('Expected a file matching "hs_err_pid*_libjvmci.log" in test directory. Entries found=' + str(listdir(latest_scratch_dir)))
+
+                    # Only clean up scratch dir on success
+                    for scratch_dir in bench_suite.scratchDirs():
+                        mx.log("Cleaning up scratch dir after gate task completion: {}".format(scratch_dir))
+                        mx.rmtree(scratch_dir)
 
             with Task('LibGraal Compiler:CTW', tasks, tags=[VmGateTasks.libgraal]) as t:
                 if t:
                     mx_compiler.ctw([
-                            '-DCompileTheWorld.Config=Inline=false CompilationFailureAction=ExitVM', '-esa', '-XX:+EnableJVMCI',
-                            '-DCompileTheWorld.MultiThreaded=true', '-Dgraal.InlineDuringParsing=false', '-Dgraal.TrackNodeSourcePosition=true',
-                            '-DCompileTheWorld.Verbose=false', '-XX:ReservedCodeCacheSize=300m',
+                            '-DCompileTheWorld.Config=Inline=false ' + ' '.join(mx_compiler._compiler_error_options(prefix='')),
+                            '-esa',
+                            '-XX:+EnableJVMCI',
+                            '-DCompileTheWorld.MultiThreaded=true',
+                            '-Dgraal.InlineDuringParsing=false',
+                            '-Dgraal.TrackNodeSourcePosition=true',
+                            '-DCompileTheWorld.Verbose=false',
+                            '-DCompileTheWorld.HugeMethodLimit=4000',
+                            '-DCompileTheWorld.MaxCompiles=150000',
+                            '-XX:ReservedCodeCacheSize=300m',
                         ], extra_vm_arguments)
 
             mx_compiler.compiler_gate_benchmark_runner(tasks, extra_vm_arguments, prefix='LibGraal Compiler:')
@@ -120,12 +180,12 @@ def gate_body(args, tasks):
                     unittest_args = unittest_args + ["--enable-timing", "--verbose"]
                     compiler_log_file = "graal-compiler.log"
                     mx_unittest.unittest(unittest_args + extra_vm_arguments + [
-                        "-Dgraal.TruffleCompileImmediately=true",
-                        "-Dgraal.TruffleBackgroundCompilation=false",
-                        "-Dgraal.TraceTruffleCompilation=true",
+                        "-Dpolyglot.engine.AllowExperimentalOptions=true",
+                        "-Dpolyglot.engine.CompileImmediately=true",
+                        "-Dpolyglot.engine.BackgroundCompilation=false",
+                        "-Dpolyglot.engine.TraceCompilation=true",
+                        "-Dpolyglot.log.file={0}".format(compiler_log_file),
                         "-Dgraalvm.locatorDisabled=true",
-                        "-Dgraal.PrintCompilation=true",
-                        "-Dgraal.LogFile={0}".format(compiler_log_file),
                         "truffle"])
                     if exists(compiler_log_file):
                         remove(compiler_log_file)
@@ -176,7 +236,7 @@ def gate_sulong(tasks):
             native_image_context, svm = graalvm_svm()
             with native_image_context(svm.IMAGE_ASSERTION_FLAGS) as native_image:
                 # TODO Use mx_sdk_vm_impl.get_final_graalvm_distribution().find_single_source_location to rewire SULONG_HOME
-                sulong_libs = join(mx_sdk_vm_impl.graalvm_output(), 'jre', 'languages', 'llvm')
+                sulong_libs = join(mx_sdk_vm_impl.graalvm_output(), 'jre' if mx_sdk_vm.base_jdk_version() == 8 else '', 'languages', 'llvm')
                 def distribution_paths(dname):
                     path_substitutions = {
                         'SULONG_HOME': sulong_libs
@@ -215,7 +275,6 @@ def _svm_truffle_tck(native_image, svm_suite, language_suite, language_id):
             '-H:+EnforceMaxRuntimeCompileMethods',
             '-cp',
             cp,
-            '--no-server',
             '-H:-FoldSecurityManagerGetter',
             '-H:TruffleTCKPermissionsReportFile={}'.format(report_file),
             '-H:Path={}'.format(svmbuild),
@@ -267,7 +326,6 @@ def gate_svm_sl_tck(tasks):
                         '--macro:truffle',
                         '--tool:all',
                         '-H:Path={}'.format(svmbuild),
-                        '-H:+TruffleCheckBlackListedMethods',
                         '-H:Class=org.junit.runner.JUnitCore',
                     ]
                     tests_image = native_image(vm_image_args + options)

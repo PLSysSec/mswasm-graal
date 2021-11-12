@@ -49,7 +49,6 @@ import com.oracle.svm.core.c.function.CEntryPointOptions;
 import com.oracle.svm.core.graal.llvm.util.LLVMDirectives;
 import com.oracle.svm.core.snippets.ExceptionUnwind;
 import com.oracle.svm.core.stack.StackOverflowCheck;
-import com.oracle.svm.core.thread.ThreadingSupportImpl;
 import com.oracle.svm.hosted.code.CEntryPointCallStubSupport;
 
 import jdk.vm.ci.meta.MetaAccessProvider;
@@ -83,8 +82,8 @@ public class LLVMExceptionUnwind {
      * from which it will get extracted after the landingpad instruction (see
      * NodeLLVMBuilder.emitReadExceptionObject).
      */
-    @CEntryPoint
-    @CEntryPointOptions(include = IncludeForLLVMOnly.class, publishAs = CEntryPointOptions.Publish.NotPublished)
+    @CEntryPoint(include = IncludeForLLVMOnly.class)
+    @CEntryPointOptions(publishAs = CEntryPointOptions.Publish.NotPublished)
     @SuppressWarnings("unused")
     public static int personality(int version, int action, IsolateThread thread, _Unwind_Exception unwindException, _Unwind_Context context) {
         Pointer ip = getIP(context);
@@ -103,7 +102,6 @@ public class LLVMExceptionUnwind {
         } else if ((action & _UA_CLEANUP_PHASE()) != 0) {
             setIP(context, functionStart.add(handlerOffset.intValue()));
 
-            ThreadingSupportImpl.resumeRecurringCallbackAtNextSafepoint();
             StackOverflowCheck.singleton().protectYellowZone();
             return _URC_INSTALL_CONTEXT();
         } else {
@@ -142,11 +140,16 @@ public class LLVMExceptionUnwind {
         }
     }
 
-    public static void raiseException() {
-        _Unwind_Exception exceptionStructure = StackValue.get(_Unwind_Exception.class);
-        exceptionStructure.set_exception_class(CurrentIsolate.getCurrentThread());
-        exceptionStructure.set_exception_cleanup(WordFactory.nullPointer());
-        raiseException(exceptionStructure);
+    public static ExceptionUnwind createRaiseExceptionHandler() {
+        return new ExceptionUnwind() {
+            @Override
+            protected void customUnwindException(Pointer callerSP) {
+                _Unwind_Exception exceptionStructure = StackValue.get(_Unwind_Exception.class);
+                exceptionStructure.set_exception_class(CurrentIsolate.getCurrentThread());
+                exceptionStructure.set_exception_cleanup(WordFactory.nullPointer());
+                raiseException(exceptionStructure);
+            }
+        };
     }
 
     // Allow methods with non-standard names: Checkstyle: stop

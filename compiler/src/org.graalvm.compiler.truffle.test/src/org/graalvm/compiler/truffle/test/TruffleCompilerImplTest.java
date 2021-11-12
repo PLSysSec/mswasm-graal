@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,34 +25,56 @@
 package org.graalvm.compiler.truffle.test;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.graalvm.compiler.core.common.CompilationIdentifier;
 import org.graalvm.compiler.core.test.GraalCompilerTest;
 import org.graalvm.compiler.truffle.common.TruffleCompiler;
 import org.graalvm.compiler.truffle.compiler.TruffleCompilerImpl;
 import org.graalvm.compiler.truffle.runtime.GraalTruffleRuntime;
 import org.graalvm.compiler.truffle.runtime.OptimizedCallTarget;
-import org.graalvm.compiler.truffle.runtime.TruffleRuntimeOptions;
 import org.graalvm.polyglot.Context;
 import org.junit.After;
 import org.junit.Assume;
+import org.junit.Before;
+
+import com.oracle.truffle.api.TruffleOptions;
+import com.oracle.truffle.api.nodes.RootNode;
 
 public abstract class TruffleCompilerImplTest extends GraalCompilerTest {
 
-    private final TruffleCompilerImpl truffleCompiler;
+    private volatile TruffleCompilerImpl truffleCompiler;
     private final AtomicBoolean compilerInitialized = new AtomicBoolean();
     private Context activeContext;
 
     protected TruffleCompilerImplTest() {
-        GraalTruffleRuntime runtime = GraalTruffleRuntime.getRuntime();
-        TruffleCompiler compiler = runtime.newTruffleCompiler();
-        Assume.assumeTrue("cannot get whitebox interface to Truffle compiler", compiler instanceof TruffleCompilerImpl);
-        this.truffleCompiler = (TruffleCompilerImpl) compiler;
+        if (!TruffleOptions.AOT) {
+            GraalTruffleRuntime runtime = GraalTruffleRuntime.getRuntime();
+            TruffleCompiler compiler = runtime.newTruffleCompiler();
+            Assume.assumeTrue("cannot get whitebox interface to Truffle compiler", compiler instanceof TruffleCompilerImpl);
+            this.truffleCompiler = (TruffleCompilerImpl) compiler;
+        }
+    }
+
+    @Before
+    public void onlyWhiteBox() {
+        if (TruffleOptions.AOT) {
+            TruffleCompiler compiler = GraalTruffleRuntime.getRuntime().getTruffleCompiler((OptimizedCallTarget) RootNode.createConstantNode(42).getCallTarget());
+            Assume.assumeTrue("cannot get whitebox interface to Truffle compiler", compiler instanceof TruffleCompilerImpl);
+            this.truffleCompiler = (TruffleCompilerImpl) compiler;
+        }
     }
 
     protected final TruffleCompilerImpl getTruffleCompiler(OptimizedCallTarget callTarget) {
         if (compilerInitialized.compareAndSet(false, true)) {
-            truffleCompiler.initialize(TruffleRuntimeOptions.getOptionsForCompiler(callTarget));
+            truffleCompiler.initialize(GraalTruffleRuntime.getOptionsForCompiler(callTarget), callTarget, true);
         }
         return truffleCompiler;
+    }
+
+    @Override
+    protected CompilationIdentifier createCompilationId() {
+        OptimizedCallTarget target = (OptimizedCallTarget) RootNode.createConstantNode(42).getCallTarget();
+        return getTruffleCompiler(target).createCompilationIdentifier(target);
     }
 
     protected final void setupContext(Context newContext) {

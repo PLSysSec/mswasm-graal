@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -49,8 +49,8 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 
 /**
  * Generates a default wrapper subclass of an annotated {@link InstrumentableNode} subclass. The
- * generated subclass is has the same class name as the original class name plus the 'Wrapper'
- * suffix. The generated class has default package visibility. All non-final and non-private methods
+ * generated subclass has the same class name as the original class name plus the 'Wrapper' suffix.
+ * The generated class has default package visibility. All non-final and non-private methods
  * starting with execute are overridden by the generated wrapper. The generated overrides notifies
  * execution events as required by {@link ProbeNode probes}. Other abstract methods are directly
  * delegated to the wrapped node. No other methods are overridden by the generated wrapper. At least
@@ -93,7 +93,7 @@ import com.oracle.truffle.api.frame.VirtualFrame;
  * </pre>
  *
  * <p>
- * <b>Example that converts incoming byte values to int.</b>
+ * <b>Example that converts incoming byte values to int:</b>
  *
  * <pre>
  * &#64;GenerateWrapper
@@ -116,6 +116,25 @@ import com.oracle.truffle.api.frame.VirtualFrame;
  * }
  * </pre>
  *
+ * <p>
+ * <b>Example that prevents instrumentation from being added to a method:</b>
+ *
+ * <pre>
+ * &#64;GenerateWrapper
+ * abstract class ExpressionNode extends Node implements InstrumentableNode {
+ *
+ *     abstract Object execute(VirtualFrame frame);
+ *
+ *     &#64;Override
+ *     public WrapperNode createWrapper(ProbeNode probeNode) {
+ *         return new ExpressionNodeWrapper(this, probeNode);
+ *     }
+ *
+ *     &#64;GenerateWrapper.Ignore
+ *     abstract Object executeWithoutInstrumentation(VirtualFrame frame);
+ * }
+ * </pre>
+ *
  *
  * @see InstrumentableNode
  * @see ProbeNode
@@ -129,7 +148,7 @@ public @interface GenerateWrapper {
      * Annotates a method to be used as incoming value converter. The annotated method can be used
      * to convert incoming values that were introduced by instruments. Instruments may introduce new
      * values to the interpreter using the {@link EventContext#createUnwind(Object) unwind} feature.
-     * Introduced values are Interop values. If the language only supports a subset of interop
+     * Introduced values are interop values. If the language only supports a subset of interop
      * values or requires them to be wrapped then the incoming converter can be used to perform the
      * necessary conversion. The incoming converter is only invoked if a wrapper is currently
      * inserted.
@@ -166,6 +185,18 @@ public @interface GenerateWrapper {
     @Retention(RetentionPolicy.CLASS)
     @Target({ElementType.METHOD})
     public @interface OutgoingConverter {
+    }
+
+    /**
+     * Annotates a method which should not be instrumented in the generated wrapper subclass. The
+     * generated wrapper can still delegate to this method if it is abstract and can be overridden.
+     *
+     * @see GenerateWrapper for usage examples
+     * @since 21.3
+     */
+    @Retention(RetentionPolicy.CLASS)
+    @Target({ElementType.METHOD})
+    public @interface Ignore {
     }
 
 }

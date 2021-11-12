@@ -45,33 +45,35 @@ import com.oracle.svm.core.util.VMError;
 public class AArch64NativeImagePatcher implements Feature {
     @Override
     public void afterRegistration(AfterRegistrationAccess access) {
-        ImageSingletons.add(PatchConsumerFactory.NativePatchConsumerFactory.class, new PatchConsumerFactory.NativePatchConsumerFactory() {
+        ImageSingletons.add(PatchConsumerFactory.NativePatchConsumerFactory.class, new AArch64NativePatchConsumerFactory());
+    }
+}
+
+final class AArch64NativePatchConsumerFactory extends PatchConsumerFactory.NativePatchConsumerFactory {
+    @Override
+    public Consumer<Assembler.CodeAnnotation> newConsumer(CompilationResult compilationResult) {
+        return new Consumer<Assembler.CodeAnnotation>() {
             @Override
-            public Consumer<Assembler.CodeAnnotation> newConsumer(CompilationResult compilationResult) {
-                return new Consumer<Assembler.CodeAnnotation>() {
-                    @Override
-                    public void accept(Assembler.CodeAnnotation annotation) {
-                        if (annotation instanceof SingleInstructionAnnotation) {
-                            compilationResult.addAnnotation(new SingleInstructionNativeImagePatcher(annotation.instructionPosition, (SingleInstructionAnnotation) annotation));
-                        } else if (annotation instanceof AArch64MacroAssembler.MovSequenceAnnotation) {
-                            compilationResult.addAnnotation(new MovSequenceNativeImagePatcher(annotation.instructionPosition, (AArch64MacroAssembler.MovSequenceAnnotation) annotation));
-                        } else if (annotation instanceof AArch64MacroAssembler.AdrpLdrMacroInstruction) {
-                            compilationResult.addAnnotation(new AdrpLdrMacroInstructionNativeImagePatcher((AArch64MacroAssembler.AdrpLdrMacroInstruction) annotation));
-                        } else if (annotation instanceof AArch64MacroAssembler.AdrpAddMacroInstruction) {
-                            compilationResult.addAnnotation(new AdrpAddMacroInstructionNativeImagePatcher((AArch64MacroAssembler.AdrpAddMacroInstruction) annotation));
-                        }
-                    }
-                };
+            public void accept(Assembler.CodeAnnotation annotation) {
+                if (annotation instanceof SingleInstructionAnnotation) {
+                    compilationResult.addAnnotation(new SingleInstructionNativeImagePatcher((SingleInstructionAnnotation) annotation));
+                } else if (annotation instanceof AArch64MacroAssembler.MovSequenceAnnotation) {
+                    compilationResult.addAnnotation(new MovSequenceNativeImagePatcher((AArch64MacroAssembler.MovSequenceAnnotation) annotation));
+                } else if (annotation instanceof AArch64MacroAssembler.AdrpLdrMacroInstruction) {
+                    compilationResult.addAnnotation(new AdrpLdrMacroInstructionNativeImagePatcher((AArch64MacroAssembler.AdrpLdrMacroInstruction) annotation));
+                } else if (annotation instanceof AArch64MacroAssembler.AdrpAddMacroInstruction) {
+                    compilationResult.addAnnotation(new AdrpAddMacroInstructionNativeImagePatcher((AArch64MacroAssembler.AdrpAddMacroInstruction) annotation));
+                }
             }
-        });
+        };
     }
 }
 
 class SingleInstructionNativeImagePatcher extends CompilationResult.CodeAnnotation implements NativeImagePatcher {
     private final SingleInstructionAnnotation annotation;
 
-    SingleInstructionNativeImagePatcher(int instructionStartPosition, SingleInstructionAnnotation annotation) {
-        super(instructionStartPosition);
+    SingleInstructionNativeImagePatcher(SingleInstructionAnnotation annotation) {
+        super(annotation.instructionPosition);
         this.annotation = annotation;
     }
 
@@ -94,8 +96,9 @@ class SingleInstructionNativeImagePatcher extends CompilationResult.CodeAnnotati
     }
 
     @Override
-    public void patchCode(int relative, byte[] code) {
-        annotation.patch(annotation.instructionPosition, relative, code);
+    public void patchCode(long methodStartAddress, int relative, byte[] code) {
+        long startAddress = methodStartAddress + annotation.instructionPosition;
+        annotation.patch(startAddress, relative, code);
     }
 
     @Override
@@ -113,8 +116,9 @@ class AdrpLdrMacroInstructionNativeImagePatcher extends CompilationResult.CodeAn
     }
 
     @Override
-    public void patchCode(int relative, byte[] code) {
-        macroInstruction.patch(macroInstruction.instructionPosition, relative, code);
+    public void patchCode(long methodStartAddress, int relative, byte[] code) {
+        long startAddress = methodStartAddress + macroInstruction.instructionPosition;
+        macroInstruction.patch(startAddress, relative, code);
     }
 
     @Override
@@ -149,8 +153,9 @@ class AdrpAddMacroInstructionNativeImagePatcher extends CompilationResult.CodeAn
     }
 
     @Override
-    public void patchCode(int relative, byte[] code) {
-        macroInstruction.patch(macroInstruction.instructionPosition, relative, code);
+    public void patchCode(long methodStartAddress, int relative, byte[] code) {
+        long startAddress = methodStartAddress + macroInstruction.instructionPosition;
+        macroInstruction.patch(startAddress, relative, code);
     }
 
     @Override
@@ -179,14 +184,15 @@ class AdrpAddMacroInstructionNativeImagePatcher extends CompilationResult.CodeAn
 class MovSequenceNativeImagePatcher extends CompilationResult.CodeAnnotation implements NativeImagePatcher {
     private final AArch64MacroAssembler.MovSequenceAnnotation annotation;
 
-    MovSequenceNativeImagePatcher(int instructionStartPosition, AArch64MacroAssembler.MovSequenceAnnotation annotation) {
-        super(instructionStartPosition);
+    MovSequenceNativeImagePatcher(AArch64MacroAssembler.MovSequenceAnnotation annotation) {
+        super(annotation.instructionPosition);
         this.annotation = annotation;
     }
 
     @Override
-    public void patchCode(int relative, byte[] code) {
-        annotation.patch(annotation.instructionPosition, relative, code);
+    public void patchCode(long methodStartAddress, int relative, byte[] code) {
+        long startAddress = methodStartAddress + annotation.instructionPosition;
+        annotation.patch(startAddress, relative, code);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,7 +33,14 @@ public interface InspectorWSConnection {
 
     int getPort();
 
-    void consoleAPICall(String wsspath, String type, Object text);
+    void consoleAPICall(Token token, String type, Object text);
 
-    void close(String wsspath) throws IOException;
+    default void closing(Token token) {
+        assert token != null;
+    }
+
+    void close(Token token) throws IOException;
+
+    default void dispose() {
+    }
 }

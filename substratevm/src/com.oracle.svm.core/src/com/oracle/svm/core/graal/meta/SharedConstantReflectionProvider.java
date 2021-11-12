@@ -31,16 +31,14 @@ import static com.oracle.svm.core.util.VMError.shouldNotReachHere;
 import java.lang.reflect.Array;
 
 import com.oracle.svm.core.meta.ObjectConstantEquality;
-import com.oracle.svm.core.meta.ReadableJavaField;
 import com.oracle.svm.core.meta.SubstrateObjectConstant;
-import com.oracle.svm.core.snippets.KnownIntrinsics;
+import com.oracle.svm.core.util.VMError;
 
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.ConstantReflectionProvider;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.MethodHandleAccessProvider;
-import jdk.vm.ci.meta.ResolvedJavaField;
 import jdk.vm.ci.meta.ResolvedJavaType;
 
 public abstract class SharedConstantReflectionProvider implements ConstantReflectionProvider {
@@ -70,9 +68,9 @@ public abstract class SharedConstantReflectionProvider implements ConstantReflec
             return null;
         }
 
-        Object a = KnownIntrinsics.convertUnknownValue(SubstrateObjectConstant.asObject(array), Object.class);
+        Object a = SubstrateObjectConstant.asObject(array);
 
-        if (index < 0 || index >= Array.getLength(a)) {
+        if (!a.getClass().isArray() || index < 0 || index >= Array.getLength(a)) {
             return null;
         }
 
@@ -97,17 +95,12 @@ public abstract class SharedConstantReflectionProvider implements ConstantReflec
         if (!source.getJavaKind().isObject()) {
             return null;
         }
-        return JavaConstant.forBoxedPrimitive(KnownIntrinsics.convertUnknownValue(SubstrateObjectConstant.asObject(source), Object.class));
+        return JavaConstant.forBoxedPrimitive(SubstrateObjectConstant.asObject(source));
     }
 
     @Override
     public JavaConstant forString(String value) {
         return SubstrateObjectConstant.forObject(value);
-    }
-
-    @Override
-    public JavaConstant readFieldValue(ResolvedJavaField field, JavaConstant receiver) {
-        return ((ReadableJavaField) field).readValue(receiver);
     }
 
     @Override
@@ -122,5 +115,9 @@ public abstract class SharedConstantReflectionProvider implements ConstantReflec
          * represented by the DynamicHub.
          */
         return asJavaClass(type);
+    }
+
+    public int getImageHeapOffset(@SuppressWarnings("unused") JavaConstant constant) {
+        throw VMError.shouldNotReachHere("Can only be used during JIT compilation at run time: " + getClass().getName());
     }
 }

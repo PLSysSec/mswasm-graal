@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -118,6 +118,11 @@ public class DynamicCounterNode extends FixedWithNextNode implements LIRLowerabl
     public static void addCounterBefore(String group, String name, long increment, boolean withContext, FixedNode position) {
         StructuredGraph graph = position.graph();
         graph.addBeforeFixed(position, position.graph().add(new DynamicCounterNode(group, name, ConstantNode.forLong(increment, position.graph()), withContext)));
+    }
+
+    public static void addCounterBefore(String group, String name, ValueNode increment, boolean withContext, FixedNode position) {
+        StructuredGraph graph = position.graph();
+        graph.addBeforeFixed(position, position.graph().add(new DynamicCounterNode(group, name, increment, withContext)));
     }
 
     @NodeIntrinsic

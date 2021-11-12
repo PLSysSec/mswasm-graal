@@ -56,28 +56,26 @@ public final class AArch64CGlobalDataLoadAddressOp extends AArch64LIRInstruction
 
     @Override
     public void emitCode(CompilationResultBuilder crb, AArch64MacroAssembler masm) {
-        int bits = result.getPlatformKind().getSizeInBytes() * 8;
+        int addressBitSize = result.getPlatformKind().getSizeInBytes() * Byte.SIZE;
+        assert addressBitSize == 64;
         if (SubstrateUtil.HOSTED) {
             // AOT compilation: record patch that is fixed up later
-            int before = masm.position();
+            crb.compilationResult.recordDataPatch(masm.position(), new CGlobalDataReference(dataInfo));
             Register resultRegister = asRegister(result);
             if (dataInfo.isSymbolReference()) {
                 // Pure symbol reference: the data contains the symbol's address, load it
-                AArch64Address address = AArch64Address.createScaledImmediateAddress(resultRegister, 0x0);
-                masm.adrpLdr(64, resultRegister, address);
+                masm.adrpLdr(addressBitSize, resultRegister, resultRegister);
             } else {
                 // Data: load its address
-                AArch64Address address = masm.getPlaceholder(before);
-                masm.loadAddress(resultRegister, address, 1);
+                masm.adrpAdd(resultRegister);
             }
-            crb.compilationResult.recordDataPatch(before, new CGlobalDataReference(dataInfo));
         } else {
             // Runtime compilation: compute the actual address
             Pointer globalsBase = CGlobalDataInfo.CGLOBALDATA_RUNTIME_BASE_ADDRESS.get();
             Pointer address = globalsBase.add(dataInfo.getOffset());
             masm.mov(asRegister(result), address.rawValue());
             if (dataInfo.isSymbolReference()) { // load data, which contains symbol's address
-                masm.ldr(bits, asRegister(result), AArch64Address.createBaseRegisterOnlyAddress(asRegister(result)));
+                masm.ldr(addressBitSize, asRegister(result), AArch64Address.createBaseRegisterOnlyAddress(addressBitSize, asRegister(result)));
             }
         }
     }

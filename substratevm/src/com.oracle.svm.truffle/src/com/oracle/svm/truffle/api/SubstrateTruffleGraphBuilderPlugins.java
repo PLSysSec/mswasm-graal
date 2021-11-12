@@ -27,6 +27,7 @@ package com.oracle.svm.truffle.api;
 import java.lang.ref.Reference;
 
 import org.graalvm.compiler.nodes.ConstantNode;
+import org.graalvm.compiler.nodes.extended.MembarNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderContext;
 import org.graalvm.compiler.nodes.graphbuilderconf.InvocationPlugin;
 import org.graalvm.compiler.nodes.graphbuilderconf.InvocationPlugins;
@@ -36,7 +37,12 @@ import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 
 public class SubstrateTruffleGraphBuilderPlugins {
-    static void registerCompilationFinalReferencePlugins(InvocationPlugins plugins, boolean canDelayIntrinsification, SubstrateKnownTruffleTypes types) {
+    static void registerInvocationPlugins(InvocationPlugins plugins, boolean canDelayIntrinsification, SubstrateKnownTruffleTypes types) {
+        registerCompilationFinalReferencePlugins(plugins, canDelayIntrinsification, types);
+        registerOptimizedCallTargetPlugins(plugins);
+    }
+
+    private static void registerCompilationFinalReferencePlugins(InvocationPlugins plugins, boolean canDelayIntrinsification, SubstrateKnownTruffleTypes types) {
         InvocationPlugins.Registration r0 = new InvocationPlugins.Registration(plugins, Reference.class);
         r0.register1("get", InvocationPlugin.Receiver.class, new InvocationPlugin() {
             @Override
@@ -44,7 +50,7 @@ public class SubstrateTruffleGraphBuilderPlugins {
                 if (!canDelayIntrinsification && receiver.isConstant()) {
                     JavaConstant reference = (JavaConstant) receiver.get().asConstant();
                     if (reference.isNonNull()) {
-                        JavaConstant referent = b.getConstantReflection().readFieldValue(types.referenceFieldReferent, reference);
+                        JavaConstant referent = b.getConstantReflection().readFieldValue(types.referentField, reference);
                         b.addPush(JavaKind.Object, ConstantNode.forConstant(referent, b.getMetaAccess()));
                         return true;
                     }
@@ -52,6 +58,17 @@ public class SubstrateTruffleGraphBuilderPlugins {
                 return false;
             }
 
+        });
+    }
+
+    private static void registerOptimizedCallTargetPlugins(InvocationPlugins plugins) {
+        InvocationPlugins.Registration r0 = new InvocationPlugins.Registration(plugins, SubstrateOptimizedCallTarget.class);
+        r0.register0("safepointBarrier", new InvocationPlugin() {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
+                b.add(new MembarNode(0));
+                return true;
+            }
         });
     }
 }

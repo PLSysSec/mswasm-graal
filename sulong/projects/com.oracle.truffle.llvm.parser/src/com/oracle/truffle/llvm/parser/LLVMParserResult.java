@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -29,13 +29,12 @@
  */
 package com.oracle.truffle.llvm.parser;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import com.oracle.truffle.llvm.parser.model.functions.FunctionSymbol;
 import com.oracle.truffle.llvm.parser.model.symbols.globals.GlobalVariable;
-import com.oracle.truffle.llvm.runtime.ExternalLibrary;
+import com.oracle.truffle.llvm.parser.model.target.TargetTriple;
 import com.oracle.truffle.llvm.runtime.datalayout.DataLayout;
+
+import java.util.List;
 
 public final class LLVMParserResult {
 
@@ -44,25 +43,24 @@ public final class LLVMParserResult {
     private final List<FunctionSymbol> externalFunctions;
     private final List<GlobalVariable> definedGlobals;
     private final List<GlobalVariable> externalGlobals;
-    private final List<String> importedSymbols;
-    private List<ExternalLibrary> dependencies;
     private final DataLayout dataLayout;
     private final int symbolTableSize;
+    private final TargetTriple targetTriple;
 
     LLVMParserResult(LLVMParserRuntime runtime,
                     List<FunctionSymbol> definedFunctions,
                     List<FunctionSymbol> externalFunctions,
                     List<GlobalVariable> definedGlobals,
                     List<GlobalVariable> externalGlobals,
-                    List<String> importedSymbols,
-                    DataLayout dataLayout) {
+                    DataLayout dataLayout,
+                    TargetTriple targetTriple) {
         this.runtime = runtime;
         this.definedFunctions = definedFunctions;
         this.externalFunctions = externalFunctions;
         this.definedGlobals = definedGlobals;
         this.externalGlobals = externalGlobals;
-        this.importedSymbols = importedSymbols;
         this.dataLayout = dataLayout;
+        this.targetTriple = targetTriple;
         this.symbolTableSize = definedFunctions.size() + externalFunctions.size() + definedGlobals.size() + externalGlobals.size();
     }
 
@@ -86,29 +84,20 @@ public final class LLVMParserResult {
         return externalGlobals;
     }
 
-    public List<String> getImportedSymbols() {
-        return importedSymbols;
-    }
-
-    public List<ExternalLibrary> getDependencies() {
-        return dependencies;
-    }
-
     public DataLayout getDataLayout() {
         return dataLayout;
     }
 
     @Override
     public String toString() {
-        return "LLVMParserResult[" + runtime.getLibrary() + "]";
+        return "LLVMParserResult[" + runtime.getLibraryName() + "]";
     }
 
     public int getSymbolTableSize() {
         return symbolTableSize;
     }
 
-    public void setDependencies(ArrayList<ExternalLibrary> dependencies) {
-        assert this.dependencies == null;
-        this.dependencies = dependencies;
+    public TargetTriple getTargetTriple() {
+        return targetTriple;
     }
 }

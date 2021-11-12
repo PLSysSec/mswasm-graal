@@ -37,14 +37,12 @@ import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.nativeimage.c.function.CEntryPoint;
 
-import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.annotate.UnknownObjectField;
 import com.oracle.svm.core.annotate.UnknownPrimitiveField;
 import com.oracle.svm.core.deopt.Deoptimizer;
 import com.oracle.svm.core.graal.meta.SharedRuntimeMethod;
 import com.oracle.svm.core.hub.AnnotationsEncoding;
 import com.oracle.svm.core.util.HostedStringDeduplication;
-import com.oracle.svm.core.util.Replaced;
 
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.ConstantPool;
@@ -59,7 +57,7 @@ import jdk.vm.ci.meta.Signature;
 import jdk.vm.ci.meta.SpeculationLog;
 import jdk.vm.ci.meta.TriState;
 
-public class SubstrateMethod implements SharedRuntimeMethod, Replaced {
+public class SubstrateMethod implements SharedRuntimeMethod {
 
     private final byte[] encodedLineNumberTable;
     private final int modifiers;
@@ -99,14 +97,14 @@ public class SubstrateMethod implements SharedRuntimeMethod, Replaced {
 
         modifiers = original.getModifiers();
         name = stringTable.deduplicate(original.getName(), true);
-        neverInline = SubstrateUtil.NativeImageLoadingShield.isNeverInline(original);
+        neverInline = original.hasNeverInlineDirective();
 
         /*
          * AnalysisMethods of snippets are stored in a hash map of SubstrateReplacements. The
          * GraalObjectReplacer replaces them with SubstrateMethods. Therefore we have to preserve
          * the hashCode of the original AnalysisMethod. Note that this is only required because it
          * is a replaced object. For not replaced objects the hash code is preserved automatically
-         * in a synthetic hash-code field (see BootImageHeap.ObjectInfo.identityHashCode).
+         * in a synthetic hash-code field (see NativeImageHeap.ObjectInfo.identityHashCode).
          */
         hashCode = original.hashCode();
         implementations = new SubstrateMethod[0];
@@ -169,6 +167,11 @@ public class SubstrateMethod implements SharedRuntimeMethod, Replaced {
         this.vTableIndex = vTableIndex;
         this.codeOffsetInImage = codeOffsetInImage;
         this.deoptOffsetInImage = deoptOffsetInImage;
+    }
+
+    @Override
+    public boolean hasCodeOffsetInImage() {
+        return codeOffsetInImage != 0;
     }
 
     @Override
@@ -326,7 +329,7 @@ public class SubstrateMethod implements SharedRuntimeMethod, Replaced {
 
     @Override
     public Annotation[] getAnnotations() {
-        return AnnotationsEncoding.decodeAnnotations(annotationsEncoding);
+        return AnnotationsEncoding.decodeAnnotations(annotationsEncoding).getAnnotations();
     }
 
     @Override
@@ -336,7 +339,7 @@ public class SubstrateMethod implements SharedRuntimeMethod, Replaced {
 
     @Override
     public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
-        return AnnotationsEncoding.decodeAnnotation(annotationsEncoding, annotationClass);
+        return AnnotationsEncoding.decodeAnnotations(annotationsEncoding).getAnnotation(annotationClass);
     }
 
     @Override

@@ -28,6 +28,7 @@ import java.util.Map;
 
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.core.common.spi.ForeignCallsProvider;
+import org.graalvm.compiler.core.common.spi.MetaAccessExtensionProvider;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.debug.DebugHandlersFactory;
 import org.graalvm.compiler.graph.Node;
@@ -50,13 +51,18 @@ public interface SubstrateLoweringProvider extends LoweringProvider {
 
     Map<Class<? extends Node>, NodeLoweringProvider<?>> getLowerings();
 
-    ValueNode implicitLoadConvert(StructuredGraph graph, JavaKind kind, ValueNode value);
+    ValueNode implicitLoadConvertWithBooleanCoercionIfNecessary(StructuredGraph graph, JavaKind kind, ValueNode value);
 
     Stamp loadStamp(Stamp stamp, JavaKind kind);
 
-    static LoweringProvider create(MetaAccessProvider metaAccess, ForeignCallsProvider foreignCalls, PlatformConfigurationProvider platformConfig) {
-        return GraalConfiguration.instance().createLoweringProvider(metaAccess, foreignCalls, platformConfig);
+    static LoweringProvider create(MetaAccessProvider metaAccess, ForeignCallsProvider foreignCalls, PlatformConfigurationProvider platformConfig,
+                    MetaAccessExtensionProvider metaAccessExtensionProvider) {
+        return GraalConfiguration.instance().createLoweringProvider(metaAccess, foreignCalls, platformConfig, metaAccessExtensionProvider);
 
     }
 
+    @Override
+    default boolean supportsImplicitNullChecks() {
+        return false;
+    }
 }

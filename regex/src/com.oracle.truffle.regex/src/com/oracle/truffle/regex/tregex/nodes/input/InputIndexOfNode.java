@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -43,7 +43,6 @@ package com.oracle.truffle.regex.tregex.nodes.input;
 import com.oracle.truffle.api.ArrayUtils;
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.dsl.Specialization;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.nodes.Node;
 
 public abstract class InputIndexOfNode extends Node {
@@ -52,18 +51,37 @@ public abstract class InputIndexOfNode extends Node {
         return InputIndexOfNodeGen.create();
     }
 
-    public abstract int execute(Object input, int fromIndex, int maxIndex, char[] chars);
+    public abstract int execute(Object input, int fromIndex, int maxIndex, Object chars);
 
     @Specialization
-    public int indexOf(String input, int fromIndex, int maxIndex, char[] chars) {
-        return ArrayUtils.indexOf(input, fromIndex, maxIndex, chars);
+    public int doBytes(byte[] input, int fromIndex, int maxIndex, byte[] bytes) {
+        return ArrayUtils.indexOf(input, fromIndex, maxIndex, bytes);
     }
 
     @Specialization
-    public int indexOf(TruffleObject input, int fromIndex, int maxIndex, char[] chars,
-                    @Cached("create()") InputCharAtNode charAtNode) {
+    public int doChars(String input, int fromIndex, int maxIndex, char[] chars) {
+        return ArrayUtils.indexOf(input, fromIndex, maxIndex, chars);
+    }
+
+    @Specialization(guards = "neitherByteArrayNorString(input)")
+    public int doTruffleObjBytes(Object input, int fromIndex, int maxIndex, byte[] bytes,
+                    @Cached InputReadNode charAtNode) {
         for (int i = fromIndex; i < maxIndex; i++) {
-            char c = charAtNode.execute(input, i);
+            int c = charAtNode.execute(input, i);
+            for (byte v : bytes) {
+                if (c == Byte.toUnsignedInt(v)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    @Specialization(guards = "neitherByteArrayNorString(input)")
+    public int doTruffleObjChars(Object input, int fromIndex, int maxIndex, char[] chars,
+                    @Cached InputReadNode charAtNode) {
+        for (int i = fromIndex; i < maxIndex; i++) {
+            int c = charAtNode.execute(input, i);
             for (char v : chars) {
                 if (c == v) {
                     return i;
@@ -73,7 +91,7 @@ public abstract class InputIndexOfNode extends Node {
         return -1;
     }
 
-    static boolean maskIsZero(char mask) {
-        return mask == 0;
+    protected static boolean neitherByteArrayNorString(Object obj) {
+        return !(obj instanceof byte[]) && !(obj instanceof String);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,7 @@
  */
 package com.oracle.truffle.nfi.test;
 
+import org.graalvm.polyglot.Context;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -47,15 +48,12 @@ import org.junit.ClassRule;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.interop.InteropException;
 import com.oracle.truffle.api.interop.InteropLibrary;
-import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.tck.TruffleRunner;
-import org.graalvm.polyglot.Context;
 
 public class NFITest {
 
@@ -63,12 +61,12 @@ public class NFITest {
 
     @ClassRule public static TruffleRunner.RunWithPolyglotRule runWithPolyglot = new TruffleRunner.RunWithPolyglotRule(Context.newBuilder().allowNativeAccess(true));
 
-    protected static TruffleObject defaultLibrary;
-    protected static TruffleObject testLibrary;
+    protected static Object defaultLibrary;
+    protected static Object testLibrary;
 
     private static CallTarget lookupAndBind;
 
-    protected static TruffleObject loadLibrary(String lib) {
+    protected static Object loadLibrary(String lib) {
         String testBackend = System.getProperty("native.test.backend");
         String sourceString;
         if (testBackend != null) {
@@ -79,14 +77,14 @@ public class NFITest {
 
         Source source = Source.newBuilder("nfi", sourceString, "loadLibrary").internal(true).build();
         CallTarget target = runWithPolyglot.getTruffleTestEnv().parseInternal(source);
-        return (TruffleObject) target.call();
+        return target.call();
     }
 
     @BeforeClass
     public static void loadLibraries() {
         defaultLibrary = loadLibrary("default");
         testLibrary = loadLibrary("load '" + System.getProperty("native.test.lib") + "'");
-        lookupAndBind = Truffle.getRuntime().createCallTarget(new LookupAndBindNode());
+        lookupAndBind = new LookupAndBindNode().getCallTarget();
     }
 
     private static final class LookupAndBindNode extends RootNode {
@@ -95,7 +93,7 @@ public class NFITest {
         @Child InteropLibrary symInterop = InteropLibrary.getFactory().createDispatched(5);
 
         private LookupAndBindNode() {
-            super(null);
+            super(runWithPolyglot.getTestLanguage());
         }
 
         @Override
@@ -148,7 +146,7 @@ public class NFITest {
 
     protected static class SendExecuteNode extends NFITestRootNode {
 
-        private final TruffleObject receiver;
+        private final Object receiver;
 
         @Child InteropLibrary interop;
 
@@ -156,7 +154,7 @@ public class NFITest {
             this(lookupAndBind(symbol, signature));
         }
 
-        protected SendExecuteNode(TruffleObject receiver) {
+        protected SendExecuteNode(Object receiver) {
             this.receiver = receiver;
             this.interop = getInterop(receiver);
         }
@@ -167,13 +165,13 @@ public class NFITest {
         }
     }
 
-    protected static TruffleObject lookupAndBind(String name, String signature) {
+    protected static Object lookupAndBind(String name, String signature) {
         return lookupAndBind(testLibrary, name, signature);
     }
 
     static final boolean IS_WINDOWS = System.getProperty("os.name").startsWith("Windows");
 
-    protected static TruffleObject lookupAndBindDefault(String name, String signature) {
+    protected static Object lookupAndBindDefault(String name, String signature) {
         if (IS_WINDOWS) {
             return lookupAndBind(testLibrary, "reexport_" + name, signature);
         } else {
@@ -181,7 +179,7 @@ public class NFITest {
         }
     }
 
-    protected static TruffleObject lookupAndBind(TruffleObject library, String name, String signature) {
-        return (TruffleObject) lookupAndBind.call(library, name, signature);
+    protected static Object lookupAndBind(Object library, String name, String signature) {
+        return lookupAndBind.call(library, name, signature);
     }
 }

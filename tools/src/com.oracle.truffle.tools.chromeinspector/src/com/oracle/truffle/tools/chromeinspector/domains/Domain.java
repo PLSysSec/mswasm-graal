@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,6 +42,9 @@ public abstract class Domain {
 
     protected abstract void doDisable();
 
+    protected void notifyDisabled() {
+    }
+
     public final void enable() {
         if (!enabled) {
             enabled = true;
@@ -49,11 +52,15 @@ public abstract class Domain {
         }
     }
 
+    public void notifyClosing() {
+    }
+
     public final void disable() {
         if (enabled) {
             enabled = false;
             doDisable();
         }
+        notifyDisabled();
     }
 
     public final boolean isEnabled() {

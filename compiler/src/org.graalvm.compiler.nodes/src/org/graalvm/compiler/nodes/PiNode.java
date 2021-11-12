@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,14 +33,16 @@ import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.core.common.type.TypeReference;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.graph.Node.NodeIntrinsicFactory;
 import org.graalvm.compiler.graph.NodeClass;
-import org.graalvm.compiler.graph.spi.Canonicalizable;
-import org.graalvm.compiler.graph.spi.CanonicalizerTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.extended.GuardingNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderContext;
 import org.graalvm.compiler.nodes.memory.ReadNode;
+import org.graalvm.compiler.nodes.spi.Canonicalizable;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.nodes.spi.LIRLowerable;
 import org.graalvm.compiler.nodes.spi.NodeLIRBuilderTool;
 import org.graalvm.compiler.nodes.spi.ValueProxy;
@@ -50,7 +52,6 @@ import org.graalvm.compiler.nodes.type.StampTool;
 import org.graalvm.compiler.nodes.virtual.VirtualObjectNode;
 
 import jdk.vm.ci.meta.JavaKind;
-import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 
 //JaCoCo Exclude
@@ -64,6 +65,7 @@ import jdk.vm.ci.meta.ResolvedJavaType;
  * also the scheduling restriction enforced by the guard, will go away.
  */
 @NodeInfo(cycles = CYCLES_0, size = SIZE_0)
+@NodeIntrinsicFactory
 public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtualizable, Canonicalizable, ValueProxy {
 
     public static final NodeClass<PiNode> TYPE = NodeClass.create(PiNode.class);
@@ -124,19 +126,35 @@ public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtual
         return new PiNode(object, stamp, guard);
     }
 
-    @SuppressWarnings("unused")
-    public static boolean intrinsify(GraphBuilderContext b, ResolvedJavaMethod method, ValueNode object, ValueNode guard) {
-        Stamp stamp = AbstractPointerStamp.pointerNonNull(object.stamp(NodeView.DEFAULT));
-        ValueNode value = canonical(object, stamp, (GuardingNode) guard, null);
-        if (value == null) {
-            value = new PiNode(object, stamp, guard);
+    public enum IntrinsifyOp {
+        NON_NULL,
+        POSITIVE_INT
+    }
+
+    public static boolean intrinsify(GraphBuilderContext b, ValueNode input, ValueNode guard, IntrinsifyOp intrinsifyOp) {
+        Stamp piStamp;
+        JavaKind pushKind;
+        switch (intrinsifyOp) {
+            case NON_NULL:
+                piStamp = AbstractPointerStamp.pointerNonNull(input.stamp(NodeView.DEFAULT));
+                pushKind = JavaKind.Object;
+                break;
+            case POSITIVE_INT:
+                piStamp = StampFactory.positiveInt();
+                pushKind = JavaKind.Int;
+                break;
+            default:
+                throw GraalError.shouldNotReachHere();
         }
-        b.push(JavaKind.Object, b.append(value));
+        ValueNode value = canonical(input, piStamp, (GuardingNode) guard, null);
+        if (value == null) {
+            value = new PiNode(input, piStamp, guard);
+        }
+        b.push(pushKind, b.append(value));
         return true;
     }
 
-    @SuppressWarnings("unused")
-    public static boolean intrinsify(GraphBuilderContext b, ResolvedJavaMethod method, ValueNode object, ResolvedJavaType toType, boolean exactType, boolean nonNull) {
+    public static boolean intrinsify(GraphBuilderContext b, ValueNode object, ResolvedJavaType toType, boolean exactType, boolean nonNull) {
         Stamp stamp = StampFactory.object(exactType ? TypeReference.createExactTrusted(toType) : TypeReference.createWithoutAssumptions(toType),
                         nonNull || StampTool.isPointerNonNull(object.stamp(NodeView.DEFAULT)));
         ValueNode value = canonical(object, stamp, null, null);
@@ -147,6 +165,17 @@ public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtual
         return true;
     }
 
+    /**
+     * A stamp expressing the property that is proved by the {@linkplain #getGuard() guard}, but not
+     * more.
+     * </p>
+     *
+     * For example, if the guard proves a property {@code x >= 0} on an {@code int} value, then the
+     * {@link #piStamp()} should be {@link StampFactory#positiveInt()}. If the input value's stamp
+     * is constrained, e.g., {@code [-100 - 100]}, then this pi's overall {@link #stamp(NodeView)}
+     * will be {@code [0 - 100]}, computed as the join of the {@link #piStamp()} and the input's
+     * stamp.
+     */
     public final Stamp piStamp() {
         return piStamp;
     }
@@ -186,9 +215,9 @@ public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtual
         }
     }
 
-    public static ValueNode canonical(ValueNode object, Stamp stamp, GuardingNode guard, PiNode self) {
+    public static ValueNode canonical(ValueNode object, Stamp piStamp, GuardingNode guard, PiNode self) {
         // Use most up to date stamp.
-        Stamp computedStamp = stamp.improveWith(object.stamp(NodeView.DEFAULT));
+        Stamp computedStamp = piStamp.improveWith(object.stamp(NodeView.DEFAULT));
 
         // The pi node does not give any additional information => skip it.
         if (computedStamp.equals(object.stamp(NodeView.DEFAULT))) {
@@ -199,22 +228,32 @@ public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtual
             // Try to merge the pi node with a load node.
             if (object instanceof ReadNode && !object.hasMoreThanOneUsage()) {
                 ReadNode readNode = (ReadNode) object;
-                readNode.setStamp(readNode.stamp(NodeView.DEFAULT).improveWith(stamp));
+                readNode.setStamp(readNode.stamp(NodeView.DEFAULT).improveWith(piStamp));
                 return readNode;
             }
         } else {
             for (Node n : guard.asNode().usages()) {
                 if (n instanceof PiNode && n != self) {
                     PiNode otherPi = (PiNode) n;
-                    assert otherPi.guard == guard;
-                    if (object == otherPi.object() && computedStamp.equals(otherPi.stamp(NodeView.DEFAULT))) {
+                    if (otherPi.guard != guard) {
+                        assert otherPi.object() == guard;
                         /*
-                         * Two PiNodes with the same guard and same result, so return the one with
-                         * the more precise piStamp.
+                         * The otherPi is unrelated because it uses this.guard as object but not as
+                         * guard.
                          */
-                        Stamp newStamp = stamp.join(otherPi.piStamp);
-                        if (newStamp.equals(otherPi.piStamp)) {
+                        continue;
+                    }
+                    if (otherPi.object() == self || otherPi.object() == object) {
+                        // Check if other pi's stamp is more precise
+                        Stamp joinedStamp = piStamp.improveWith(otherPi.piStamp());
+                        if (joinedStamp.equals(piStamp)) {
+                            // Stamp did not get better, nothing to do.
+                        } else if (otherPi.object() == object && joinedStamp.equals(otherPi.piStamp())) {
+                            // We can be replaced with the other pi.
                             return otherPi;
+                        } else {
+                            // Create a new pi node with the more precise joined stamp.
+                            return new PiNode(object, joinedStamp, guard.asNode());
                         }
                     }
                 }
@@ -228,6 +267,15 @@ public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtual
         Node value = canonical(object(), piStamp(), getGuard(), this);
         if (value != null) {
             return value;
+        }
+        if (tool.allUsagesAvailable()) {
+            for (Node usage : usages()) {
+                if (!(usage instanceof VirtualState)) {
+                    return this;
+                }
+            }
+            // Only state usages: for them a more precise stamp does not matter.
+            return object;
         }
         return this;
     }
@@ -268,18 +316,43 @@ public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtual
     public static native Object piCastToSnippetReplaceeStamp(Object object);
 
     /**
-     * Changes the stamp of an object and ensures the newly stamped value is non-null and does not
-     * float above a given guard.
+     * Changes the stamp of a primitive value and ensures the newly stamped value is positive and
+     * does not float above a given guard.
+     *
+     * @param value an arbitrary {@code int} value
+     * @param guard a node proving that {@code value >= 0} holds at some point in the graph
+     *
+     * @return the {@code value} with its stamp clamped to exclude negative values, guarded by
+     *         {@code guard}
      */
+    public static int piCastPositive(int value, GuardingNode guard) {
+        return intrinsified(value, guard, IntrinsifyOp.POSITIVE_INT);
+    }
+
     @NodeIntrinsic
-    public static native Object piCastNonNull(Object object, GuardingNode guard);
+    private static native int intrinsified(int value, GuardingNode guard, @ConstantNodeParameter IntrinsifyOp intrinsifyOp);
 
     /**
      * Changes the stamp of an object and ensures the newly stamped value is non-null and does not
      * float above a given guard.
      */
+    public static Object piCastNonNull(Object object, GuardingNode guard) {
+        return intrinsified(object, guard, IntrinsifyOp.NON_NULL);
+    }
+
     @NodeIntrinsic
-    public static native Class<?> piCastNonNullClass(Class<?> type, GuardingNode guard);
+    private static native Object intrinsified(Object object, GuardingNode guard, @ConstantNodeParameter IntrinsifyOp intrinsifyOp);
+
+    /**
+     * Changes the stamp of an object and ensures the newly stamped value is non-null and does not
+     * float above a given guard.
+     */
+    public static Class<?> piCastNonNullClass(Class<?> type, GuardingNode guard) {
+        return intrinsified(type, guard, IntrinsifyOp.NON_NULL);
+    }
+
+    @NodeIntrinsic
+    private static native Class<?> intrinsified(Class<?> object, GuardingNode guard, @ConstantNodeParameter IntrinsifyOp intrinsifyOp);
 
     /**
      * Changes the stamp of an object to represent a given type and to indicate that the object is
@@ -338,7 +411,7 @@ public class PiNode extends FloatingGuardedNode implements LIRLowerable, Virtual
         }
 
         private PlaceholderStamp() {
-            super(null, false, false, false);
+            super(null, false, false, false, false);
         }
 
         @Override

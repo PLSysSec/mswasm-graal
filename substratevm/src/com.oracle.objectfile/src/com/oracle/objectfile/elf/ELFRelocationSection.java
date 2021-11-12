@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,7 +43,6 @@ import com.oracle.objectfile.LayoutDecision;
 import com.oracle.objectfile.LayoutDecisionMap;
 import com.oracle.objectfile.ObjectFile;
 import com.oracle.objectfile.ObjectFile.Element;
-import com.oracle.objectfile.ObjectFile.RelocationKind;
 import com.oracle.objectfile.ObjectFile.RelocationMethod;
 import com.oracle.objectfile.ObjectFile.RelocationRecord;
 import com.oracle.objectfile.ObjectFile.Symbol;
@@ -109,6 +108,19 @@ public class ELFRelocationSection extends ELFSection {
 
     interface ELFRelocationMethod extends RelocationMethod {
 
+        /*
+         * For now, ELF relocations are always using explicit addends. This can change in the
+         * future.
+         */
+
+        default boolean canUseImplicitAddend() {
+            return false;
+        }
+
+        default boolean canUseExplicitAddend() {
+            return true;
+        }
+
         long toLong();
     }
 
@@ -128,11 +140,6 @@ public class ELFRelocationSection extends ELFSection {
         }
 
         @Override
-        public RelocationKind getKind() {
-            return t.getKind();
-        }
-
-        @Override
         public long getOffset() {
             return offset;
         }
@@ -140,12 +147,6 @@ public class ELFRelocationSection extends ELFSection {
         @Override
         public Symbol getReferencedSymbol() {
             return sym;
-        }
-
-        @Override
-        public int getRelocatedByteSize() {
-            /* All ELF relocation kinds work on a fixed size of relocation site. */
-            return t.getRelocatedByteSize();
         }
 
         @Override
@@ -184,8 +185,8 @@ public class ELFRelocationSection extends ELFSection {
         }
     }
 
-    public Entry addEntry(ELFSection s, long offset, ELFRelocationMethod t, ELFSymtab.Entry sym, Long explicitAddend) {
-        if (explicitAddend != null) {
+    void addEntry(ELFSection s, long offset, ELFRelocationMethod t, ELFSymtab.Entry sym, long addend) {
+        if (ELFObjectFile.useExplicitAddend(addend)) {
             if (!t.canUseExplicitAddend()) {
                 throw new IllegalArgumentException("cannot use relocation method " + t + " with explicit addends");
             }
@@ -193,6 +194,7 @@ public class ELFRelocationSection extends ELFSection {
                 throw new IllegalStateException("cannot create relocation with addend in .rel section");
             }
         } else {
+            // use implicit addend
             if (!t.canUseImplicitAddend()) {
                 throw new IllegalArgumentException("cannot use relocation method " + t + " with implicit addends");
             }
@@ -200,8 +202,7 @@ public class ELFRelocationSection extends ELFSection {
                 throw new IllegalStateException("cannot create relocation without addend in .rela section");
             }
         }
-        long addend = (explicitAddend != null) ? explicitAddend : 0L;
-        return entries.computeIfAbsent(new Entry(s, offset, t, sym, addend), Function.identity());
+        entries.computeIfAbsent(new Entry(s, offset, t, sym, addend), Function.identity());
     }
 
     public boolean isDynamic() {

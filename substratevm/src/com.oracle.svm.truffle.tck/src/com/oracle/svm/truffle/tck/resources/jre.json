@@ -214,8 +214,22 @@
     "methods" : [
         { "name" : "createURL" ,
           "parameterTypes" : [
+            "java.lang.String"
+        ]},
+        { "name" : "createURL" ,
+          "parameterTypes" : [
             "java.lang.String",
-            "byte[]"
+            "int"
+        ]}
+    ]
+  },
+    {
+    "name" : "com.oracle.svm.core.jdk.ResourcesHelper",
+    "methods" : [
+        { "name" : "urlToResource" ,
+          "parameterTypes" : [
+            "java.lang.String",
+            "java.net.URL"
         ]}
     ]
   },
@@ -223,16 +237,6 @@
     "name" : "com.oracle.svm.core.handles.ObjectHandlesImpl",
     "allDeclaredMethods" : true,
     "justification" : "Internal SVM implementation of JNI object handles"
-  },
-
-  {
-    "name" : "com.oracle.svm.core.posix.linux.LinuxPhysicalMemory$PhysicalMemorySupportImpl",
-    "methods" : [
-        { "name" : "sizeFromCGroup",
-          "justification" : "Native application on Linux determines heap size by reading /sys/fs/cgroup/memory/memory.limit_in_bytes at start.",
-          "parameterTypes" : [
-        ]}
-    ]
   },
   {
     "name" : "com.oracle.svm.core.thread.JavaVMOperation",
@@ -242,6 +246,40 @@
           "parameterTypes" : [
             "com.oracle.svm.core.thread.NativeVMOperationData"
         ]}
+    ]
+  },
+  {
+    "name": "sun.util.logging.PlatformLogger",
+    "methods" : [
+       {
+         "name" : "getLogger",
+         "parameterTypes" : [
+           "java.lang.String"
+         ]
+       }
+    ]
+  },
+  {
+    "name": "java.util.logging.LogManager",
+    "methods" : [
+      {
+        "name" : "checkPermission",
+        "parameterTypes" : []
+      },
+      {
+        "name" : "getLogManager",
+        "justification" : "substituted method has hook to install shutdown hook.",
+        "parameterTypes" : []
+      }
+    ]
+  },
+  {
+    "name": "java.lang.Class",
+    "methods": [
+      {
+        "name": "forName",
+        "justification": "Only classes that were present during the image build (on the classpath or predefined classes) can be accessed."
+      }
     ]
   }
 ]

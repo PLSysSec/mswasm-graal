@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,7 +40,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.GenerateWrapper;
@@ -163,7 +162,7 @@ public final class CoverageTest {
 
     @Test
     public void testRootAndStatementInDifferentSources() {
-        try (Context c = Context.newBuilder(RootAndStatementInDifferentSources.ID).in(System.in).out(out).err(err).build();
+        try (Context c = Context.newBuilder().in(System.in).out(out).err(err).build();
                         CoverageTracker tracker = CoverageInstrument.getTracker(c.getEngine())) {
             tracker.start(new CoverageTracker.Config(SourceSectionFilter.ANY, false));
             c.eval(RootAndStatementInDifferentSources.ID, "");
@@ -188,6 +187,52 @@ public final class CoverageTest {
         }
     }
 
+    @Test
+    public void testResetCoverage() {
+        try (Context context = Context.newBuilder().in(System.in).out(out).err(err).option(CoverageInstrument.ID, "true").build();
+                        CoverageTracker tracker = CoverageInstrument.getTracker(context.getEngine())) {
+            for (int i = 0; i < 10; i++) {
+                context.eval(defaultSource);
+                final SourceCoverage[] coverage = tracker.resetCoverage();
+                Assert.assertEquals("Unexpected number of sources in coverage", 1, coverage.length);
+                Assert.assertEquals("Unexpected number of roots in coverage", 4, coverage[0].getRoots().length);
+                for (RootCoverage root : coverage[0].getRoots()) {
+                    switch (root.getName()) {
+                        case "foo":
+                            assertCoverage(root, 0, 0, "foo", true);
+                            break;
+                        case "bar":
+                            assertCoverage(root, 1, 1, "bar", true);
+                            break;
+                        case "neverCalled":
+                            assertCoverage(root, 1, 0, "neverCalled", false);
+                            break;
+                        case "":
+                            assertCoverage(root, 0, 0, "", true);
+                            break;
+                    }
+                }
+                SourceCoverage[] resetCoverage = tracker.getCoverage();
+                for (RootCoverage root : resetCoverage[0].getRoots()) {
+                    switch (root.getName()) {
+                        case "foo":
+                            assertCoverage(root, 0, 0, "foo", false);
+                            break;
+                        case "bar":
+                            assertCoverage(root, 1, 0, "bar", false);
+                            break;
+                        case "neverCalled":
+                            assertCoverage(root, 1, 0, "neverCalled", false);
+                            break;
+                        case "":
+                            assertCoverage(root, 0, 0, "", false);
+                            break;
+                    }
+                }
+            }
+        }
+    }
+
     @TruffleLanguage.Registration(id = RootAndStatementInDifferentSources.ID, name = "RootAndStatementInDifferentSources", version = "0")
     @ProvidedTags({StandardTags.RootTag.class, StandardTags.StatementTag.class})
     public static class RootAndStatementInDifferentSources extends ProxyLanguage {
@@ -199,14 +244,14 @@ public final class CoverageTest {
 
         @Override
         protected CallTarget parse(ParsingRequest request) throws Exception {
-            return Truffle.getRuntime().createCallTarget(new RootNode(this) {
+            return new RootNode(this) {
                 @Child SuperclassNode child = new TestRootNode(new TestStatementNode());
 
                 @Override
                 public Object execute(VirtualFrame frame) {
                     return child.execute(frame);
                 }
-            });
+            }.getCallTarget();
         }
 
         @GenerateWrapper

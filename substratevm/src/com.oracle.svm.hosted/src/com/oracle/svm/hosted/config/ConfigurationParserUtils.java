@@ -24,9 +24,8 @@
  */
 package com.oracle.svm.hosted.config;
 
-import static com.oracle.svm.core.SubstrateOptions.PrintFlags;
+import static com.oracle.svm.common.option.CommonOptions.PrintFlags;
 
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -46,8 +45,10 @@ import org.graalvm.nativeimage.impl.ReflectionRegistry;
 
 import com.oracle.svm.core.configure.ConfigurationFiles;
 import com.oracle.svm.core.configure.ConfigurationParser;
+import com.oracle.svm.core.configure.ConditionalElement;
 import com.oracle.svm.core.configure.ReflectionConfigurationParser;
 import com.oracle.svm.core.option.HostedOptionKey;
+import com.oracle.svm.core.option.LocatableMultiOptionValue;
 import com.oracle.svm.core.option.OptionUtils;
 import com.oracle.svm.core.option.SubstrateOptionsParser;
 import com.oracle.svm.core.util.UserError;
@@ -57,21 +58,22 @@ import com.oracle.svm.hosted.NativeImageOptions;
 
 public final class ConfigurationParserUtils {
 
-    public static ReflectionConfigurationParser<Class<?>> create(ReflectionRegistry registry, ImageClassLoader imageClassLoader) {
-        return new ReflectionConfigurationParser<>(new ReflectionRegistryAdapter(registry, imageClassLoader), NativeImageOptions.AllowIncompleteClasspath.getValue());
+    public static ReflectionConfigurationParser<ConditionalElement<Class<?>>> create(ReflectionRegistry registry, ImageClassLoader imageClassLoader) {
+        return new ReflectionConfigurationParser<>(new ReflectionRegistryAdapter(registry, imageClassLoader),
+                        NativeImageOptions.AllowIncompleteClasspath.getValue(), ConfigurationFiles.Options.StrictConfiguration.getValue());
     }
 
     /**
      * Parses configurations in files specified by {@code configFilesOption} and resources specified
      * by {@code configResourcesOption} and registers the parsed elements using
-     * {@link ConfigurationParser#parseAndRegister(Reader)} .
+     * {@link ConfigurationParser#parseAndRegister} .
      *
      * @param featureName name of the feature using the configuration (e.g., "JNI")
      * @param directoryFileName file name for searches via {@link ConfigurationFiles}.
      * @return the total number of successfully parsed configuration files and resources.
      */
     public static int parseAndRegisterConfigurations(ConfigurationParser parser, ImageClassLoader classLoader, String featureName,
-                    HostedOptionKey<String[]> configFilesOption, HostedOptionKey<String[]> configResourcesOption, String directoryFileName) {
+                    HostedOptionKey<LocatableMultiOptionValue.Strings> configFilesOption, HostedOptionKey<LocatableMultiOptionValue.Strings> configResourcesOption, String directoryFileName) {
 
         int parsedCount = 0;
 
@@ -79,14 +81,10 @@ public final class ConfigurationParserUtils {
                         ConfigurationFiles.findConfigurationFiles(directoryFileName).stream());
         parsedCount += files.map(Path::toAbsolutePath).mapToInt(path -> {
             if (!Files.exists(path)) {
-                throw UserError.abort("The " + featureName + " configuration file \"" + path + "\" does not exist.");
+                throw UserError.abort("The %s configuration file \"%s\" does not exist.", featureName, path);
             }
-            try (Reader reader = new FileReader(path.toFile())) {
-                doParseAndRegister(parser, reader, featureName, path, configFilesOption);
-                return 1;
-            } catch (IOException e) {
-                throw UserError.abort("Could not open " + path + ": " + e.getMessage());
-            }
+            doParseAndRegister(parser, featureName, path, configFilesOption);
+            return 1;
         }).sum();
 
         Stream<URL> configResourcesFromOption = OptionUtils.flatten(",", configResourcesOption.getValue()).stream().flatMap(s -> {
@@ -94,10 +92,10 @@ public final class ConfigurationParserUtils {
             try {
                 urls = classLoader.findResourcesByName(s);
             } catch (IOException e) {
-                throw UserError.abort(e, "Error while looking for " + s + " in " + classLoader);
+                throw UserError.abort(e, "Error while looking for %s in %s", s, classLoader);
             }
             if (!urls.hasMoreElements()) {
-                throw UserError.abort("Could not find " + featureName + " configuration resource \"" + s + "\".");
+                throw UserError.abort("Could not find %s configuration resource \"%s\".", featureName, s);
             }
             return StreamSupport.stream(new AbstractSpliterator<URL>(Long.MAX_VALUE, Spliterator.ORDERED) {
                 @Override
@@ -112,32 +110,30 @@ public final class ConfigurationParserUtils {
         });
         Stream<URL> resources = Stream.concat(configResourcesFromOption, ConfigurationFiles.findConfigurationResources(directoryFileName, classLoader.getClassLoader()).stream());
         parsedCount += resources.mapToInt(url -> {
-            try {
-                URLConnection urlConnection = url.openConnection();
-                urlConnection.setUseCaches(false);
-                try (Reader reader = new InputStreamReader(urlConnection.getInputStream())) {
-                    doParseAndRegister(parser, reader, featureName, url, configResourcesOption);
-                    return 1;
-                }
-            } catch (IOException e) {
-                throw UserError.abort("Could not open " + url + ": " + e.getMessage());
-            }
+            doParseAndRegister(parser, featureName, url, configResourcesOption);
+            return 1;
         }).sum();
-
         return parsedCount;
     }
 
-    private static void doParseAndRegister(ConfigurationParser parser, Reader reader, String featureName, Object location, HostedOptionKey<String[]> option) {
+    private static void doParseAndRegister(ConfigurationParser parser, String featureName, Object location, HostedOptionKey<LocatableMultiOptionValue.Strings> option) {
         try {
-            parser.parseAndRegister(reader);
+            if (location instanceof Path) {
+                parser.parseAndRegister((Path) location);
+            } else {
+                URLConnection urlConnection = ((URL) location).openConnection();
+                urlConnection.setUseCaches(false);
+                try (Reader reader = new InputStreamReader(urlConnection.getInputStream())) {
+                    parser.parseAndRegister(reader);
+                }
+            }
         } catch (IOException | JSONParserException e) {
             String errorMessage = e.getMessage();
             if (errorMessage == null || errorMessage.isEmpty()) {
                 errorMessage = e.toString();
             }
-            throw UserError.abort("Error parsing " + featureName + " configuration in " + location + ":\n" + errorMessage +
-                            "\nVerify that the configuration matches the schema described in the " +
-                            SubstrateOptionsParser.commandArgument(PrintFlags, "+") + " output for option " + option.getName() + ".");
+            throw UserError.abort("Error parsing %s configuration in %s:%n%s%nVerify that the configuration matches the schema described in the %s output for option %s.",
+                            featureName, location, errorMessage, SubstrateOptionsParser.commandArgument(PrintFlags, "+"), option.getName());
         }
     }
 }

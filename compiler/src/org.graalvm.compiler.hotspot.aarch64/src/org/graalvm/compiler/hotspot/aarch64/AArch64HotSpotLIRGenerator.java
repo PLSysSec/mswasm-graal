@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -26,33 +26,24 @@
 
 package org.graalvm.compiler.hotspot.aarch64;
 
-import static org.graalvm.compiler.core.common.GraalOptions.GeneratePIC;
-import static org.graalvm.compiler.hotspot.HotSpotBackend.INITIALIZE_KLASS_BY_SYMBOL;
-import static org.graalvm.compiler.hotspot.HotSpotBackend.RESOLVE_DYNAMIC_INVOKE;
-import static org.graalvm.compiler.hotspot.HotSpotBackend.RESOLVE_KLASS_BY_SYMBOL;
-import static org.graalvm.compiler.hotspot.HotSpotBackend.RESOLVE_METHOD_BY_SYMBOL_AND_LOAD_COUNTERS;
-import static org.graalvm.compiler.hotspot.HotSpotBackend.RESOLVE_STRING_BY_SYMBOL;
-import static org.graalvm.compiler.hotspot.meta.HotSpotConstantLoadAction.INITIALIZE;
-import static org.graalvm.compiler.hotspot.meta.HotSpotConstantLoadAction.LOAD_COUNTERS;
-import static org.graalvm.compiler.hotspot.meta.HotSpotConstantLoadAction.RESOLVE;
 import static org.graalvm.compiler.lir.LIRValueUtil.asConstant;
+import static org.graalvm.compiler.lir.LIRValueUtil.asJavaConstant;
 import static org.graalvm.compiler.lir.LIRValueUtil.isConstantValue;
+import static org.graalvm.compiler.lir.LIRValueUtil.isJavaConstant;
 
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.function.Function;
 
 import org.graalvm.compiler.asm.Label;
-import org.graalvm.compiler.asm.aarch64.AArch64Address.AddressingMode;
 import org.graalvm.compiler.asm.aarch64.AArch64Assembler.ConditionFlag;
 import org.graalvm.compiler.asm.aarch64.AArch64Assembler.PrefetchMode;
 import org.graalvm.compiler.core.aarch64.AArch64ArithmeticLIRGenerator;
 import org.graalvm.compiler.core.aarch64.AArch64LIRGenerator;
 import org.graalvm.compiler.core.aarch64.AArch64LIRKindTool;
 import org.graalvm.compiler.core.common.CompressEncoding;
-import org.graalvm.compiler.core.common.GraalOptions;
 import org.graalvm.compiler.core.common.LIRKind;
 import org.graalvm.compiler.core.common.calc.Condition;
-import org.graalvm.compiler.core.common.spi.ForeignCallDescriptor;
 import org.graalvm.compiler.core.common.spi.ForeignCallLinkage;
 import org.graalvm.compiler.core.common.spi.LIRKindTool;
 import org.graalvm.compiler.debug.GraalError;
@@ -63,14 +54,13 @@ import org.graalvm.compiler.hotspot.HotSpotForeignCallLinkage;
 import org.graalvm.compiler.hotspot.HotSpotLIRGenerationResult;
 import org.graalvm.compiler.hotspot.HotSpotLIRGenerator;
 import org.graalvm.compiler.hotspot.HotSpotLockStack;
-import org.graalvm.compiler.hotspot.meta.HotSpotConstantLoadAction;
+import org.graalvm.compiler.hotspot.debug.BenchmarkCounters;
 import org.graalvm.compiler.hotspot.meta.HotSpotProviders;
 import org.graalvm.compiler.hotspot.meta.HotSpotRegistersProvider;
 import org.graalvm.compiler.hotspot.stubs.Stub;
 import org.graalvm.compiler.lir.LIRFrameState;
 import org.graalvm.compiler.lir.LIRInstruction;
 import org.graalvm.compiler.lir.LabelRef;
-import org.graalvm.compiler.lir.StandardOp.ZapRegistersOp;
 import org.graalvm.compiler.lir.SwitchStrategy;
 import org.graalvm.compiler.lir.Variable;
 import org.graalvm.compiler.lir.VirtualStackSlot;
@@ -85,16 +75,13 @@ import org.graalvm.compiler.lir.aarch64.AArch64PrefetchOp;
 import org.graalvm.compiler.lir.aarch64.AArch64RestoreRegistersOp;
 import org.graalvm.compiler.lir.aarch64.AArch64SaveRegistersOp;
 import org.graalvm.compiler.lir.gen.LIRGenerationResult;
-import org.graalvm.compiler.options.OptionValues;
 
 import jdk.vm.ci.aarch64.AArch64;
 import jdk.vm.ci.aarch64.AArch64Kind;
 import jdk.vm.ci.code.CallingConvention;
 import jdk.vm.ci.code.Register;
 import jdk.vm.ci.code.RegisterValue;
-import jdk.vm.ci.code.StackSlot;
 import jdk.vm.ci.hotspot.HotSpotCompressedNullConstant;
-import jdk.vm.ci.hotspot.HotSpotMetaspaceConstant;
 import jdk.vm.ci.hotspot.HotSpotObjectConstant;
 import jdk.vm.ci.meta.AllocatableValue;
 import jdk.vm.ci.meta.Constant;
@@ -138,7 +125,7 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
     private LIRFrameState currentRuntimeCallInfo;
 
     @Override
-    protected void emitForeignCallOp(ForeignCallLinkage linkage, Value result, Value[] arguments, Value[] temps, LIRFrameState info) {
+    protected void emitForeignCallOp(ForeignCallLinkage linkage, Value targetAddress, Value result, Value[] arguments, Value[] temps, LIRFrameState info) {
         currentRuntimeCallInfo = info;
         if (AArch64Call.isNearCall(linkage)) {
             append(new AArch64Call.DirectNearForeignCallOp(linkage, result, arguments, temps, info, label));
@@ -255,7 +242,6 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
     @Override
     public Value emitCompress(Value pointer, CompressEncoding encoding, boolean nonNull) {
         LIRKind inputKind = pointer.getValueKind(LIRKind.class);
-        LIRKindTool lirKindTool = getLIRKindTool();
         assert inputKind.getPlatformKind() == AArch64Kind.QWORD;
         if (inputKind.isReference(0)) {
             // oop
@@ -266,16 +252,8 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
             // metaspace pointer
             Variable result = newVariable(LIRKind.value(AArch64Kind.DWORD));
             AllocatableValue base = Value.ILLEGAL;
-            OptionValues options = getResult().getLIR().getOptions();
-            if (encoding.hasBase() || GeneratePIC.getValue(options)) {
-                if (GeneratePIC.getValue(options)) {
-                    Variable baseAddress = newVariable(lirKindTool.getWordKind());
-                    AArch64HotSpotMove.BaseMove move = new AArch64HotSpotMove.BaseMove(baseAddress, config);
-                    append(move);
-                    base = baseAddress;
-                } else {
-                    base = emitLoadConstant(LIRKind.value(AArch64Kind.QWORD), JavaConstant.forLong(encoding.getBase()));
-                }
+            if (encoding.hasBase()) {
+                base = emitLoadConstant(LIRKind.value(AArch64Kind.QWORD), JavaConstant.forLong(encoding.getBase()));
             }
             append(new AArch64HotSpotMove.CompressPointer(result, asAllocatable(pointer), base, encoding, nonNull));
             return result;
@@ -295,16 +273,8 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
             // metaspace pointer
             Variable result = newVariable(LIRKind.value(AArch64Kind.QWORD));
             AllocatableValue base = Value.ILLEGAL;
-            OptionValues options = getResult().getLIR().getOptions();
-            if (encoding.hasBase() || GeneratePIC.getValue(options)) {
-                if (GeneratePIC.getValue(options)) {
-                    Variable baseAddress = newVariable(LIRKind.value(AArch64Kind.QWORD));
-                    AArch64HotSpotMove.BaseMove move = new AArch64HotSpotMove.BaseMove(baseAddress, config);
-                    append(move);
-                    base = baseAddress;
-                } else {
-                    base = emitLoadConstant(LIRKind.value(AArch64Kind.QWORD), JavaConstant.forLong(encoding.getBase()));
-                }
+            if (encoding.hasBase()) {
+                base = emitLoadConstant(LIRKind.value(AArch64Kind.QWORD), JavaConstant.forLong(encoding.getBase()));
             }
             append(new AArch64HotSpotMove.UncompressPointer(result, asAllocatable(pointer), base, encoding, nonNull));
             return result;
@@ -320,6 +290,36 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
         } else {
             super.emitNullCheck(address, state);
         }
+    }
+
+    /**
+     * Within {@link AArch64HotSpotCounterOp} ADDS is used to perform the benchmark counter
+     * increment. Thus, in order for a constant to be directly used, it must fit in the immediate
+     * operand of this instruction.
+     */
+    private Value transformBenchmarkCounterIncrement(Value increment) {
+        if (isJavaConstant(increment) && AArch64ArithmeticLIRGenerator.isAddSubtractConstant(asJavaConstant(increment))) {
+            return increment;
+        } else {
+            return asAllocatable(increment);
+        }
+    }
+
+    @Override
+    public LIRInstruction createBenchmarkCounter(String name, String group, Value increment) {
+        if (BenchmarkCounters.enabled) {
+            return new AArch64HotSpotCounterOp(name, group, transformBenchmarkCounterIncrement(increment), getProviders().getRegisters(), config);
+        }
+        throw GraalError.shouldNotReachHere("BenchmarkCounters are not enabled!");
+    }
+
+    @Override
+    public LIRInstruction createMultiBenchmarkCounter(String[] names, String[] groups, Value[] increments) {
+        if (BenchmarkCounters.enabled) {
+            Value[] incrementValues = Arrays.stream(increments).map(this::transformBenchmarkCounterIncrement).toArray(Value[]::new);
+            return new AArch64HotSpotCounterOp(names, groups, incrementValues, getProviders().getRegisters(), config);
+        }
+        throw GraalError.shouldNotReachHere("BenchmarkCounters are not enabled!");
     }
 
     @Override
@@ -381,7 +381,7 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
             HotSpotLIRGenerationResult generationResult = getResult();
             LIRFrameState key = currentRuntimeCallInfo;
             if (key == null) {
-                key = LIRFrameState.NO_STATE;
+                key = LIRFrameState.NO_CALLEE_SAVE_INFO;
             }
             assert !generationResult.getCalleeSaveInfo().containsKey(key);
             generationResult.getCalleeSaveInfo().put(key, save);
@@ -418,9 +418,9 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
 
     private void moveValueToThread(Value value, int offset) {
         LIRKind wordKind = LIRKind.value(target().arch.getWordKind());
+        int bitMemoryTransferSize = value.getValueKind().getPlatformKind().getSizeInBytes() * Byte.SIZE;
         RegisterValue thread = getProviders().getRegisters().getThreadRegister().asValue(wordKind);
-        final int transferSize = value.getValueKind().getPlatformKind().getSizeInBytes();
-        AArch64AddressValue address = new AArch64AddressValue(value.getValueKind(), thread, Value.ILLEGAL, offset, transferSize, AddressingMode.IMMEDIATE_SCALED);
+        AArch64AddressValue address = AArch64AddressValue.makeAddress(wordKind, bitMemoryTransferSize, thread, offset);
         append(new StoreOp((AArch64Kind) value.getPlatformKind(), address, loadReg(value), null));
     }
 
@@ -435,65 +435,6 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
     }
 
     @Override
-    public Value emitLoadObjectAddress(Constant constant) {
-        HotSpotObjectConstant objectConstant = (HotSpotObjectConstant) constant;
-        LIRKind kind = objectConstant.isCompressed() ? getLIRKindTool().getNarrowOopKind() : getLIRKindTool().getObjectKind();
-        Variable result = newVariable(kind);
-        append(new AArch64HotSpotLoadAddressOp(result, constant, HotSpotConstantLoadAction.RESOLVE));
-        return result;
-    }
-
-    @Override
-    public Value emitLoadMetaspaceAddress(Constant constant, HotSpotConstantLoadAction action) {
-        HotSpotMetaspaceConstant metaspaceConstant = (HotSpotMetaspaceConstant) constant;
-        LIRKind kind = metaspaceConstant.isCompressed() ? getLIRKindTool().getNarrowPointerKind() : getLIRKindTool().getWordKind();
-        Variable result = newVariable(kind);
-        append(new AArch64HotSpotLoadAddressOp(result, constant, action));
-        return result;
-    }
-
-    private Value emitConstantRetrieval(ForeignCallDescriptor foreignCall, Object[] notes, Constant[] constants, AllocatableValue[] constantDescriptions, LIRFrameState frameState) {
-        ForeignCallLinkage linkage = getForeignCalls().lookupForeignCall(foreignCall);
-        append(new AArch64HotSpotConstantRetrievalOp(constants, constantDescriptions, frameState, linkage, notes));
-        AllocatableValue result = linkage.getOutgoingCallingConvention().getReturn();
-        return emitMove(result);
-    }
-
-    private Value emitConstantRetrieval(ForeignCallDescriptor foreignCall, HotSpotConstantLoadAction action, Constant constant, AllocatableValue[] constantDescriptions, LIRFrameState frameState) {
-        Constant[] constants = new Constant[]{constant};
-        Object[] notes = new Object[]{action};
-        return emitConstantRetrieval(foreignCall, notes, constants, constantDescriptions, frameState);
-    }
-
-    @Override
-    public Value emitResolveDynamicInvoke(Constant appendix, LIRFrameState frameState) {
-        AllocatableValue[] constantDescriptions = new AllocatableValue[0];
-        return emitConstantRetrieval(RESOLVE_DYNAMIC_INVOKE, INITIALIZE, appendix, constantDescriptions, frameState);
-    }
-
-    @Override
-    public Value emitLoadConfigValue(int markId, LIRKind kind) {
-        Variable result = newVariable(kind);
-        append(new AArch64HotSpotLoadConfigValueOp(markId, result));
-        return result;
-    }
-
-    private Value emitConstantRetrieval(ForeignCallDescriptor foreignCall, HotSpotConstantLoadAction action, Constant constant, Value constantDescription, LIRFrameState frameState) {
-        AllocatableValue[] constantDescriptions = new AllocatableValue[]{asAllocatable(constantDescription)};
-        return emitConstantRetrieval(foreignCall, action, constant, constantDescriptions, frameState);
-    }
-
-    @Override
-    public Value emitObjectConstantRetrieval(Constant constant, Value constantDescription, LIRFrameState frameState) {
-        return emitConstantRetrieval(RESOLVE_STRING_BY_SYMBOL, RESOLVE, constant, constantDescription, frameState);
-    }
-
-    @Override
-    public Value emitMetaspaceConstantRetrieval(Constant constant, Value constantDescription, LIRFrameState frameState) {
-        return emitConstantRetrieval(RESOLVE_KLASS_BY_SYMBOL, RESOLVE, constant, constantDescription, frameState);
-    }
-
-    @Override
     public void emitReturn(JavaKind kind, Value input) {
         AllocatableValue operand = Value.ILLEGAL;
         if (input != null) {
@@ -502,17 +443,6 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
         }
         Register thread = getProviders().getRegisters().getThreadRegister();
         append(new AArch64HotSpotReturnOp(operand, getStub() != null, config, thread, getResult().requiresReservedStackAccessCheck()));
-    }
-
-    @Override
-    public Value emitKlassInitializationAndRetrieval(Constant constant, Value constantDescription, LIRFrameState frameState) {
-        return emitConstantRetrieval(INITIALIZE_KLASS_BY_SYMBOL, INITIALIZE, constant, constantDescription, frameState);
-    }
-
-    @Override
-    public Value emitResolveMethodAndLoadCounters(Constant method, Value klassHint, Value methodDescription, LIRFrameState frameState) {
-        AllocatableValue[] constantDescriptions = new AllocatableValue[]{asAllocatable(klassHint), asAllocatable(methodDescription)};
-        return emitConstantRetrieval(RESOLVE_METHOD_BY_SYMBOL_AND_LOAD_COUNTERS, LOAD_COUNTERS, method, constantDescriptions, frameState);
     }
 
     /**
@@ -529,9 +459,9 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
     }
 
     @Override
-    protected StrategySwitchOp createStrategySwitchOp(SwitchStrategy strategy, LabelRef[] keyTargets, LabelRef defaultTarget, Variable key, AllocatableValue scratchValue,
+    protected StrategySwitchOp createStrategySwitchOp(SwitchStrategy strategy, LabelRef[] keyTargets, LabelRef defaultTarget, Variable key,
                     Function<Condition, ConditionFlag> converter) {
-        return new AArch64HotSpotStrategySwitchOp(strategy, keyTargets, defaultTarget, key, scratchValue, converter);
+        return new AArch64HotSpotStrategySwitchOp(strategy, keyTargets, defaultTarget, key, converter);
     }
 
     public void setDebugInfoBuilder(HotSpotDebugInfoBuilder debugInfoBuilder) {
@@ -539,34 +469,26 @@ public class AArch64HotSpotLIRGenerator extends AArch64LIRGenerator implements H
     }
 
     @Override
-    public ZapRegistersOp createZapRegisters(Register[] zappedRegisters, JavaConstant[] zapValues) {
-        throw GraalError.unimplemented();
-    }
-
-    @Override
-    public LIRInstruction createZapArgumentSpace(StackSlot[] zappedStack, JavaConstant[] zapValues) {
-        throw GraalError.unimplemented();
-    }
-
-    @Override
     public void emitZeroMemory(Value address, Value length, boolean isAligned) {
-        int dczidValue = config.psrInfoDczidValue;
-        EnumSet<AArch64.Flag> flags = ((AArch64) target().arch).getFlags();
+        final EnumSet<AArch64.Flag> flags = ((AArch64) target().arch).getFlags();
 
-        // ARMv8-A architecture reference manual D12.2.35 Data Cache Zero ID register says:
-        // * BS, bits [3:0] indicate log2 of the DC ZVA block size in (4-byte) words.
-        // * DZP, bit [4] of indicates whether use of DC ZVA instruction is prohibited.
-        int zvaLength = 4 << (dczidValue & 0xF);
-        boolean isDcZvaProhibited = ((dczidValue & 0x10) != 0);
+        boolean isDcZvaProhibited = true;
+        int zvaLength = 0;
+        if (GraalHotSpotVMConfig.JDK >= 16) {
+            zvaLength = config.zvaLength;
+            isDcZvaProhibited = 0 == config.zvaLength;
+        } else {
+            int dczidValue = config.psrInfoDczidValue;
+
+            // ARMv8-A architecture reference manual D12.2.35 Data Cache Zero ID register says:
+            // * BS, bits [3:0] indicate log2 of the DC ZVA block size in (4-byte) words.
+            // * DZP, bit [4] of indicates whether use of DC ZVA instruction is prohibited.
+            zvaLength = 4 << (dczidValue & 0xF);
+            isDcZvaProhibited = ((dczidValue & 0x10) != 0);
+        }
 
         // Use DC ZVA if it's not prohibited and AArch64 HotSpot flag UseBlockZeroing is on.
         boolean useDcZva = !isDcZvaProhibited && flags.contains(AArch64.Flag.UseBlockZeroing);
-
-        // Set zva length negative (unknown at compile-time) for AOT compilation, since the value
-        // could be different on different AArch64 CPU implementations.
-        if (GraalOptions.ImmutableCode.getValue(getResult().getLIR().getOptions())) {
-            useDcZva = false;
-        }
 
         emitZeroMemory(address, length, isAligned, useDcZva, zvaLength);
     }

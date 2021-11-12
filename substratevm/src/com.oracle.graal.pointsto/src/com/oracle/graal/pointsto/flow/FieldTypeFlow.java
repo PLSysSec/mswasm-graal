@@ -26,7 +26,9 @@ package com.oracle.graal.pointsto.flow;
 
 import static jdk.vm.ci.common.JVMCIError.shouldNotReachHere;
 
-import com.oracle.graal.pointsto.BigBang;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+
+import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisType;
@@ -35,6 +37,9 @@ import com.oracle.graal.pointsto.typestate.TypeState;
 import jdk.vm.ci.meta.JavaKind;
 
 public class FieldTypeFlow extends TypeFlow<AnalysisField> {
+
+    private static final AtomicReferenceFieldUpdater<FieldTypeFlow, FieldFilterTypeFlow> FILTER_FLOW_UPDATER = AtomicReferenceFieldUpdater.newUpdater(FieldTypeFlow.class, FieldFilterTypeFlow.class,
+                    "filterFlow");
 
     private static TypeState initialFieldState(AnalysisField field) {
         if (field.getJavaKind() == JavaKind.Object && field.canBeNull()) {
@@ -52,6 +57,9 @@ public class FieldTypeFlow extends TypeFlow<AnalysisField> {
     /** The holder of the field flow (null for static fields). */
     private AnalysisObject object;
 
+    /** A filter flow used for unsafe writes. */
+    private volatile FieldFilterTypeFlow filterFlow;
+
     public FieldTypeFlow(AnalysisField field, AnalysisType type) {
         super(field, type, initialFieldState(field));
     }
@@ -66,7 +74,7 @@ public class FieldTypeFlow extends TypeFlow<AnalysisField> {
     }
 
     @Override
-    public TypeFlow<AnalysisField> copy(BigBang bb, MethodFlowsGraph methodFlows) {
+    public TypeFlow<AnalysisField> copy(PointsToAnalysis bb, MethodFlowsGraph methodFlows) {
         // return this field flow
         throw shouldNotReachHere("The field flow should not be cloned. Use Load/StoreFieldTypeFlow.");
     }
@@ -77,12 +85,30 @@ public class FieldTypeFlow extends TypeFlow<AnalysisField> {
     }
 
     @Override
-    protected void onInputSaturated(BigBang bb, TypeFlow<?> input) {
+    protected void onInputSaturated(PointsToAnalysis bb, TypeFlow<?> input) {
         /*
-         * When a field store is saturated conservativelly assume that the field state can contain
+         * When a field store is saturated conservatively assume that the field state can contain
          * any subtype of its declared type.
          */
         getDeclaredType().getTypeFlow(bb, true).addUse(bb, this);
+    }
+
+    /** The filter flow is used for unsafe writes and initialized on demand. */
+    public FieldFilterTypeFlow filterFlow(PointsToAnalysis bb) {
+        assert source.isUnsafeAccessed() : "Filter flow requested for non unsafe accessed field.";
+
+        if (filterFlow == null) {
+            if (FILTER_FLOW_UPDATER.compareAndSet(this, null, new FieldFilterTypeFlow(source))) {
+                /*
+                 * The newly installed FieldFilterTypeFlow can be used by other threads before
+                 * addUse() is called / done. This is not a problem. The filterFlow stores its own
+                 * state and after the use is actually linked the state, if any, is transfered to
+                 * the use.
+                 */
+                filterFlow.addUse(bb, this);
+            }
+        }
+        return filterFlow;
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -46,7 +46,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.TruffleFile;
 import com.oracle.truffle.regex.tregex.parser.ast.BackReference;
 import com.oracle.truffle.regex.tregex.parser.ast.CharacterClass;
@@ -71,7 +71,7 @@ public final class ASTLaTexExportVisitor extends DepthFirstTraversalRegexASTVisi
         this.writer = writer;
     }
 
-    @CompilerDirectives.TruffleBoundary
+    @TruffleBoundary
     public static void exportLatex(RegexAST ast, TruffleFile path) {
         try (BufferedWriter writer = path.newBufferedWriter(StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
             ASTLaTexExportVisitor visitor = new ASTLaTexExportVisitor(ast, writer);
@@ -102,6 +102,7 @@ public final class ASTLaTexExportVisitor extends DepthFirstTraversalRegexASTVisi
         }
     }
 
+    @TruffleBoundary
     private void writeln(String s) {
         try {
             for (int i = 0; i < indent; i++) {

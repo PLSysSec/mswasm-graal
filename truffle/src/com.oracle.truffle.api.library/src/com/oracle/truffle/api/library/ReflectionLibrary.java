@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -126,11 +126,13 @@ public abstract class ReflectionLibrary extends Library {
      */
     @Abstract
     @SuppressWarnings("unused")
+    @TruffleBoundary
     public Object send(Object receiver, Message message, Object... args) throws Exception {
         throw new AbstractMethodError();
     }
 
     private static final LibraryFactory<ReflectionLibrary> FACTORY = LibraryFactory.resolve(ReflectionLibrary.class);
+    static final ReflectionLibrary UNCACHED = FACTORY.getUncached();
 
     /**
      * Returns the library factory for {@link ReflectionLibrary}.
@@ -139,6 +141,28 @@ public abstract class ReflectionLibrary extends Library {
      */
     public static LibraryFactory<ReflectionLibrary> getFactory() {
         return FACTORY;
+    }
+
+    /**
+     * Returns the uncached automatically dispatched version of the reflection library. This is a
+     * short-cut for calling <code>ReflectionLibrary.getFactory().getUncached()</code>.
+     *
+     * @see LibraryFactory#getUncached()
+     * @since 21.3
+     */
+    public static ReflectionLibrary getUncached() {
+        return UNCACHED;
+    }
+
+    /**
+     * Returns the uncached manually dispatched version of the reflection library. This is a
+     * short-cut for calling <code>ReflectionLibrary.getFactory().getUncached(v)</code>.
+     *
+     * @see LibraryFactory#getUncached(Object)
+     * @since 21.3
+     */
+    public static ReflectionLibrary getUncached(Object v) {
+        return FACTORY.getUncached(v);
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -134,15 +134,14 @@ public class AbstractSplittingStrategyTest extends TestWithPolyglotOptions {
 
     protected static void createDummyTargetsToBoostGrowingSplitLimit() {
         for (int i = 0; i < 10; i++) {
-            runtime.createCallTarget(new DummyRootNode());
+            new DummyRootNode().getCallTarget();
         }
     }
 
     @Before
     public void addListener() {
         setupContext("engine.Compilation", "false",
-                        "engine.SplittingGrowthLimit", "2.0",
-                        "engine.SplittingMaxNumberOfSplitNodes", "1000");
+                        "engine.SplittingGrowthLimit", "2.0");
         listener = new SplitCountingListener();
         runtime.addListener(listener);
     }

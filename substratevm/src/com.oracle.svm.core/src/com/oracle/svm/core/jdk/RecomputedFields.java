@@ -27,7 +27,6 @@ package com.oracle.svm.core.jdk;
 //Checkstyle: stop
 
 import static com.oracle.svm.core.annotate.RecomputeFieldValue.Kind.AtomicFieldUpdaterOffset;
-import static com.oracle.svm.core.annotate.RecomputeFieldValue.Kind.FromAlias;
 import static com.oracle.svm.core.annotate.RecomputeFieldValue.Kind.Reset;
 
 import java.lang.ref.ReferenceQueue;
@@ -77,12 +76,6 @@ import jdk.vm.ci.meta.ResolvedJavaField;
  * This file contains JDK fields that need to be intercepted because their value in the hosted environment is not
  * suitable for the Substrate VM. The list is derived from the intercepted fields of the Maxine VM.
  */
-
-@TargetClass(sun.util.calendar.ZoneInfoFile.class)
-final class Target_sun_util_calendar_ZoneInfoFile {
-    @Alias @RecomputeFieldValue(kind = FromAlias) //
-    private static Map<String, String> aliases = new java.util.HashMap<>();
-}
 
 @TargetClass(java.nio.charset.CharsetEncoder.class)
 final class Target_java_nio_charset_CharsetEncoder {
@@ -425,9 +418,9 @@ class CompletableFutureAsyncPoolAccessor {
     }
 }
 
-@TargetClass(java.util.concurrent.ForkJoinTask.class)
+@TargetClass(value = java.util.concurrent.ForkJoinTask.class, onlyWith = JDK11OrEarlier.class)
 @SuppressWarnings("static-method")
-final class Target_java_util_concurrent_ForkJoinTask {
+final class Target_java_util_concurrent_ForkJoinTask_JDK11OrEarlier {
     @Alias @RecomputeFieldValue(kind = Kind.FromAlias) //
     private static Target_java_util_concurrent_ForkJoinTask_ExceptionNode[] exceptionTable;
     @Alias @RecomputeFieldValue(kind = Kind.FromAlias) //
@@ -446,8 +439,12 @@ final class Target_java_util_concurrent_ForkJoinTask {
     }
 }
 
-@TargetClass(value = java.util.concurrent.ForkJoinTask.class, innerClass = "ExceptionNode")
+@TargetClass(value = java.util.concurrent.ForkJoinTask.class, innerClass = "ExceptionNode", onlyWith = JDK11OrEarlier.class)
 final class Target_java_util_concurrent_ForkJoinTask_ExceptionNode {
+}
+
+@TargetClass(value = java.util.concurrent.ForkJoinTask.class, onlyWith = JDK17OrLater.class)
+final class Target_java_util_concurrent_ForkJoinTask_JDK17OrLater {
 }
 
 @TargetClass(java.util.concurrent.Exchanger.class)

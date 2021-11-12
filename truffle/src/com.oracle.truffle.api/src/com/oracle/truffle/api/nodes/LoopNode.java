@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -41,6 +41,7 @@
 package com.oracle.truffle.api.nodes;
 
 import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.TruffleRuntime;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
@@ -50,8 +51,11 @@ import com.oracle.truffle.api.frame.VirtualFrame;
  * it returns <code>true</code>. Using the loop node in a guest language implementation allows the
  * Truffle runtime to optimize loops in a better way. For example a Truffle runtime implementation
  * might decide to optimize loop already during its first execution (also called on stack
- * replacement OSR). Loop nodes are not intended to be implemented by Truffle runtime
- * implementations and not by guest language implementations.
+ * replacement OSR). Loop nodes are intended to be implemented by Truffle runtime implementations
+ * and not by guest language implementations.
+ *
+ * Note: The loop condition is automatically profiled by the loop node, so the {@link RepeatingNode
+ * repeating node} should not use a loop condition profile.
  * </p>
  * <p>
  * Full usage example for guest language while node:
@@ -153,8 +157,10 @@ public abstract class LoopNode extends Node {
      *
      * @param frame the current execution frame or null if the repeating node does not require a
      *            frame
-     * @return a value different than {@link RepeatingNode#CONTINUE_LOOP_STATUS}, which can be used
-     *         in a language-specific way (for example, to encode structured jumps)
+     * @return a value <code>v</code> returned by
+     *         {@link RepeatingNode#executeRepeating(VirtualFrame) execute} satisfying
+     *         {@link RepeatingNode#shouldContinue shouldContinue(v)}<code> == false</code>, which
+     *         can be used in a language-specific way (for example, to encode structured jumps)
      * @since 19.3
      */
     public Object execute(VirtualFrame frame) {
@@ -196,13 +202,23 @@ public abstract class LoopNode extends Node {
      * </p>
      *
      * @param source the Node which invoked the loop.
-     * @param iterations the number iterations to report to the runtime system
+     * @param iterations the number iterations to report to the runtime system, must be >= 0
      * @since 0.12
      */
     public static void reportLoopCount(Node source, int iterations) {
-        if (CompilerDirectives.inInterpreter()) {
-            NodeAccessor.ACCESSOR.onLoopCount(source, iterations);
+        assert iterations >= 0;
+        if (CompilerDirectives.inInterpreter() || NodeAccessor.RUNTIME.inFirstTier()) {
+            if (CompilerDirectives.isPartialEvaluationConstant(source)) {
+                NodeAccessor.RUNTIME.onLoopCount(source, iterations);
+            } else {
+                onLoopCountBoundary(source, iterations);
+            }
         }
+    }
+
+    @TruffleBoundary
+    private static void onLoopCountBoundary(Node source, int iterations) {
+        NodeAccessor.RUNTIME.onLoopCount(source, iterations);
     }
 
 }

@@ -29,15 +29,22 @@ import com.oracle.truffle.api.interop.ArityException;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.interop.UnsupportedTypeException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Predicate;
 
 final class RootNameFilter implements Predicate<String> {
-    private final Object fn;
+    private final InsightInstrument instrument;
+    private final InsightInstrument.Key key;
     private final ThreadLocal<Boolean> querying;
+    private final Map<String, Boolean> cache;
 
-    RootNameFilter(Object fn) {
-        this.fn = fn;
+    RootNameFilter(InsightInstrument instrument, InsightInstrument.Key key) {
+        this.instrument = instrument;
+        this.key = key;
         this.querying = new ThreadLocal<>();
+        this.cache = Collections.synchronizedMap(new HashMap<>());
     }
 
     @CompilerDirectives.TruffleBoundary
@@ -46,19 +53,49 @@ final class RootNameFilter implements Predicate<String> {
         if (rootName == null) {
             return false;
         }
+        Boolean computed = cache.get(rootName);
+        if (computed != null) {
+            return computed;
+        }
         Boolean prev = this.querying.get();
         try {
             if (Boolean.TRUE.equals(prev)) {
-                return false;
+                computed = false;
+            } else {
+                this.querying.set(true);
+                final InteropLibrary iop = InteropLibrary.getFactory().getUncached();
+                computed = false;
+                InsightPerContext ctx = instrument.findCtx();
+                final int len = key.functionsMaxCount();
+                for (int i = 0; i < len; i++) {
+                    InsightFilter.Data data = (InsightFilter.Data) ctx.functionFor(key, i);
+                    if (data == null || data.rootNameFn == null) {
+                        continue;
+                    }
+                    if (rootNameCheck(iop, data, rootName)) {
+                        computed = true;
+                        break;
+                    }
+                }
             }
-            this.querying.set(true);
-            final InteropLibrary iop = InteropLibrary.getFactory().getUncached();
-            Object res = iop.execute(fn, rootName);
-            return (Boolean) res;
-        } catch (UnsupportedMessageException | UnsupportedTypeException | ArityException ex) {
-            return false;
         } finally {
             this.querying.set(prev);
         }
+        cache.put(rootName, computed);
+        return computed;
+    }
+
+    static boolean rootNameCheck(final InteropLibrary iop, InsightFilter.Data data, String rootName) {
+        Object res;
+        try {
+            res = iop.execute(data.rootNameFn, rootName);
+        } catch (UnsupportedTypeException ex) {
+            return false;
+        } catch (ArityException ex) {
+            return false;
+        } catch (UnsupportedMessageException ex) {
+            return false;
+        }
+        return Boolean.TRUE.equals(res);
     }
 }

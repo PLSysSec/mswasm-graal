@@ -24,19 +24,16 @@
  */
 package com.oracle.svm.hosted.phases;
 
-import java.lang.reflect.Method;
 import java.util.function.Supplier;
 
-import org.graalvm.compiler.nodes.CallTargetNode.InvokeKind;
 import org.graalvm.compiler.nodes.ConstantNode;
 import org.graalvm.compiler.nodes.FrameState;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.ClassInitializationPlugin;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderContext;
 
-import com.oracle.svm.core.hub.DynamicHub;
+import com.oracle.svm.core.classinitialization.EnsureClassInitializedNode;
 import com.oracle.svm.core.meta.SubstrateObjectConstant;
-import com.oracle.svm.core.util.VMError;
 import com.oracle.svm.hosted.SVMHost;
 
 import jdk.vm.ci.meta.ConstantPool;
@@ -44,16 +41,6 @@ import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.ResolvedJavaType;
 
 public class SubstrateClassInitializationPlugin implements ClassInitializationPlugin {
-
-    public static final Method ENSURE_INITIALIZED_METHOD;
-
-    static {
-        try {
-            ENSURE_INITIALIZED_METHOD = DynamicHub.class.getDeclaredMethod("ensureInitialized");
-        } catch (ReflectiveOperationException ex) {
-            throw VMError.shouldNotReachHere(ex);
-        }
-    }
 
     private final SVMHost host;
 
@@ -73,8 +60,8 @@ public class SubstrateClassInitializationPlugin implements ClassInitializationPl
 
     @Override
     public boolean apply(GraphBuilderContext builder, ResolvedJavaType type, Supplier<FrameState> frameState, ValueNode[] classInit) {
-        if (needsRuntimeInitialization(builder.getMethod().getDeclaringClass(), type)) {
-            emitEnsureClassInitialized(builder, SubstrateObjectConstant.forObject(host.dynamicHub(type)));
+        if (EnsureClassInitializedNode.needsRuntimeInitialization(builder.getMethod().getDeclaringClass(), type)) {
+            emitEnsureClassInitialized(builder, SubstrateObjectConstant.forObject(host.dynamicHub(type)), frameState.get());
             /*
              * The classInit value is only registered with Invoke nodes. Since we do not need that,
              * we ensure it is null.
@@ -87,16 +74,9 @@ public class SubstrateClassInitializationPlugin implements ClassInitializationPl
         return false;
     }
 
-    public static void emitEnsureClassInitialized(GraphBuilderContext builder, JavaConstant hubConstant) {
-        ValueNode[] args = {ConstantNode.forConstant(hubConstant, builder.getMetaAccess(), builder.getGraph())};
-        builder.handleReplacedInvoke(InvokeKind.Special, builder.getMetaAccess().lookupJavaMethod(ENSURE_INITIALIZED_METHOD), args, false);
-    }
-
-    /**
-     * Return true if the type needs to be initialized at run time, i.e., it has not been already
-     * initialized during image generation.
-     */
-    static boolean needsRuntimeInitialization(ResolvedJavaType declaringClass, ResolvedJavaType type) {
-        return !declaringClass.equals(type) && !type.isInitialized() && !type.isArray();
+    private static void emitEnsureClassInitialized(GraphBuilderContext builder, JavaConstant hubConstant, FrameState frameState) {
+        ValueNode hub = ConstantNode.forConstant(hubConstant, builder.getMetaAccess(), builder.getGraph());
+        EnsureClassInitializedNode node = new EnsureClassInitializedNode(hub, frameState);
+        builder.add(node);
     }
 }

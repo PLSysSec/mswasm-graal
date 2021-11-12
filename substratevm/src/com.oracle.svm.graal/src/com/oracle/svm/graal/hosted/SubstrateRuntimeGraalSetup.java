@@ -26,12 +26,17 @@ package com.oracle.svm.graal.hosted;
 
 import java.util.function.Function;
 
+import com.oracle.svm.graal.isolated.IsolateAwareMetaAccess;
+import com.oracle.svm.graal.meta.SubstrateMetaAccess;
+import org.graalvm.compiler.nodes.spi.LoopsDataProvider;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.phases.util.Providers;
 
 import com.oracle.graal.pointsto.meta.AnalysisMetaAccess;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
+import com.oracle.svm.core.SubstrateOptions;
 import com.oracle.svm.core.graal.code.SubstrateBackend;
+import com.oracle.svm.graal.isolated.IsolateAwareProviderObjectReplacements;
 import com.oracle.svm.graal.meta.SubstrateRuntimeConfigurationBuilder;
 import com.oracle.svm.hosted.SVMHost;
 import com.oracle.svm.hosted.c.NativeLibraries;
@@ -43,16 +48,31 @@ import jdk.vm.ci.meta.MetaAccessProvider;
 
 public class SubstrateRuntimeGraalSetup implements RuntimeGraalSetup {
 
+    protected final SubstrateMetaAccess sMetaAccess;
+
+    public SubstrateRuntimeGraalSetup() {
+        if (SubstrateOptions.supportCompileInIsolates()) {
+            sMetaAccess = new IsolateAwareMetaAccess();
+        } else {
+            sMetaAccess = new SubstrateMetaAccess();
+        }
+    }
+
     @Override
     public GraalProviderObjectReplacements getProviderObjectReplacements(AnalysisMetaAccess aMetaAccess) {
-        return new GraalProviderObjectReplacements(aMetaAccess);
+        if (SubstrateOptions.supportCompileInIsolates()) {
+            assert sMetaAccess instanceof IsolateAwareMetaAccess;
+            return new IsolateAwareProviderObjectReplacements(aMetaAccess, (IsolateAwareMetaAccess) sMetaAccess);
+        } else {
+            return new GraalProviderObjectReplacements(aMetaAccess, sMetaAccess);
+        }
     }
 
     @Override
     public SharedRuntimeConfigurationBuilder createRuntimeConfigurationBuilder(OptionValues options, SVMHost hostVM, AnalysisUniverse aUniverse, MetaAccessProvider metaAccess,
                     ConstantReflectionProvider originalReflectionProvider, Function<Providers, SubstrateBackend> backendProvider,
-                    NativeLibraries nativeLibraries, ClassInitializationSupport classInitializationSupport) {
-
-        return new SubstrateRuntimeConfigurationBuilder(options, hostVM, aUniverse, metaAccess, originalReflectionProvider, backendProvider, nativeLibraries, classInitializationSupport);
+                    NativeLibraries nativeLibraries, ClassInitializationSupport classInitializationSupport, LoopsDataProvider loopsDataProvider) {
+        return new SubstrateRuntimeConfigurationBuilder(options, hostVM, aUniverse, metaAccess, originalReflectionProvider, backendProvider, nativeLibraries, classInitializationSupport,
+                        loopsDataProvider);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,12 +35,13 @@ import java.nio.ByteBuffer;
 import java.util.function.DoubleBinaryOperator;
 
 import org.graalvm.compiler.core.common.LIRKind;
+import org.graalvm.compiler.core.common.calc.ReinterpretUtils;
 import org.graalvm.compiler.core.common.spi.LIRKindTool;
 import org.graalvm.compiler.core.common.type.ArithmeticOpTable.BinaryOp;
 import org.graalvm.compiler.core.common.type.ArithmeticOpTable.FloatConvertOp;
+import org.graalvm.compiler.core.common.type.ArithmeticOpTable.ReinterpretOp;
 import org.graalvm.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import org.graalvm.compiler.debug.GraalError;
-
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
@@ -214,10 +215,10 @@ public class FloatStamp extends PrimitiveStamp {
             return this;
         }
         if (isEmpty()) {
-            return this;
+            return otherStamp;
         }
         if (otherStamp.isEmpty()) {
-            return otherStamp;
+            return this;
         }
         FloatStamp other = (FloatStamp) otherStamp;
         assert getBits() == other.getBits();
@@ -339,14 +340,14 @@ public class FloatStamp extends PrimitiveStamp {
                 if (Float.isNaN(value.asFloat())) {
                     result = new FloatStamp(32, Double.NaN, Double.NaN, false);
                 } else {
-                    result = new FloatStamp(32, value.asFloat(), value.asFloat(), !Float.isNaN(value.asFloat()));
+                    result = new FloatStamp(32, value.asFloat(), value.asFloat(), true);
                 }
                 break;
             case Double:
                 if (Double.isNaN(value.asDouble())) {
                     result = new FloatStamp(64, Double.NaN, Double.NaN, false);
                 } else {
-                    result = new FloatStamp(64, value.asDouble(), value.asDouble(), !Double.isNaN(value.asDouble()));
+                    result = new FloatStamp(64, value.asDouble(), value.asDouble(), true);
                 }
                 break;
             default:
@@ -909,6 +910,122 @@ public class FloatStamp extends PrimitiveStamp {
                     },
 
                     null, null, null,
+
+                    new BinaryOp.Max(true, true) {
+
+                        @Override
+                        public Constant foldConstant(Constant const1, Constant const2) {
+                            PrimitiveConstant a = (PrimitiveConstant) const1;
+                            PrimitiveConstant b = (PrimitiveConstant) const2;
+                            assert a.getJavaKind() == b.getJavaKind();
+                            switch (a.getJavaKind()) {
+                                case Float:
+                                    return JavaConstant.forFloat(Math.max(a.asFloat(), b.asFloat()));
+                                case Double:
+                                    return JavaConstant.forDouble(Math.max(a.asDouble(), b.asDouble()));
+                                default:
+                                    throw GraalError.shouldNotReachHere();
+                            }
+                        }
+
+                        @Override
+                        public Stamp foldStamp(Stamp s1, Stamp s2) {
+                            if (s1.isEmpty()) {
+                                return s1;
+                            }
+                            if (s2.isEmpty()) {
+                                return s2;
+                            }
+                            FloatStamp stamp1 = (FloatStamp) s1;
+                            FloatStamp stamp2 = (FloatStamp) s2;
+                            Stamp folded = maybeFoldConstant(this, stamp1, stamp2);
+                            if (folded != null) {
+                                return folded;
+                            }
+
+                            return new FloatStamp(stamp1.getBits(), Math.max(stamp1.lowerBound, stamp2.lowerBound), Math.max(stamp1.upperBound, stamp2.upperBound), false);
+                        }
+
+                        @Override
+                        public boolean isNeutral(Constant n) {
+                            PrimitiveConstant value = (PrimitiveConstant) n;
+                            switch (value.getJavaKind()) {
+                                case Float:
+                                    return Float.compare(value.asFloat(), Float.NEGATIVE_INFINITY) == 0;
+                                case Double:
+                                    return Double.compare(value.asDouble(), Double.NEGATIVE_INFINITY) == 0;
+                                default:
+                                    throw GraalError.shouldNotReachHere();
+                            }
+                        }
+                    },
+
+                    new BinaryOp.Min(true, true) {
+
+                        @Override
+                        public Constant foldConstant(Constant const1, Constant const2) {
+                            PrimitiveConstant a = (PrimitiveConstant) const1;
+                            PrimitiveConstant b = (PrimitiveConstant) const2;
+                            assert a.getJavaKind() == b.getJavaKind();
+                            switch (a.getJavaKind()) {
+                                case Float:
+                                    return JavaConstant.forFloat(Math.min(a.asFloat(), b.asFloat()));
+                                case Double:
+                                    return JavaConstant.forDouble(Math.min(a.asDouble(), b.asDouble()));
+                                default:
+                                    throw GraalError.shouldNotReachHere();
+                            }
+                        }
+
+                        @Override
+                        public Stamp foldStamp(Stamp s1, Stamp s2) {
+                            if (s1.isEmpty()) {
+                                return s1;
+                            }
+                            if (s2.isEmpty()) {
+                                return s2;
+                            }
+                            FloatStamp stamp1 = (FloatStamp) s1;
+                            FloatStamp stamp2 = (FloatStamp) s2;
+                            Stamp folded = maybeFoldConstant(this, stamp1, stamp2);
+                            if (folded != null) {
+                                return folded;
+                            }
+                            return new FloatStamp(stamp1.getBits(), Math.min(stamp1.lowerBound, stamp2.lowerBound), Math.min(stamp1.upperBound, stamp2.upperBound), false);
+                        }
+
+                        @Override
+                        public boolean isNeutral(Constant n) {
+                            PrimitiveConstant value = (PrimitiveConstant) n;
+                            switch (value.getJavaKind()) {
+                                case Float:
+                                    return Float.compare(value.asFloat(), Float.POSITIVE_INFINITY) == 0;
+                                case Double:
+                                    return Double.compare(value.asDouble(), Double.POSITIVE_INFINITY) == 0;
+                                default:
+                                    throw GraalError.shouldNotReachHere();
+                            }
+                        }
+                    },
+
+                    new ReinterpretOp() {
+
+                        @Override
+                        public Constant foldConstant(Stamp resultStamp, Constant constant) {
+                            return ReinterpretUtils.foldConstant(resultStamp, constant);
+                        }
+
+                        @Override
+                        public Stamp foldStamp(Stamp resultStamp, Stamp input) {
+                            if (input.isEmpty()) {
+                                return resultStamp.empty();
+                            } else if (resultStamp instanceof IntegerStamp && input instanceof FloatStamp) {
+                                return ReinterpretUtils.floatToInt((FloatStamp) input);
+                            } else {
+                                return resultStamp;
+                            }
+                        }
+                    },
 
                     new FloatConvertOp(F2I) {
 

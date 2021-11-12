@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,30 +40,31 @@
  */
 package com.oracle.truffle.regex.tregex.matchers;
 
-import com.oracle.truffle.api.CompilerDirectives;
-import com.oracle.truffle.api.dsl.Specialization;
-import com.oracle.truffle.regex.util.CompilationFinalBitSet;
+import static com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
+import com.oracle.truffle.regex.util.BitSets;
 
 /**
  * Specialized {@link BitSetMatcher} that exists simply because ascii bit set matchers occur often
  * and we can save one comparison when the high byte is {@code 0x00}.
  */
-public abstract class NullHighByteBitSetMatcher extends InvertibleCharMatcher {
+public final class NullHighByteBitSetMatcher extends InvertibleCharMatcher {
 
-    private final CompilationFinalBitSet bitSet;
+    @CompilationFinal(dimensions = 1) private final long[] bitSet;
 
-    NullHighByteBitSetMatcher(boolean inverse, CompilationFinalBitSet bitSet) {
+    NullHighByteBitSetMatcher(boolean inverse, long[] bitSet) {
         super(inverse);
         this.bitSet = bitSet;
     }
 
-    public static NullHighByteBitSetMatcher create(boolean inverse, CompilationFinalBitSet bitSet) {
-        return NullHighByteBitSetMatcherNodeGen.create(inverse, bitSet);
+    public static NullHighByteBitSetMatcher create(boolean inverse, long[] bitSet) {
+        return new NullHighByteBitSetMatcher(inverse, bitSet);
     }
 
-    @Specialization
-    protected boolean match(char c, @SuppressWarnings("unused") boolean compactString) {
-        return result(bitSet.get(c));
+    @Override
+    public boolean match(int c) {
+        return result(BitSets.get(bitSet, c));
     }
 
     @Override
@@ -72,8 +73,8 @@ public abstract class NullHighByteBitSetMatcher extends InvertibleCharMatcher {
     }
 
     @Override
-    @CompilerDirectives.TruffleBoundary
+    @TruffleBoundary
     public String toString() {
-        return modifiersToString() + "{ascii " + bitSet + "}";
+        return modifiersToString() + "{ascii " + BitSets.toString(bitSet) + "}";
     }
 }

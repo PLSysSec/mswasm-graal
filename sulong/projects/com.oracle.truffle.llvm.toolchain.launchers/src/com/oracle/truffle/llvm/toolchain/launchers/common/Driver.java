@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021, Oracle and/or its affiliates.
  *
  * All rights reserved.
  *
@@ -61,6 +61,7 @@ public class Driver {
 
     public enum OS {
 
+        WINDOWS,
         DARWIN,
         LINUX;
 
@@ -72,17 +73,22 @@ public class Driver {
             if (name.equals("Mac OS X") || name.equals("Darwin")) {
                 return DARWIN;
             }
+            if (name.startsWith("Windows")) {
+                return WINDOWS;
+            }
             throw new IllegalArgumentException("unknown OS: " + name);
         }
 
-        private static final OS current = findCurrent();
+        private static final class Lazy {
+            private static final OS current = findCurrent();
+        }
 
         public static OS getCurrent() {
-            return current;
+            return Lazy.current;
         }
     }
 
-    private static boolean hasJreDir = System.getProperty("java.specification.version").startsWith("1.");
+    private static final boolean hasJreDir = System.getProperty("java.specification.version").startsWith("1.");
 
     private static Path getRuntimeDir() {
         Path runtimeDir = HomeFinder.getInstance().getHomeFolder();
@@ -186,7 +192,11 @@ public class Driver {
         }
     }
 
-    @SuppressWarnings("unused")
+    /**
+     * @param inputStream
+     * @param outputStream
+     * @param errorStream
+     */
     protected void processIO(InputStream inputStream, OutputStream outputStream, InputStream errorStream) {
     }
 

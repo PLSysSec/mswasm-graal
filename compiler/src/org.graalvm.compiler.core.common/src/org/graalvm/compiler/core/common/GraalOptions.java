@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -93,8 +93,8 @@ public final class GraalOptions {
     @Option(help = "", type = OptionType.Debug)
     public static final OptionKey<Boolean> LoopPeeling = new OptionKey<>(true);
 
-    @Option(help = "", type = OptionType.Debug)
-    public static final OptionKey<Boolean> ReassociateInvariants = new OptionKey<>(true);
+    @Option(help = "Re-associate loop invariants and constants.", type = OptionType.Debug)
+    public static final OptionKey<Boolean> ReassociateExpressions = new OptionKey<>(true);
 
     @Option(help = "", type = OptionType.Debug)
     public static final OptionKey<Boolean> FullUnroll = new OptionKey<>(true);
@@ -113,6 +113,14 @@ public final class GraalOptions {
 
     @Option(help = "", type = OptionType.Debug)
     public static final OptionKey<Boolean> UseLoopLimitChecks = new OptionKey<>(true);
+
+    @Option(help = "Hoists array bounds checks out of simple loops. This is ignored if " +
+                   "SpeculativeGuardMovement is enabled.", type = OptionType.Debug)
+    public static final OptionKey<Boolean> LoopPredication = new OptionKey<>(true);
+
+    @Option(help = "Restricts LoopPredication to only focus on array bounds checks that " +
+                   "dominate the back edge of a loop.", type = OptionType.Debug)
+    public static final OptionKey<Boolean> LoopPredicationMainPath = new OptionKey<>(true);
 
     // debugging settings
     @Option(help = "", type = OptionType.Debug)
@@ -191,13 +199,6 @@ public final class GraalOptions {
     @Option(help = "", type = OptionType.Debug)
     public static final OptionKey<Boolean> CanOmitFrame = new OptionKey<>(true);
 
-    // Ahead of time compilation
-    @Option(help = "Try to avoid emitting code where patching is required", type = OptionType.Expert)
-    public static final OptionKey<Boolean> ImmutableCode = new OptionKey<>(false);
-
-    @Option(help = "Generate position independent code", type = OptionType.Expert)
-    public static final OptionKey<Boolean> GeneratePIC = new OptionKey<>(false);
-
     // Runtime settings
     @Option(help = "", type = OptionType.Expert)
     public static final OptionKey<Boolean> SupportJsrBytecodes = new OptionKey<>(true);
@@ -235,6 +236,9 @@ public final class GraalOptions {
     @Option(help = "", type = OptionType.Debug)
     public static final OptionKey<Boolean> OptDevirtualizeInvokesOptimistically = new OptionKey<>(true);
 
+    @Option(help = "Move loop invariant guards (e.g., array bounds checks) out of loops.", type = OptionType.Debug)
+    public static final OptionKey<Boolean> SpeculativeGuardMovement = new OptionKey<>(true);
+
     @Option(help = "Track the NodeSourcePosition.", type = OptionType.Debug)
     public static final OptionKey<Boolean> TrackNodeSourcePosition = new OptionKey<>(false);
 
@@ -270,4 +274,13 @@ public final class GraalOptions {
 
     @Option(help = "Alignment in bytes for loop header blocks.", type = OptionType.Expert)
     public static final OptionKey<Integer> LoopHeaderAlignment = new OptionKey<>(16);
+
+    @Option(help = "String.indexOf invocations will be evaluated at compile time if the receiver is a constant and its length is lower than this value.", type = OptionType.Expert)
+    public static final OptionKey<Integer> StringIndexOfLimit = new OptionKey<>(4096);
+
+    @Option(help = "Emit substitutions for String methods", type = OptionType.Debug)
+    public static final OptionKey<Boolean> EmitStringSubstitutions = new OptionKey<>(true);
+
+    @Option(help = "Perform checks that guards and deopts aren't introduced in graphs that should handle exceptions explicitly", type = OptionType.Debug)
+    public static final OptionKey<Boolean> StrictDeoptInsertionChecks = new OptionKey<>(false);
 }

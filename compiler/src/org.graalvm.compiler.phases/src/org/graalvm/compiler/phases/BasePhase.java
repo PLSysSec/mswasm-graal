@@ -184,9 +184,7 @@ public abstract class BasePhase<C> implements PhaseSizeContract {
     }
 
     @SuppressWarnings("try")
-    protected final void apply(final StructuredGraph graph, final C context, final boolean dumpGraph) {
-        graph.checkCancellation();
-
+    public final void apply(final StructuredGraph graph, final C context, final boolean dumpGraph) {
         if (ExcludePhaseFilter.exclude(graph.getOptions(), this, graph.asJavaMethod())) {
             return;
         }

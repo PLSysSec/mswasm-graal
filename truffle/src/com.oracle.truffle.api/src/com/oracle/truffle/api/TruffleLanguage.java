@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -40,6 +40,9 @@
  */
 package com.oracle.truffle.api;
 
+import static com.oracle.truffle.api.LanguageAccessor.ENGINE;
+
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -49,7 +52,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.ref.WeakReference;
 import java.net.URI;
-import java.nio.file.FileSystemNotFoundException;
+import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.time.ZoneId;
@@ -61,7 +64,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceLoader;
-import java.util.function.Supplier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
+import java.util.logging.Level;
 
 import org.graalvm.options.OptionCategory;
 import org.graalvm.options.OptionDescriptor;
@@ -73,13 +80,17 @@ import org.graalvm.polyglot.Context.Builder;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.EnvironmentAccess;
 import org.graalvm.polyglot.Language;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.FileSystem;
 
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.TruffleFile.FileSystemContext;
 import com.oracle.truffle.api.TruffleFile.FileTypeDetector;
 import com.oracle.truffle.api.TruffleLanguage.Env;
+import com.oracle.truffle.api.TruffleSafepoint.Interrupter;
+import com.oracle.truffle.api.TruffleSafepoint.Interruptible;
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlot;
@@ -233,11 +244,16 @@ public abstract class TruffleLanguage<C> {
 
     // get and isFinal are frequent operations -> cache the engine access call
     @CompilationFinal LanguageInfo languageInfo;
-    @CompilationFinal ContextReference<Object> reference;
     @CompilationFinal Object polyglotLanguageInstance;
 
+    List<ContextThreadLocal<?>> contextThreadLocals;
+    List<ContextLocal<?>> contextLocals;
+
     /**
-     * Constructor to be called by subclasses.
+     * Constructor to be called by subclasses. Language should not create any {@link RootNode}s in
+     * its constructor. The RootNodes created in the language constructor are not associated with a
+     * Context and they don't respect Context's engine options. The needed RootNodes can be created
+     * in the {@link #createContext(Env)}.
      *
      * @since 0.8 or earlier
      */
@@ -290,14 +306,6 @@ public abstract class TruffleLanguage<C> {
          * @since 0.8 or earlier
          */
         String version() default "inherit";
-
-        /**
-         * @since 0.8 or earlier
-         * @deprecated split up MIME types into {@link #characterMimeTypes() character} and
-         *             {@link #byteMimeTypes() byte} based MIME types.
-         */
-        @Deprecated
-        String[] mimeType() default {};
 
         /**
          * Returns the default MIME type of this language. The default MIME type allows embedders
@@ -535,9 +543,9 @@ public abstract class TruffleLanguage<C> {
      * here-in provided <code>env</code> and adjust itself according to parameters provided by the
      * <code>env</code> object.
      * <p>
-     * The context created by this method is accessible using {@link #getCurrentContext(Class)}. An
-     * {@link IllegalStateException} is thrown if the context is tried to be accessed while the
-     * createContext method is executed.
+     * The context created by this method is accessible using {@link ContextReference context
+     * references}. An {@link IllegalStateException} is thrown if the context is tried to be
+     * accessed while the createContext method is executed.
      * <p>
      * This method shouldn't perform any complex operations. The runtime system is just being
      * initialized and for example making
@@ -581,19 +589,47 @@ public abstract class TruffleLanguage<C> {
 
     /**
      * Performs language context finalization actions that are necessary before language contexts
-     * are {@link #disposeContext(Object) disposed}. All installed languages must remain usable
-     * after finalization. The finalization order can be influenced by specifying
-     * {@link Registration#dependentLanguages() language dependencies}. By default internal
-     * languages are finalized last, otherwise the default order is unspecified but deterministic.
+     * are {@link #disposeContext(Object) disposed}. However, in case the underlying polyglot
+     * context is being cancelled or hard-exited, {@link #disposeContext(Object)} is called even if
+     * {@link #finalizeContext(Object)} throws a {@link TruffleException} or a {@link ThreadDeath}
+     * cancel or exit exception.
      * <p>
-     * While finalization code is run, other language contexts may become initialized. In such a
+     * For the hard exit a language is supposed to run its finalization actions that require running
+     * guest code in {@link #exitContext(Object, ExitMode, int)}, but please note that after
+     * {@link #exitContext(Object, ExitMode, int)} runs for a language, the language can still be
+     * invoked from {@link #exitContext(Object, ExitMode, int)} for a different language. Therefore,
+     * for instance, finalization for standard streams should both flush and set them to unbuffered
+     * mode at the end of exitContext, so that running guest code is not required to dispose the
+     * streams after that point.
+     * <p>
+     * All installed languages must remain usable after finalization. The finalization order can be
+     * influenced by specifying {@link Registration#dependentLanguages() language dependencies}. By
+     * default internal languages are finalized last, otherwise, the default order is unspecified
+     * but deterministic.
+     * <p>
+     * While the finalization code is run, other language contexts may become initialized. In such a
      * case, the finalization order may be non-deterministic and/or not respect the order specified
      * by language dependencies.
      * <p>
-     * All threads {@link Env#createThread(Runnable) created} by a language must be stopped after
-     * finalizeContext was called. The languages are responsible for fulfilling that contract,
-     * otherwise an {@link AssertionError} is thrown. It is recommended to join all threads that
-     * were disposed.
+     * All threads {@link Env#createThread(Runnable) created} by the language must be stopped and
+     * joined during finalizeContext. The languages are responsible for fulfilling that contract,
+     * otherwise, an {@link AssertionError} is thrown. It's not safe to use the
+     * {@link ExecutorService#awaitTermination(long, java.util.concurrent.TimeUnit)} to detect
+     * Thread termination as the polyglot thread may be cancelled before executing the executor
+     * worker.
+     * <p>
+     * During finalizeContext, all unclosed inner contexts {@link Env#newContextBuilder() created}
+     * by the language must be left on all threads where the contexts are still active. No active
+     * inner context is allowed after {@link #finalizeContext(Object)} returns, otherwise it is an
+     * internal error.
+     * <p>
+     * Non-active inner contexts {@link Env#newContextBuilder() created} by the language that are
+     * still unclosed after {@link #finalizeContext(Object)} returns are automatically closed by
+     * Truffle.
+     * <p>
+     * Typical implementation looks like:
+     *
+     * {@link TruffleLanguageSnippets.AsyncThreadLanguage#finalizeContext}
      *
      * @see Registration#dependentLanguages() for specifying language dependencies.
      * @param context the context created by
@@ -601,6 +637,60 @@ public abstract class TruffleLanguage<C> {
      * @since 0.30
      */
     protected void finalizeContext(C context) {
+    }
+
+    /**
+     * Performs language exit event actions that are necessary before language contexts are
+     * {@link #finalizeContext(Object) finalized}. However, in case the underlying polyglot context
+     * is being cancelled, {@link #exitContext(Object, ExitMode, int) exit notifications} are not
+     * executed. Also, for {@link ExitMode#HARD hard exit}, {@link #finalizeContext(Object)} is
+     * called even if {@link #exitContext(Object, ExitMode, int)} throws a {@link TruffleException}
+     * or a {@link ThreadDeath} cancel or exit exception. All initialized language contexts must
+     * remain usable after exit notifications. In case a {@link TruffleException} or the
+     * {@link ThreadDeath} exit exception is thrown during a {@link ExitMode#HARD hard exit
+     * notification}, it is just logged and otherwise ignored and the notification process continues
+     * with the next language in order. In case the {@link ThreadDeath} cancel exception is thrown,
+     * it means the context is being cancelled in which case the exit notification process
+     * immediately stops. The exit notification order can be influenced by specifying
+     * {@link Registration#dependentLanguages() language dependencies} - The exit notification for
+     * language A that depends on language B is executed before the exit notification for language
+     * B. By default, notifications for internal languages are executed last, otherwise, the default
+     * order is unspecified but deterministic.
+     * <p>
+     * During {@link ExitMode#HARD hard exit} notification, a language is supposed to run its
+     * finalization actions that require running guest code instead of running them in
+     * {@link #finalizeContext(Object)}.
+     * <p>
+     * While the exit notification code is run, all languages remain fully functional. Also, other
+     * language contexts may become initialized. In such a case, the notification order may be
+     * non-deterministic and/or not respect the order specified by language dependencies.
+     * <p>
+     * In case {@link TruffleContext#closeExited(Node, int)} is called during a
+     * {@link ExitMode#NATURAL natural exit notification}, it is ignored. In case it is called
+     * during a {@link ExitMode#HARD hard exit notification}, it just throws the special
+     * {@link ThreadDeath} exit exception, which is then just logged as described above.
+     * <p>
+     * In case the underlying polyglot context is cancelled by e.g.
+     * {@link TruffleContext#closeCancelled(Node, String)} during exit notifications, guest code
+     * executed during exit notification is regularly cancelled, i.e., throws the
+     * {@link ThreadDeath} cancel exception, and the notification process does not continue as
+     * described above.
+     * <p>
+     * In the case of {@link ExitMode#HARD hard exit}, if the current context has inner contexts
+     * that are still active, the execution for them will be stopped as well after all language exit
+     * notifications are executed for the outer context, but the exit notifications for the inner
+     * contexts are not automatically executed. The language needs to take appropriate action to
+     * make sure inner contexts are exited properly.
+     *
+     * @param context language context.
+     * @param exitMode mode of exit.
+     * @param exitCode exit code that was specified for exit.
+     * @see <a href= "https://github.com/oracle/graal/blob/master/truffle/docs/Exit.md">Context
+     *      Exit</a>
+     *
+     * @since 22.0
+     */
+    protected void exitContext(C context, ExitMode exitMode, int exitCode) {
     }
 
     /**
@@ -646,7 +736,10 @@ public abstract class TruffleLanguage<C> {
      * resources associated with a context. The context may become unusable after it was disposed.
      * It is not allowed to run guest language code while disposing a context. Finalization code
      * should be run in {@link #finalizeContext(Object)} instead. Finalization will be performed
-     * prior to context {@link #disposeContext(Object) disposal}.
+     * prior to context {@link #disposeContext(Object) disposal}. However, in case the underlying
+     * polyglot context is being cancelled, {@link #disposeContext(Object)} is called even if
+     * {@link #finalizeContext(Object)} throws {@link TruffleException} or {@link ThreadDeath}
+     * exception..
      * <p>
      * The disposal order can be influenced by specifying {@link Registration#dependentLanguages()
      * language dependencies}. By default internal languages are disposed last, otherwise the
@@ -935,7 +1028,7 @@ public abstract class TruffleLanguage<C> {
      * @since 0.8 or earlier
      * @deprecated write to the {@link Env#getPolyglotBindings() polyglot bindings} object instead
      *             when symbols need to be exported. Implicit exported values should be exposed
-     *             using {@link TruffleLanguage#findTopScopes(Object)} instead.
+     *             using {@link TruffleLanguage#getScope(Object)} instead.
      */
     @Deprecated
     protected Object findExportedSymbol(C context, String globalName, boolean onlyExplicit) {
@@ -946,7 +1039,9 @@ public abstract class TruffleLanguage<C> {
      * Returns <code>true</code> if code of this language is allowed to be executed on this thread.
      * The method returns <code>false</code> to deny execution on this thread. The default
      * implementation denies access to more than one thread at the same time. The
-     * {@link Thread#currentThread() current thread} may differ from the passed thread.
+     * {@link Thread#currentThread() current thread} may differ from the passed thread. If this
+     * method throws an {@link com.oracle.truffle.api.exception.AbstractTruffleException} the
+     * exception interop messages may be executed without a context being entered.
      * <p>
      * <b>Example multi-threaded language implementation:</b>
      * {@link TruffleLanguageSnippets.MultiThreadedLanguage#initializeThread}
@@ -965,7 +1060,9 @@ public abstract class TruffleLanguage<C> {
      * languages to perform actions that are required to support multi-threading. It will never be
      * invoked if {@link #isThreadAccessAllowed(Thread, boolean)} is implemented to deny access from
      * multiple threads at the same time. All initialized languages must allow multi-threading for
-     * this method to be invoked.
+     * this method to be invoked. If this method throws an
+     * {@link com.oracle.truffle.api.exception.AbstractTruffleException} the exception interop
+     * messages may be executed without a context being entered.
      * <p>
      * <b>Example multi-threaded language implementation:</b>
      * {@link TruffleLanguageSnippets.MultiThreadedLanguage#initializeThread}
@@ -986,6 +1083,9 @@ public abstract class TruffleLanguage<C> {
      * {@link WeakReference} to avoid leaking thread objects.
      * <p>
      * The {@link Thread#currentThread() current thread} may differ from the initialized thread.
+     * <p>
+     * If this method throws an {@link com.oracle.truffle.api.exception.AbstractTruffleException}
+     * the exception interop messages may be executed without a context being entered.
      * <p>
      * <b>Example multi-threaded language implementation:</b>
      * {@link TruffleLanguageSnippets.MultiThreadedLanguage#initializeThread}
@@ -1024,7 +1124,7 @@ public abstract class TruffleLanguage<C> {
      * @param context context to find the language global in
      * @return the global object or <code>null</code> if the language does not support such concept
      * @since 0.8 or earlier
-     * @deprecated in 0.33 implement {@link #findTopScopes(Object)} instead.
+     * @deprecated in 0.33 implement {@link #getScope(Object)} instead.
      */
     @Deprecated
     protected Object getLanguageGlobal(C context) {
@@ -1050,9 +1150,9 @@ public abstract class TruffleLanguage<C> {
      * Find a hierarchy of local scopes enclosing the given {@link Node node}. Unless the node is in
      * a global scope, it is expected that there is at least one scope provided, that corresponds to
      * the enclosing function. The language might provide additional block scopes, closure scopes,
-     * etc. Global top scopes are provided by {@link #findTopScopes(java.lang.Object)}. The scope
-     * hierarchy should correspond with the scope nesting, from the inner-most to the outer-most.
-     * The scopes are expected to contain variables valid at the given node.
+     * etc. Global top scopes are provided by {@link #getScope(Object)}. The scope hierarchy should
+     * correspond with the scope nesting, from the inner-most to the outer-most. The scopes are
+     * expected to contain variables valid at the given node.
      * <p>
      * Scopes may depend on the information provided by the frame. <br/>
      * Lexical scopes are returned when <code>frame</code> argument is <code>null</code>.
@@ -1071,10 +1171,13 @@ public abstract class TruffleLanguage<C> {
      *            the program is not running, or is not suspended at the node's location.
      * @return an iterable with scopes in their nesting order from the inner-most to the outer-most.
      * @since 0.30
+     * @deprecated implement {@link com.oracle.truffle.api.interop.NodeLibrary} instead.
      */
+    @Deprecated
+    @SuppressWarnings({"unchecked", "deprecation"})
     protected Iterable<Scope> findLocalScopes(C context, Node node, Frame frame) {
         assert node != null;
-        return LanguageAccessor.engineAccess().createDefaultLexicalScope(node, frame);
+        return LanguageAccessor.engineAccess().createDefaultLexicalScope(node, frame, (Class<? extends TruffleLanguage<?>>) getClass());
     }
 
     /**
@@ -1122,10 +1225,63 @@ public abstract class TruffleLanguage<C> {
      * @param context the current context of the language
      * @return an iterable with scopes in their nesting order from the inner-most to the outer-most.
      * @since 0.30
+     * @deprecated implement {@link #getScope(Object)} instead.
      */
+    @SuppressWarnings("deprecation")
+    @Deprecated
     protected Iterable<Scope> findTopScopes(C context) {
         Object global = getLanguageGlobal(context);
         return LanguageAccessor.engineAccess().createDefaultTopScope(global);
+    }
+
+    /**
+     * Get a top scope of the language, if any. The returned object must be an
+     * {@link com.oracle.truffle.api.interop.InteropLibrary#isScope(Object) interop scope object}
+     * and may have {@link com.oracle.truffle.api.interop.InteropLibrary#hasScopeParent(Object)
+     * parent scopes}. The scope object exposes all top scopes variables as flattened
+     * {@link com.oracle.truffle.api.interop.InteropLibrary#getMembers(Object) members}. Top scopes
+     * are independent of a {@link Frame}. See
+     * {@link com.oracle.truffle.api.interop.InteropLibrary#isScope(Object)} for details.
+     * <p>
+     * The returned scope objects may be cached by the caller per language context. Therefore the
+     * method should always return equivalent top-scopes and variables objects for a given language
+     * context. Changes to the top scope by executing guest language code should be reflected by
+     * cached scope instances. It is recommended to store the top-scope directly in the language
+     * context for efficient access.
+     * <p>
+     * <h3>Interpretation</h3> In most languages, just evaluating an expression like
+     * <code>Math</code> is equivalent of a lookup with the identifier 'Math' in the top-most scopes
+     * of the language. Looking up the identifier 'Math' should have equivalent semantics as reading
+     * with the key 'Math' from the variables object of one of the top-most scopes of the language.
+     * In addition languages may optionally allow modification and insertion with the variables
+     * object of the returned top-scopes.
+     * <p>
+     * Languages may want to specify multiple parent top-scopes. It is recommended to stay as close
+     * as possible to the set of top-scopes that as is described in the guest language
+     * specification, if available. For example, in JavaScript, there is a 'global environment' and
+     * a 'global object' scope. While the global environment scope contains class declarations and
+     * is not insertable, the global object scope is used to insert new global variable values and
+     * is therefore insertable.
+     * <p>
+     * <h3>Use Cases</h3>
+     * <ul>
+     * <li>Top scopes are accessible to instruments with
+     * {@link com.oracle.truffle.api.instrumentation.TruffleInstrument.Env#getScope(LanguageInfo)}.
+     * They are used by debuggers to access the top-most scopes of the language.
+     * <li>Top scopes available in the {@link org.graalvm.polyglot polyglot API} as context
+     * {@link Context#getBindings(String) bindings} object. Access to members of the bindings object
+     * is applied to the returned scope object via interop.
+     * </ul>
+     * <p>
+     *
+     * @param context the context to find the language top scope in
+     * @return the scope object or <code>null</code> if the language does not support such concept
+     * @since 20.3
+     */
+    @SuppressWarnings({"deprecation", "unchecked"})
+    protected Object getScope(C context) {
+        Iterable<Scope> legacyScopes = findTopScopes(context);
+        return LanguageAccessor.engineAccess().legacyScopes2ScopeObject(null, legacyScopes.iterator(), (Class<? extends TruffleLanguage<?>>) getClass());
     }
 
     /**
@@ -1333,7 +1489,11 @@ public abstract class TruffleLanguage<C> {
      * @param value the value to provide scope information for. Never <code>null</code>. Always
      *            associated with this language.
      * @since 20.1
+     * @deprecated in 20.3, implement
+     *             {@link com.oracle.truffle.api.interop.NodeLibrary#getView(Object, Frame, Object)}
+     *             instead.
      */
+    @Deprecated
     @SuppressWarnings("unused")
     protected Object getScopedView(C context, Node location, Frame frame, Object value) {
         return value;
@@ -1391,28 +1551,6 @@ public abstract class TruffleLanguage<C> {
         return null;
     }
 
-    /**
-     * @deprecated in 19.3 as this method is inefficient in many situations. The most efficient
-     *             context lookup can be achieved knowing the current AST in which it is used. As
-     *             this method does not know the current {@link Node node} it must be unnecessarily
-     *             conservative about the lookup and therefore inefficient. More efficient context
-     *             reference versions are available for fast-paths by calling
-     *             {@link Node#lookupContextReference(Class)} or for slow-paths
-     *             {@link TruffleLanguage#getCurrentContext(Class)}. Truffle DSL has support for
-     *             context lookup with {@link com.oracle.truffle.api.dsl.CachedContext
-     *             CachedContext} that uses the most efficient lookup automatically.
-     *
-     * @since 0.25
-     */
-    @SuppressWarnings("unchecked")
-    @Deprecated
-    public final ContextReference<C> getContextReference() {
-        if (reference == null) {
-            throw new IllegalStateException("TruffleLanguage instance is not initialized. Cannot get the current context reference.");
-        }
-        return (ContextReference<C>) reference;
-    }
-
     CallTarget parse(Source source, String... argumentNames) {
         ParsingRequest request = new ParsingRequest(source, argumentNames);
         CallTarget target;
@@ -1445,18 +1583,11 @@ public abstract class TruffleLanguage<C> {
     }
 
     /**
-     * Returns the current language instance for the current {@link Thread thread}. If a {@link Node
-     * node} is accessible then {@link Node#lookupLanguageReference(Class)} should be used instead.
-     * Throws an {@link IllegalStateException} if the language is not yet initialized or not
-     * executing on this thread. If invoked on the fast-path then <code>languageClass</code> must be
-     * a compilation final value.
-     *
-     * @param <T> the language type
-     * @param languageClass the exact language class needs to be provided for the lookup.
-     * @see Node#lookupLanguageReference(Class)
-     * @see com.oracle.truffle.api.dsl.CachedLanguage
      * @since 0.27
+     * @deprecated in 21.3, use static final context references instead. See
+     *             {@link ContextReference} for the new intended usage.
      */
+    @Deprecated
     protected static <T extends TruffleLanguage<?>> T getCurrentLanguage(Class<T> languageClass) {
         try {
             return LanguageAccessor.engineAccess().getCurrentLanguage(languageClass);
@@ -1467,26 +1598,159 @@ public abstract class TruffleLanguage<C> {
     }
 
     /**
-     * Returns the current language context entered on the current thread. If a {@link Node node} is
-     * accessible then {@link Node#lookupContextReference(Class)} should be used instead. An
-     * {@link IllegalStateException} is thrown if the language is not yet initialized or not
-     * executing on this thread. If invoked on the fast-path then <code>languageClass</code> must be
-     * a compilation final value.
-     *
-     * @param <C> the context type
-     * @param <T> the language type
-     * @param languageClass the exact language class needs to be provided for the lookup.
-     * @see Node#lookupContextReference(Class)
-     * @see com.oracle.truffle.api.dsl.CachedContext
      * @since 0.27
+     * @deprecated in 21.3, use static final context references instead. See
+     *             {@link LanguageReference} for the new intended usage.
      */
+    @Deprecated
     protected static <C, T extends TruffleLanguage<C>> C getCurrentContext(Class<T> languageClass) {
         try {
-            return LanguageAccessor.engineAccess().getCurrentContext(languageClass);
+            return ENGINE.getCurrentContext(languageClass);
         } catch (Throwable t) {
             CompilerDirectives.transferToInterpreter();
             throw Env.engineToLanguageException(t);
         }
+    }
+
+    /**
+     * Creates a new context local reference for this Truffle language. Context locals for languages
+     * allow to store additional top-level values for each context besides the language context. The
+     * advantage of context locals compared to storing the value in a field of the language context
+     * is that reading a context local requires one indirection less. It is recommended to use
+     * context locals for languages only if the read is critical for performance.
+     * <p>
+     * Context local references must be created during the invocation in the {@link TruffleLanguage}
+     * constructor. Calling this method at a later point in time will throw an
+     * {@link IllegalStateException}. For each registered {@link TruffleLanguage} subclass it is
+     * required to always produce the same number of context local references. The values produced
+     * by the factory must not be <code>null</code> and use a stable exact value type for each
+     * instance of a registered language class. If the return value of the factory is not stable or
+     * <code>null</code> then an {@link IllegalStateException} is thrown. These restrictions allow
+     * the Truffle runtime to read the value more efficiently.
+     * <p>
+     * Usage example:
+     *
+     * <pre>
+     * &#64;TruffleLanguage.Registration(id = "example", name = "ExampleLanguage")
+     * public final class ExampleLanguage extends TruffleLanguage<Env> {
+     *
+     *     final ContextLocal<ExampleLocal> contextLocal = createContextLocal(ExampleLocal::new);
+     *
+     *     &#64;Override
+     *     protected Env createContext(Env env) {
+     *         return env;
+     *     }
+     *
+     *     &#64;Override
+     *     protected CallTarget parse(ParsingRequest request) throws Exception {
+     *         return new RootNode(this) {
+     *             &#64;Override
+     *             public Object execute(VirtualFrame frame) {
+     *                 // fast read
+     *                 ExampleLocal local = contextLocal.get();
+     *                 // access local
+     *                 return "";
+     *             }
+     *         }.getCallTarget();
+     *     }
+     *
+     *     static final class ExampleLocal {
+     *
+     *         final Env env;
+     *
+     *         ExampleLocal(Env env) {
+     *             this.env = env;
+     *         }
+     *
+     *     }
+     * }
+     * </pre>
+     *
+     * @since 20.3
+     */
+    protected final <T> ContextLocal<T> createContextLocal(ContextLocalFactory<C, T> factory) {
+        ContextLocal<T> local = ENGINE.createLanguageContextLocal(factory);
+        if (contextLocals == null) {
+            contextLocals = new ArrayList<>();
+        }
+        try {
+            contextLocals.add(local);
+        } catch (UnsupportedOperationException e) {
+            throw new IllegalStateException("The set of context locals is frozen. Context locals can only be created during construction of the TruffleLanguage subclass.");
+        }
+        return local;
+    }
+
+    /**
+     * Creates a new context thread local reference for this Truffle language. Context thread locals
+     * for languages allow storing additional top-level values for each context and thread. The
+     * factory may be invoked on any thread other than the thread of the context thread local value.
+     * <p>
+     * Context thread local references must be created during the invocation in the
+     * {@link TruffleLanguage} constructor. Calling this method at a later point in time will throw
+     * an {@link IllegalStateException}. For each registered {@link TruffleLanguage} subclass it is
+     * required to always produce the same number of context thread local references. The values
+     * produced by the factory must not be <code>null</code> and use a stable exact value type for
+     * each instance of a registered language class. If the return value of the factory is not
+     * stable or <code>null</code> then an {@link IllegalStateException} is thrown. These
+     * restrictions allow the Truffle runtime to read the value more efficiently.
+     * <p>
+     * Context thread locals should not contain a strong reference to the provided thread. Use a
+     * weak reference instance for that purpose.
+     * <p>
+     * Usage example:
+     *
+     * <pre>
+     * &#64;TruffleLanguage.Registration(id = "example", name = "ExampleLanguage")
+     * public static class ExampleLanguage extends TruffleLanguage<Env> {
+     *
+     *     final ContextThreadLocal<ExampleLocal> threadLocal = createContextThreadLocal(ExampleLocal::new);
+     *
+     *     &#64;Override
+     *     protected Env createContext(Env env) {
+     *         return env;
+     *     }
+     *
+     *     &#64;Override
+     *     protected CallTarget parse(ParsingRequest request) throws Exception {
+     *         return new RootNode(this) {
+     *             &#64;Override
+     *             public Object execute(VirtualFrame frame) {
+     *                 // fast read
+     *                 ExampleLocal local = threadLocal.get();
+     *                 // access local
+     *                 return "";
+     *             }
+     *         }.getCallTarget();
+     *     }
+     *
+     *     static final class ExampleLocal {
+     *
+     *         final Env env;
+     *         final WeakReference<Thread> thread;
+     *
+     *         ExampleLocal(Env env, Thread thread) {
+     *             this.env = env;
+     *             this.thread = new WeakReference<>(thread);
+     *         }
+     *
+     *     }
+     * }
+     * </pre>
+     *
+     * @since 20.3
+     */
+    protected final <T> ContextThreadLocal<T> createContextThreadLocal(ContextThreadLocalFactory<C, T> factory) {
+        ContextThreadLocal<T> local = ENGINE.createLanguageContextThreadLocal(factory);
+        if (contextThreadLocals == null) {
+            contextThreadLocals = new ArrayList<>();
+        }
+        try {
+            contextThreadLocals.add(local);
+        } catch (UnsupportedOperationException e) {
+            throw new IllegalStateException("The set of context thread locals is frozen. Context thread locals can only be created during construction of the TruffleLanguage subclass.");
+        }
+        return local;
     }
 
     /**
@@ -1503,6 +1767,69 @@ public abstract class TruffleLanguage<C> {
         } catch (Throwable t) {
             throw Env.engineToLanguageException(t);
         }
+    }
+
+    /**
+     * Get the depth of asynchronous stack. When zero, the language should not sacrifice performance
+     * to be able to provide asynchronous stack. When the depth is non-zero, the language should
+     * provide asynchronous stack up to that depth. The language may provide more asynchronous
+     * frames than this depth if it's of no performance penalty, or if requested by other (e.g.
+     * language-specific) options. The returned depth may change at any time.
+     * <p>
+     * Override {@link RootNode#findAsynchronousFrames(Frame)} to provide the asynchronous stack
+     * frames.
+     *
+     * @see RootNode#findAsynchronousFrames(Frame)
+     * @since 20.1.0
+     */
+    protected final int getAsynchronousStackDepth() {
+        return LanguageAccessor.engineAccess().getAsynchronousStackDepth(LanguageAccessor.nodesAccess().getPolyglotLanguage(languageInfo));
+    }
+
+    /**
+     * Context local factory for Truffle languages. Creates a new value per context.
+     *
+     * @since 20.3
+     */
+    @FunctionalInterface
+    protected interface ContextLocalFactory<C, T> {
+
+        /**
+         * Returns a new value for a context local of a language. The returned value must not be
+         * <code>null</code> and must return a stable and exact type per registered language. A
+         * thread local must always return the same {@link Object#getClass() class}, even for
+         * multiple instances of the same {@link TruffleLanguage}. If this method throws an
+         * {@link com.oracle.truffle.api.exception.AbstractTruffleException} the exception interop
+         * messages may be executed without a context being entered.
+         *
+         * @see TruffleLanguage#createContextLocal(ContextLocalFactory)
+         * @since 20.3
+         */
+        T create(C context);
+    }
+
+    /**
+     * Context thread local factory for Truffle languages. Creates a new value per context and
+     * thread.
+     *
+     * @since 20.3
+     */
+    @FunctionalInterface
+    protected interface ContextThreadLocalFactory<C, T> {
+
+        /**
+         * Returns a new value for a context thread local for a language context and thread. The
+         * returned value must not be <code>null</code> and must return a stable and exact type per
+         * TruffleLanguage subclass. A thread local must always return the same
+         * {@link Object#getClass() class}, even for multiple instances of the same
+         * {@link TruffleLanguage}. If this method throws an
+         * {@link com.oracle.truffle.api.exception.AbstractTruffleException} the exception interop
+         * messages may be executed without a context being entered.
+         *
+         * @see TruffleLanguage#createContextThreadLocal(ContextThreadLocalFactory)
+         * @since 20.3
+         */
+        T create(C context, Thread thread);
     }
 
     /**
@@ -1524,8 +1851,6 @@ public abstract class TruffleLanguage<C> {
         private final Map<String, Object> config;
         private final OptionValues options;
         private final String[] applicationArguments;
-        private final TruffleFile.FileSystemContext fileSystemContext;
-        private final TruffleFile.FileSystemContext internalFileSystemContext;
 
         @CompilationFinal volatile List<Object> services;
 
@@ -1538,8 +1863,7 @@ public abstract class TruffleLanguage<C> {
 
         @SuppressWarnings("unchecked")
         Env(Object polyglotLanguageContext, TruffleLanguage<?> language, OutputStream out, OutputStream err, InputStream in, Map<String, Object> config, OptionValues options,
-                        String[] applicationArguments,
-                        FileSystem fileSystem, FileSystem internalFileSystem, Supplier<Map<String, Collection<? extends TruffleFile.FileTypeDetector>>> fileTypeDetectors) {
+                        String[] applicationArguments) {
             this.polyglotLanguageContext = polyglotLanguageContext;
             this.spi = (TruffleLanguage<Object>) language;
             this.in = in;
@@ -1549,8 +1873,14 @@ public abstract class TruffleLanguage<C> {
             this.options = options;
             this.applicationArguments = applicationArguments == null ? new String[0] : applicationArguments;
             this.valid = true;
-            this.fileSystemContext = new TruffleFile.FileSystemContext(fileSystem, fileTypeDetectors);
-            this.internalFileSystemContext = new TruffleFile.FileSystemContext(internalFileSystem, fileTypeDetectors);
+        }
+
+        TruffleFile.FileSystemContext getPublicFileSystemContext() {
+            return (TruffleFile.FileSystemContext) LanguageAccessor.engineAccess().getPublicFileSystemContext(polyglotLanguageContext);
+        }
+
+        TruffleFile.FileSystemContext getInternalFileSystemContext() {
+            return (TruffleFile.FileSystemContext) LanguageAccessor.engineAccess().getInternalFileSystemContext(polyglotLanguageContext);
         }
 
         Object getPolyglotLanguageContext() {
@@ -1661,9 +1991,14 @@ public abstract class TruffleLanguage<C> {
          * uncaught exception if one of the initialized language contexts don't support execution on
          * this thread.
          * <p>
-         * The language that created and started the thread is responsible to complete all running
-         * or waiting threads when the context is {@link TruffleLanguage#disposeContext(Object)
-         * disposed}.
+         * The language that created and started the thread is responsible to stop and join it
+         * during the {@link TruffleLanguage#finalizeContext(Object) finalizeContext}, otherwise an
+         * {@link AssertionError} is thrown. It's not safe to use the
+         * {@link ExecutorService#awaitTermination(long, java.util.concurrent.TimeUnit)} to detect
+         * Thread termination as the polyglot thread may be cancelled before executing the executor
+         * worker.<br/>
+         * A typical implementation looks like:
+         * {@link TruffleLanguageSnippets.AsyncThreadLanguage#finalizeContext}
          * <p>
          * The {@link TruffleContext} can be either an inner context created by
          * {@link #newContextBuilder()}.{@link TruffleContext.Builder#build() build()}, or the
@@ -1851,7 +2186,7 @@ public abstract class TruffleLanguage<C> {
         @SuppressWarnings("static-method")
         public boolean isHostObject(Object value) {
             try {
-                return LanguageAccessor.engineAccess().isHostObject(value);
+                return LanguageAccessor.engineAccess().isHostObject(polyglotLanguageContext, value);
             } catch (Throwable t) {
                 throw engineToLanguageException(t);
             }
@@ -1866,11 +2201,11 @@ public abstract class TruffleLanguage<C> {
          */
         public Object asHostObject(Object value) {
             if (!isHostObject(value)) {
-                CompilerDirectives.transferToInterpreter();
+                CompilerDirectives.transferToInterpreterAndInvalidate();
                 throw new ClassCastException();
             }
             try {
-                return LanguageAccessor.engineAccess().asHostObject(value);
+                return LanguageAccessor.engineAccess().asHostObject(polyglotLanguageContext, value);
             } catch (Throwable t) {
                 throw engineToLanguageException(t);
             }
@@ -1894,7 +2229,7 @@ public abstract class TruffleLanguage<C> {
          */
         public Object asGuestValue(Object hostObject) {
             try {
-                return LanguageAccessor.engineAccess().toGuestValue(hostObject, polyglotLanguageContext);
+                return LanguageAccessor.engineAccess().toGuestValue(null, hostObject, polyglotLanguageContext);
             } catch (Throwable t) {
                 throw engineToLanguageException(t);
             }
@@ -1932,7 +2267,7 @@ public abstract class TruffleLanguage<C> {
         @SuppressWarnings("static-method")
         public boolean isHostFunction(Object value) {
             try {
-                return LanguageAccessor.engineAccess().isHostFunction(value);
+                return LanguageAccessor.engineAccess().isHostFunction(polyglotLanguageContext, value);
             } catch (Throwable t) {
                 throw engineToLanguageException(t);
             }
@@ -1975,7 +2310,7 @@ public abstract class TruffleLanguage<C> {
         @SuppressWarnings("static-method")
         public boolean isHostException(Throwable exception) {
             try {
-                return LanguageAccessor.engineAccess().isHostException(exception);
+                return LanguageAccessor.engineAccess().isHostException(polyglotLanguageContext, exception);
             } catch (Throwable t) {
                 throw engineToLanguageException(t);
             }
@@ -1996,7 +2331,7 @@ public abstract class TruffleLanguage<C> {
         @SuppressWarnings("static-method")
         public Throwable asHostException(Throwable exception) {
             try {
-                return LanguageAccessor.engineAccess().asHostException(exception);
+                return LanguageAccessor.engineAccess().asHostException(polyglotLanguageContext, exception);
             } catch (Throwable t) {
                 throw engineToLanguageException(t);
             }
@@ -2012,7 +2347,7 @@ public abstract class TruffleLanguage<C> {
         @SuppressWarnings("static-method")
         public boolean isHostSymbol(Object guestObject) {
             try {
-                return LanguageAccessor.engineAccess().isHostSymbol(guestObject);
+                return LanguageAccessor.engineAccess().isHostSymbol(polyglotLanguageContext, guestObject);
             } catch (Throwable t) {
                 throw engineToLanguageException(t);
             }
@@ -2120,6 +2455,8 @@ public abstract class TruffleLanguage<C> {
         }
 
         /**
+         * @throws IllegalStateException if polyglot context associated with this environment is not
+         *             entered
          * @since 0.8 or earlier
          * @deprecated use {@link #parseInternal(Source, String...)} or
          *             {@link #parsePublic(Source, String...)} instead.
@@ -2162,6 +2499,8 @@ public abstract class TruffleLanguage<C> {
          * @param argumentNames the names of {@link CallTarget#call(java.lang.Object...)} arguments
          *            that can be referenced from the source
          * @return the call target representing the parsed result
+         * @throws IllegalStateException if polyglot context associated with this environment is not
+         *             entered
          * @see #parsePublic(Source, String...)
          * @since 19.2
          */
@@ -2203,6 +2542,8 @@ public abstract class TruffleLanguage<C> {
          * @param argumentNames the names of {@link CallTarget#call(java.lang.Object...)} arguments
          *            that can be referenced from the source
          * @return the call target representing the parsed result
+         * @throws IllegalStateException if polyglot context associated with this environment is not
+         *             entered
          * @see #parseInternal(Source, String...)
          * @since 19.2
          */
@@ -2488,137 +2829,228 @@ public abstract class TruffleLanguage<C> {
         }
 
         /**
-         * Returns a {@link TruffleFile} for given path.
+         * Returns a {@link TruffleFile} for given path. The returned {@link TruffleFile} access
+         * depends on the file system used by the context and can vary from all access in case of
+         * {@link Builder#allowIO(boolean) allowed IO} to no access in case of denied IO. When IO is
+         * not enabled by the {@code Context} the {@link TruffleFile} operations throw
+         * {@link SecurityException}. The {@code getPublicTruffleFile} method should be used to
+         * access user files or to implement language IO builtins.
          *
          * @param path the absolute or relative path to create {@link TruffleFile} for
          * @return {@link TruffleFile}
-         * @since 19.0
-         * @deprecated use {@link #getInternalTruffleFile(java.lang.String) getInternalTruffleFile}
-         *             for language standard library files or
-         *             {@link #getPublicTruffleFile(java.lang.String) getPublicTruffleFile} for user
-         *             files.
-         */
-        @TruffleBoundary
-        @Deprecated
-        public TruffleFile getTruffleFile(String path) {
-            return getInternalTruffleFile(path);
-        }
-
-        /**
-         * Returns a {@link TruffleFile} for given {@link URI}.
-         *
-         * @param uri the {@link URI} to create {@link TruffleFile} for
-         * @return {@link TruffleFile}
-         * @since 19.0
-         * @deprecated use {@link #getInternalTruffleFile(java.lang.String) getInternalTruffleFile}
-         *             for language standard library files or
-         *             {@link #getPublicTruffleFile(java.lang.String) getPublicTruffleFile} for user
-         *             files.
-         */
-        @TruffleBoundary
-        @Deprecated
-        public TruffleFile getTruffleFile(URI uri) {
-            return getInternalTruffleFile(uri);
-        }
-
-        /**
-         * Returns a public {@link TruffleFile} for given path. The access to public files depends
-         * on {@link Builder#allowIO(boolean) Context's IO policy}. When IO is not enabled by the
-         * {@code Context} the {@link TruffleFile} operations throw {@link SecurityException}. The
-         * {@code getPublicTruffleFile} method should be used to access user files or to implement
-         * language IO builtins.
-         *
-         * @param path the absolute or relative path to create {@link TruffleFile} for
-         * @return {@link TruffleFile}
+         * @throws UnsupportedOperationException when the {@link FileSystem} supports only
+         *             {@link URI}
          * @since 19.3.0
          */
         @TruffleBoundary
         public TruffleFile getPublicTruffleFile(String path) {
             checkDisposed();
+            FileSystemContext fs = getPublicFileSystemContext();
             try {
-                return new TruffleFile(fileSystemContext, fileSystemContext.fileSystem.parsePath(path));
+                return new TruffleFile(fs, fs.fileSystem.parsePath(path));
             } catch (UnsupportedOperationException e) {
                 throw e;
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, fileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
             }
         }
 
         /**
-         * Returns a public {@link TruffleFile} for given {@link URI}. The access to public files
-         * depends on {@link Builder#allowIO(boolean) Context's IO policy}. When IO is not enabled
-         * by the {@code Context} the {@link TruffleFile} operations throw {@link SecurityException}
-         * . The {@code getPublicTruffleFile} method should be used to access user files or to
-         * implement language IO builtins.
+         * Returns a {@link TruffleFile} for given path. See {@link #getPublicTruffleFile(String)}
+         * for detailed information.
          *
          * @param uri the {@link URI} to create {@link TruffleFile} for
          * @return {@link TruffleFile}
+         * @throws UnsupportedOperationException when {@link URI} scheme is not supported
          * @since 19.3.0
          */
         @TruffleBoundary
         public TruffleFile getPublicTruffleFile(URI uri) {
             checkDisposed();
+            FileSystemContext fs = getPublicFileSystemContext();
             try {
-                return new TruffleFile(fileSystemContext, fileSystemContext.fileSystem.parsePath(uri));
+                return new TruffleFile(fs, fs.fileSystem.parsePath(uri));
             } catch (UnsupportedOperationException e) {
-                throw new FileSystemNotFoundException("FileSystem for: " + uri.getScheme() + " scheme is not supported.");
+                throw e;
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, fileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
             }
         }
 
         /**
-         * Returns a public or internal {@link TruffleFile} for given path. Unlike
-         * {@link #getPublicTruffleFile(java.lang.String) getPublicTruffleFile} the
-         * {@link TruffleFile} returned by this method for a file in a language home is readable
-         * even when IO is not enabled by the {@code Context}. The {@code getInternalTruffleFile}
-         * method should be used to read language standard libraries in a language home. For
-         * security reasons the language should check that the file is a language source file in
-         * language standard libraries folder before using this method for a file in a language
-         * home.
+         * Returns a {@link TruffleFile} for given path. This method allows to access files in the
+         * guest language home even if file system privileges might be limited or denied. If the
+         * path locates a file under the guest language home it is guaranteed that the returned
+         * {@link TruffleFile} has at least read access. Otherwise, the returned {@link TruffleFile}
+         * access depends on the file system used by the context and can vary from all access in
+         * case of allowed IO to no access in case of denied IO. The {@code getInternalTruffleFile}
+         * method should be used to read language standard libraries in a language home. This method
+         * is an equivalent to {@code getTruffleFileInternal(path, p -> true)}. For security reasons
+         * the language should check that the file is a language source file in language standard
+         * libraries folder before using this method for a file in a language home. For performance
+         * reasons consider to use {@link #getTruffleFileInternal(String, Predicate)} and perform
+         * the language standard libraries check using a predicate.
          *
          * @param path the absolute or relative path to create {@link TruffleFile} for
          * @return {@link TruffleFile}
          * @since 19.3.0
+         * @throws UnsupportedOperationException when the {@link FileSystem} supports only
+         *             {@link URI}
+         * @see #getTruffleFileInternal(String, Predicate)
          * @see #getPublicTruffleFile(java.lang.String)
          */
         @TruffleBoundary
         public TruffleFile getInternalTruffleFile(String path) {
             checkDisposed();
+            FileSystemContext fs = getInternalFileSystemContext();
             try {
-                return new TruffleFile(internalFileSystemContext, internalFileSystemContext.fileSystem.parsePath(path));
+                return new TruffleFile(fs, fs.fileSystem.parsePath(path));
             } catch (UnsupportedOperationException e) {
                 throw e;
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, internalFileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
             }
         }
 
         /**
-         * Returns a public or internal {@link TruffleFile} for given {@link URI}. Unlike
-         * {@link #getPublicTruffleFile(java.lang.String) getPublicTruffleFile} the
-         * {@link TruffleFile} returned by this method for a file in a language home is readable
-         * even when IO is not enabled by the {@code Context}. The {@code getInternalTruffleFile}
-         * method should be used to read language standard libraries in a language home. For
-         * security reasons the language should check that the file is a language source file in
-         * language standard libraries folder before using this method for a file in a language
-         * home.
+         * Returns {@link TruffleFile} for given {@link URI}. See
+         * {@link #getInternalTruffleFile(String)} for detailed information.
          *
          * @param uri the {@link URI} to create {@link TruffleFile} for
          * @return {@link TruffleFile}
          * @since 19.3.0
+         * @throws UnsupportedOperationException when {@link URI} scheme is not supported
+         * @see #getTruffleFileInternal(URI, Predicate)
          * @see #getPublicTruffleFile(java.net.URI)
          */
         @TruffleBoundary
         public TruffleFile getInternalTruffleFile(URI uri) {
             checkDisposed();
+            FileSystemContext fs = getInternalFileSystemContext();
             try {
-                return new TruffleFile(internalFileSystemContext, internalFileSystemContext.fileSystem.parsePath(uri));
+                return new TruffleFile(fs, fs.fileSystem.parsePath(uri));
             } catch (UnsupportedOperationException e) {
-                throw new FileSystemNotFoundException("FileSystem for: " + uri.getScheme() + " scheme is not supported.");
+                throw e;
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, internalFileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
             }
+        }
+
+        /**
+         * Returns a {@link TruffleFile} for the given path. This method allows to access files in
+         * the guest language home even if file system privileges might be limited or denied. If the
+         * path locates a file under the guest language home and satisfies the given {@code filter},
+         * it is guaranteed that the returned {@link TruffleFile} has at least read access.
+         * Otherwise, the returned {@link TruffleFile} access depends on the file system used by the
+         * context and can vary from all access in case of allowed IO to no access in case of denied
+         * IO.
+         * <p>
+         * A common use case for this method is a filter granting read access to the language
+         * standard libraries.
+         * <p>
+         * The method performs the following checks:
+         * <ol>
+         * <li>If the IO is enabled by the {@link Context} an accessible {@link TruffleFile} is
+         * returned without any other checks.</li>
+         * <li>If the given path does not locate a file in a language home a {@link TruffleFile}
+         * with no access is returned.</li>
+         * <li>If the given filter accepts the file a readable {@link TruffleFile} is returned.
+         * Otherwise, a {@link TruffleFile} with no access is returned.</li>
+         * </ol>
+         * <p>
+         * The relation to {@link #getPublicTruffleFile(String)} and
+         * {@link #getInternalTruffleFile(String)} is:
+         * <ul>
+         * <li>The {@link #getPublicTruffleFile(String)} is equivalent to
+         * {@code getTruffleFileInternal(path, p -> false)}.</li>
+         * <li>The {@link #getInternalTruffleFile(String)} is equivalent to
+         * {@code getTruffleFileInternal(path, p -> true)}.</li>
+         * </ul>
+         *
+         * @param path the absolute or relative path to create {@link TruffleFile} for
+         * @param filter to enable read access to {@link TruffleFile}. Multiple invocations of
+         *            {@code filter.test(file)} must consistently return {@code true} or
+         *            consistently return {@code false} for a given path.
+         * @return {@link TruffleFile}
+         * @throws UnsupportedOperationException when the {@link FileSystem} supports only
+         *             {@link URI}
+         * @since 21.1.0
+         * @see #getTruffleFileInternal(URI, Predicate)
+         * @see #getPublicTruffleFile(String)
+         * @see #getInternalTruffleFile(String)
+         *
+         */
+        @TruffleBoundary
+        public TruffleFile getTruffleFileInternal(String path, Predicate<TruffleFile> filter) {
+            return getTruffleFileInternalImpl(path, filter, TruffleFileFactory.PATH);
+        }
+
+        /**
+         * Returns a {@link TruffleFile} for given URI. See
+         * {@link #getTruffleFileInternal(String, Predicate)} for detailed information.
+         *
+         * @param uri the {@link URI} to create {@link TruffleFile} for
+         * @param filter to enable read access to {@link TruffleFile}. Multiple invocations of
+         *            {@code filter.test(file)} must consistently return {@code true} or
+         *            consistently return {@code false} for a given path.
+         * @return {@link TruffleFile}
+         * @throws UnsupportedOperationException when the {@link FileSystem} supports only
+         *             {@link URI}
+         * @since 21.1.0
+         * @see #getTruffleFileInternal(String, Predicate)
+         * @see #getPublicTruffleFile(URI)
+         * @see #getInternalTruffleFile(URI)
+         *
+         */
+        @TruffleBoundary
+        public TruffleFile getTruffleFileInternal(URI uri, Predicate<TruffleFile> filter) {
+            return getTruffleFileInternalImpl(uri, filter, TruffleFileFactory.URI);
+        }
+
+        private <P> TruffleFile getTruffleFileInternalImpl(P path, Predicate<TruffleFile> isStdLibFile, TruffleFileFactory<P> truffleFileFactory) {
+            checkDisposed();
+            FileSystemContext publicFsContext = getPublicFileSystemContext();
+            if (LanguageAccessor.engineAccess().hasNoAccess(publicFsContext.fileSystem)) {
+                FileSystemContext internalFsContext = getInternalFileSystemContext();
+                TruffleFile internalFile = truffleFileFactory.apply(path, internalFsContext);
+                if (LanguageAccessor.engineAccess().getRelativePathInLanguageHome(internalFile) != null && isStdLibFile.test(internalFile.getAbsoluteFile())) {
+                    return internalFile;
+                }
+            }
+            return truffleFileFactory.apply(path, publicFsContext);
+        }
+
+        private abstract static class TruffleFileFactory<P> implements BiFunction<P, FileSystemContext, TruffleFile> {
+
+            static final TruffleFileFactory<String> PATH = new TruffleFileFactory<String>() {
+                @Override
+                Path parsePath(String path, FileSystemContext fileSystemContext) {
+                    return fileSystemContext.fileSystem.parsePath(path);
+                }
+            };
+
+            static final TruffleFileFactory<URI> URI = new TruffleFileFactory<URI>() {
+                @Override
+                public Path parsePath(URI uri, FileSystemContext fileSystemContext) {
+                    return fileSystemContext.fileSystem.parsePath(uri);
+                }
+            };
+
+            private TruffleFileFactory() {
+            }
+
+            @Override
+            public final TruffleFile apply(P p, FileSystemContext fileSystemContext) {
+                try {
+                    return new TruffleFile(fileSystemContext, parsePath(p, fileSystemContext));
+                } catch (UnsupportedOperationException e) {
+                    throw e;
+                } catch (Throwable t) {
+                    throw TruffleFile.wrapHostException(t, fileSystemContext.fileSystem);
+                }
+            }
+
+            abstract Path parsePath(P p, FileSystemContext fileSystemContext);
         }
 
         /**
@@ -2657,6 +3089,8 @@ public abstract class TruffleLanguage<C> {
             if (!currentWorkingDirectory.isDirectory()) {
                 throw new IllegalArgumentException("Current working directory must be directory.");
             }
+            FileSystemContext fileSystemContext = getPublicFileSystemContext();
+            FileSystemContext internalFileSystemContext = getInternalFileSystemContext();
             try {
                 fileSystemContext.fileSystem.setCurrentWorkingDirectory(currentWorkingDirectory.getSPIPath());
                 if (fileSystemContext.fileSystem != internalFileSystemContext.fileSystem) {
@@ -2678,10 +3112,11 @@ public abstract class TruffleLanguage<C> {
         @TruffleBoundary
         public String getFileNameSeparator() {
             checkDisposed();
+            FileSystemContext fs = getPublicFileSystemContext();
             try {
-                return fileSystemContext.fileSystem.getSeparator();
+                return fs.fileSystem.getSeparator();
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, fileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
             }
         }
 
@@ -2695,10 +3130,11 @@ public abstract class TruffleLanguage<C> {
         @TruffleBoundary
         public String getPathSeparator() {
             checkDisposed();
+            FileSystemContext fs = getPublicFileSystemContext();
             try {
-                return fileSystemContext.fileSystem.getPathSeparator();
+                return fs.fileSystem.getPathSeparator();
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, fileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
             }
         }
 
@@ -2753,11 +3189,12 @@ public abstract class TruffleLanguage<C> {
         @TruffleBoundary
         public TruffleProcessBuilder newProcessBuilder(String... command) {
             if (!isCreateProcessAllowed()) {
-                throw new TruffleSecurityException("Process creation is not allowed, to enable it set Context.Builder.allowCreateProcess(true).");
+                throw new SecurityException("Process creation is not allowed, to enable it set Context.Builder.allowCreateProcess(true).");
             }
+            FileSystemContext fs = getPublicFileSystemContext();
             List<String> cmd = new ArrayList<>(command.length);
             Collections.addAll(cmd, command);
-            return LanguageAccessor.ioAccess().createProcessBuilder(polyglotLanguageContext, fileSystemContext.fileSystem, cmd);
+            return LanguageAccessor.ioAccess().createProcessBuilder(polyglotLanguageContext, fs.fileSystem, cmd);
         }
 
         /**
@@ -2809,13 +3246,14 @@ public abstract class TruffleLanguage<C> {
          */
         @TruffleBoundary
         public TruffleFile createTempFile(TruffleFile dir, String prefix, String suffix, FileAttribute<?>... attrs) throws IOException {
+            FileSystemContext fs = getPublicFileSystemContext();
             try {
-                TruffleFile useDir = dir == null ? new TruffleFile(fileSystemContext, fileSystemContext.fileSystem.getTempDirectory()) : dir;
+                TruffleFile useDir = dir == null ? new TruffleFile(fs, fs.fileSystem.getTempDirectory()) : dir;
                 return TruffleFile.createTempFile(useDir, prefix, suffix, false, attrs);
             } catch (UnsupportedOperationException | IllegalArgumentException | IOException | SecurityException e) {
                 throw e;
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, fileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
             }
         }
 
@@ -2844,13 +3282,324 @@ public abstract class TruffleLanguage<C> {
          */
         @TruffleBoundary
         public TruffleFile createTempDirectory(TruffleFile dir, String prefix, FileAttribute<?>... attrs) throws IOException {
+            FileSystemContext fs = getPublicFileSystemContext();
             try {
-                TruffleFile useDir = dir == null ? new TruffleFile(fileSystemContext, fileSystemContext.fileSystem.getTempDirectory()) : dir;
+                TruffleFile useDir = dir == null ? new TruffleFile(fs, fs.fileSystem.getTempDirectory()) : dir;
                 return TruffleFile.createTempFile(useDir, prefix, null, true, attrs);
             } catch (UnsupportedOperationException | IllegalArgumentException | IOException | SecurityException e) {
                 throw e;
             } catch (Throwable t) {
-                throw TruffleFile.wrapHostException(t, fileSystemContext.fileSystem);
+                throw TruffleFile.wrapHostException(t, fs.fileSystem);
+            }
+        }
+
+        /**
+         * Creates a Java host adapter class that can be
+         * {@linkplain com.oracle.truffle.api.interop.InteropLibrary#instantiate instantiated} with
+         * a guest object (as the last argument) in order to create adapter instances of the
+         * provided host types, (non-final) methods of which delegate to the guest object's
+         * {@linkplain com.oracle.truffle.api.interop.InteropLibrary#isMemberInvocable invocable}
+         * members. Implementations must be
+         * {@linkplain org.graalvm.polyglot.HostAccess.Builder#allowImplementations(Class) allowed}
+         * for these types. The returned adapter class is also a
+         * {@linkplain com.oracle.truffle.api.interop.InteropLibrary#isMetaObject meta object}, so
+         * {@link com.oracle.truffle.api.interop.InteropLibrary#isMetaInstance isMetaInstance} can
+         * be used to check if an object is an instance of this adapter class. See usage example
+         * below.
+         * <p>
+         * A host class is generated as follows:
+         * <p>
+         * For every protected or public constructor in the extended class, the adapter class will
+         * have one public constructor (visibility of protected constructors in the extended class
+         * is promoted to public).
+         * <p>
+         * For every super constructor, a constructor taking a trailing {@link Value} argument
+         * preceded by original constructor's arguments is generated. When such a constructor is
+         * invoked, the passed {@link Value}'s member functions are used to implement and/or
+         * override methods on the original class, dispatched by name. A single invocable member
+         * will act as the implementation for all overloaded methods of the same name. When methods
+         * on an adapter instance are invoked, the functions are invoked having the {@link Value}
+         * passed in the instance constructor as their receiver. Subsequent changes to the members
+         * of that {@link Value} (reassignment or removal of its functions) are reflected in the
+         * adapter instance; the method implementations are not bound to functions at constructor
+         * invocation time.
+         * <p>
+         * The generated host class extends all non-final public or protected methods, and forwards
+         * their invocations to the guest object provided to the constructor. If the guest object
+         * does not contain an invocable member with that name, the super/default method is invoked
+         * instead. If the super method is abstract, an {@link AbstractMethodError} is thrown.
+         * <p>
+         * If the original types collectively have only one abstract method, or have several of
+         * them, but all share the same name, the constructor(s) will check if the {@link Value} is
+         * executable, and if so, will use the passed function as the implementation for all
+         * abstract methods. For consistency, any concrete methods sharing the single abstract
+         * method name will also be overridden by the function.
+         * <p>
+         * For non-void methods, all the conversions supported by {@link Value#as} will be in effect
+         * to coerce the guest methods' return value to the expected Java return type.
+         * <p>
+         * Instances of the host class have the following additional special members:
+         * <ul>
+         * <li>{@code super}: provides access to the super methods of the host class via a wrapper
+         * object. Can be used to call super methods from guest method overrides.
+         * <li>{@code this}: returns the original guest object.
+         * </ul>
+         * <p>
+         * Example:<br>
+         *
+         * <pre>
+         * <code>
+         * Object hostClass = env.createHostAdapterClass(new Class<?>[]{Superclass.class, Interface.class});
+         * // generates a class along the lines of:
+         *
+         * public class Adapter extends Superclass implements Interface {
+         *   private Value delegate;
+         *
+         *   public Adapter(Value delegate) { this.delegate = delegate; }
+         *
+         *   public method(Object... args) {
+         *      if (delegate.canInvokeMember("method") {
+         *        return delegate.invokeMember("method", args);
+         *      } else {
+         *        return super.method(args);
+         *      }
+         *   }
+         * }
+         *
+         * // and can be instantiated as follows:
+         * Object instance = InteropLibrary.getUncached().instantiate(hostClass, guestObject);
+         * assert InteropLibrary.getUncached().isMetaInstance(hostClass, instance);
+         * </code>
+         * </pre>
+         *
+         * @param types the types to extend. Must be non-null and contain at least one extensible
+         *            superclass or interface, and at most one superclass. All types must be public,
+         *            accessible, and allow implementation.
+         * @return a host class that can be instantiated to create instances of a host class that
+         *         extends all the provided host types. The host class may be cached.
+         * @throws IllegalArgumentException if the types are not extensible or more than one
+         *             superclass is given.
+         * @throws SecurityException if host access does not allow creating adapter classes for
+         *             these types.
+         * @throws UnsupportedOperationException if creating adapter classes is not supported on
+         *             this runtime at all, which is currently the case for native images.
+         * @throws NullPointerException if {@code types} is null
+         *
+         * @see #createHostAdapterClassWithStaticOverrides(Class[], Object)
+         * @since 20.3.0
+         */
+        @TruffleBoundary
+        public Object createHostAdapterClass(Class<?>[] types) {
+            Objects.requireNonNull(types, "types");
+            return createHostAdapterClassImpl(types, null);
+        }
+
+        /**
+         * Like {@link #createHostAdapterClass(Class[])} but creates a Java host adapter class with
+         * class-level overrides, i.e., the guest object provided as {@code classOverrides} is
+         * statically bound to the class rather than instances of the class. Returns a host class
+         * that can be {@linkplain com.oracle.truffle.api.interop.InteropLibrary#instantiate
+         * instantiated} to create instances of the provided host {@code types}, (non-final) methods
+         * of which delegate to the guest object provided as {@code classOverrides}.
+         * <p>
+         * Allows creating host adapter class hierarchies, i.e., the returned class can be used as a
+         * superclass of other host adapter classes. Note that classes created with method cannot be
+         * cached. Therefore, this feature should be used sparingly.
+         * <p>
+         * See {@link #createHostAdapterClass(Class[])} for more details.
+         *
+         * @param types the types to extend. Must be non-null and contain at least one extensible
+         *            superclass or interface, and at most one superclass. All types must be public,
+         *            accessible, and allow implementation.
+         * @param classOverrides a guest object with class-level overrides. If not null, the object
+         *            is bound to the class, not to any instance. Consequently, the generated
+         *            constructors are changed to not take an object; all instances will share the
+         *            same overrides object. Note that since a new class has to be generated for
+         *            every overrides object instance and cannot be shared, use of this feature is
+         *            discouraged; it is provided only for compatibility reasons.
+         * @return a host class symbol that can be instantiated to create instances of a host class
+         *         that extends all the provided host types.
+         * @throws IllegalArgumentException if the types are not extensible or more than one
+         *             superclass is given.
+         * @throws SecurityException if host access does not allow creating adapter classes for
+         *             these types.
+         * @throws UnsupportedOperationException if creating adapter classes is not supported on
+         *             this runtime at all, which is currently the case for native images.
+         * @throws NullPointerException if either {@code types} or {@code classOverrides} is null.
+         *
+         * @see #createHostAdapterClass(Class[])
+         * @since 20.3.0
+         */
+        @TruffleBoundary
+        public Object createHostAdapterClassWithStaticOverrides(Class<?>[] types, Object classOverrides) {
+            Objects.requireNonNull(types, "types");
+            Objects.requireNonNull(classOverrides, "classOverrides");
+            return createHostAdapterClassImpl(types, classOverrides);
+        }
+
+        /**
+         * Find or create a context-bound logger. The returned {@link TruffleLogger} always uses a
+         * logging handler and options from this execution environment context and does not depend
+         * on being entered on any thread.
+         * <p>
+         * If a logger with a given name already exists it's returned. Otherwise, a new logger is
+         * created.
+         * <p>
+         * Unlike loggers created by
+         * {@link TruffleLogger#getLogger(java.lang.String, java.lang.String)
+         * TruffleLogger.getLogger} loggers created by this method are bound to a single context.
+         * There may be more logger instances having the same name but each bound to a different
+         * context. Languages should never store the returned logger into a static field. If the
+         * context policy is more permissive than {@link ContextPolicy#EXCLUSIVE} the returned
+         * logger must not be stored in a TruffleLanguage subclass. It is recommended to create all
+         * language loggers in {@link TruffleLanguage#createContext(Env)}.
+         *
+         * @param loggerName the name of a {@link TruffleLogger}, if a {@code loggerName} is null or
+         *            empty a root logger for language or instrument is returned
+         * @return a {@link TruffleLogger}
+         * @since 21.1
+         *
+         */
+        @TruffleBoundary
+        public TruffleLogger getLogger(String loggerName) {
+            String languageId = this.spi.languageInfo.getId();
+            TruffleLogger.LoggerCache loggerCache = (TruffleLogger.LoggerCache) LanguageAccessor.engineAccess().getContextLoggerCache(this.polyglotLanguageContext);
+            return TruffleLogger.getLogger(languageId, loggerName, loggerCache);
+        }
+
+        /**
+         * Find or create a context-bound logger. The returned {@link TruffleLogger} always uses a
+         * logging handler and options from this execution environment context and does not depend
+         * on being entered on any thread.
+         * <p>
+         * If a logger with a given name already exists it's returned. Otherwise, a new logger is
+         * created.
+         * <p>
+         * Unlike loggers created by
+         * {@link TruffleLogger#getLogger(java.lang.String, java.lang.String)
+         * TruffleLogger.getLogger} loggers created by this method are bound to a single context.
+         * There may be more logger instances having the same name but each bound to a different
+         * context. Languages should never store the returned logger into a static field. If the
+         * context policy is more permissive than {@link ContextPolicy#EXCLUSIVE} the returned
+         * logger must not be stored in a TruffleLanguage subclass. It is recommended to create all
+         * language loggers in {@link TruffleLanguage#createContext(Env)}.
+         *
+         * @param forClass the {@link Class} to create a logger for
+         * @return a {@link TruffleLogger}
+         * @since 21.1
+         */
+        @TruffleBoundary
+        public TruffleLogger getLogger(Class<?> forClass) {
+            Objects.requireNonNull(forClass, "Class must be non null.");
+            return getLogger(forClass.getName());
+        }
+
+        /**
+         * Submits a thread local action to be performed at the next guest language safepoint on a
+         * provided set of threads, once for each thread. If the threads array is <code>null</code>
+         * then the thread local action will be performed on all alive threads. The submitted
+         * actions are processed in the same order as they are submitted in. The action can be
+         * synchronous or asynchronous, side-effecting or non-side-effecting. Please see
+         * {@link ThreadLocalAction} for details.
+         * <p>
+         * It is ensured that a thread local action will get processed as long as the thread stays
+         * active for this context. If a thread becomes inactive before the action can get processed
+         * then the action will not be performed for this thread. If a thread becomes active while
+         * the action is being processed then the action will be performed for that thread as long
+         * as the thread filter includes the thread or <code>null</code> was passed. Already started
+         * synchronous actions will block on activation of a new thread. If the synchronous action
+         * was not yet started on any thread, then the synchronous action will also be performed for
+         * the newly activated thread.
+         * <p>
+         * The method returns a {@link Future} instance that allows to wait for the thread local
+         * action to complete or to cancel a currently performed event.
+         * <p>
+         * Example Usage:
+         *
+         * <pre>
+         * Env env; // supplied
+         *
+         * env.submitThreadLocal(null, new ThreadLocalAction(true, true) {
+         *     &#64;Override
+         *     protected void perform(Access access) {
+         *         // perform action
+         *     }
+         * });
+         * </pre>
+         * <p>
+         * By default thread-local actions are executed once per configured thread and do not repeat
+         * themselves. If a ThreadLocalAction is configured to be
+         * {@link ThreadLocalAction#ThreadLocalAction(boolean, boolean, boolean) recurring} then the
+         * action will automatically be rescheduled in the same configuration until it is
+         * {@link Future#cancel(boolean) cancelled}. For recurring actions, an invocation of
+         * {@link Future#get()} will only wait for the first action to to be performed.
+         * {@link Future#isDone()} will return <code>true</code> only if the action was canceled.
+         * Canceling a recurring action will result in the current event being canceled and no
+         * further events being submitted. Using recurring events should be preferred over
+         * submitting the event again for the current thread while performing the thread-local
+         * action as recurring events are also resubmitted in case all threads leave and later
+         * reenter.
+         * <p>
+         * If the thread local action future needs to be waited on and this might be prone to
+         * deadlocks the
+         * {@link TruffleSafepoint#setBlocked(Node, Interrupter, Interruptible, Object, Runnable, Runnable)
+         * blocking API} can be used to allow other thread local actions to be processed while the
+         * current thread is waiting. The returned {@link Future#get()} method can be used as
+         * {@link Interruptible}. If the underlying polyglot context is already closed, the method
+         * returns a completed {@link Future}.
+         *
+         * @param threads the threads to execute the action on. <code>null</code> for all threads
+         * @param action the action to perform on that thread.
+         * @see ThreadLocalAction
+         * @see TruffleSafepoint
+         * @since 21.1
+         */
+        // Note keep the javadoc in sync with TruffleInstrument.Env.submitThreadLocal
+        public Future<Void> submitThreadLocal(Thread[] threads, ThreadLocalAction action) {
+            return submitThreadLocalInternal(threads, action, true);
+        }
+
+        /**
+         * Registers {@link Closeable} for automatic close on context dispose. In most cases,
+         * closeable should be closed using try-with-resources construct. When a closeable must keep
+         * being opened for the lifetime of a context it should be registered using this method for
+         * automatic close on context dispose. The registered {@link Closeable} is weakly
+         * referenced. The guest language must strongly reference it otherwise, it may be garbage
+         * collected before it's closed.
+         * <p>
+         * If the registered closeable throws an {@link IOException} during close, the thrown
+         * exception does not prevent successful context dispose. The IOException is logged to the
+         * engine logger with a {@link Level#WARNING} level. Other exceptions are rethrown as
+         * internal {@link PolyglotException}.
+         *
+         * @param closeable to be closed on context dispose.
+         * @since 21.2
+         */
+        public void registerOnDispose(Closeable closeable) {
+            LanguageAccessor.engineAccess().registerOnDispose(polyglotLanguageContext, closeable);
+        }
+
+        /*
+         * For reflective use in tests.
+         */
+        Future<Void> submitThreadLocalInternal(Thread[] threads, ThreadLocalAction action, boolean needsEnter) {
+            checkDisposed();
+            try {
+                return LanguageAccessor.ENGINE.submitThreadLocal(LanguageAccessor.ENGINE.getContext(polyglotLanguageContext), polyglotLanguageContext, threads, action, needsEnter);
+            } catch (Throwable t) {
+                throw engineToLanguageException(t);
+            }
+        }
+
+        private Object createHostAdapterClassImpl(Class<?>[] types, Object classOverrides) {
+            checkDisposed();
+            try {
+                if (types.length == 0) {
+                    throw new IllegalArgumentException("Expected at least one type.");
+                }
+                return LanguageAccessor.engineAccess().createHostAdapterClass(polyglotLanguageContext, types, classOverrides);
+            } catch (Throwable t) {
+                throw engineToLanguageException(t);
             }
         }
 
@@ -2904,11 +3653,13 @@ public abstract class TruffleLanguage<C> {
             return getSpi().isObjectOfLanguage(obj);
         }
 
+        @SuppressWarnings("deprecation")
         Iterable<Scope> findLocalScopes(Node node, Frame frame) {
             assert node != null;
             return getSpi().findLocalScopes(context, node, frame);
         }
 
+        @SuppressWarnings("deprecation")
         Iterable<Scope> findTopScopes() {
             return getSpi().findTopScopes(context);
         }
@@ -2997,14 +3748,17 @@ public abstract class TruffleLanguage<C> {
     }
 
     /**
-     * Represents a reference to the language to be stored in an AST. A reference can be accessed
-     * using {@link Node#lookupLanguageReference(Class)} and the current language can be accessed
-     * using the {@link LanguageReference#get()} method of the returned reference.
+     * Represents a reference to the current language instance. The current language is a thread
+     * local value that potentially changes when polyglot context is entered or left. Language
+     * references are created using {@link #create(Class)} and are intended to be stored in static
+     * final fields and accessed at runtime using {@link LanguageReference#get(Node)} with the
+     * current {@link Node}, if available, as parameter.
      * <p>
-     * The current language might vary between {@link RootNode#execute(VirtualFrame) executions} if
-     * the reference is used with interoperability APIs in the AST of a foreign language.
+     * Example intended usage:
      *
-     * @since 19.0
+     * See {@link ContextReference} for a full usage example.
+     *
+     * @since 0.25 revised in 21.3
      */
     @SuppressWarnings("rawtypes")
     public abstract static class LanguageReference<L extends TruffleLanguage> {
@@ -3018,29 +3772,119 @@ public abstract class TruffleLanguage<C> {
         }
 
         /**
-         * Returns the current language of the current execution context. If a context is accessed
-         * during {@link TruffleLanguage#createContext(Env) context creation} or in the language
-         * class constructor an {@link IllegalStateException} is thrown. This methods is designed to
-         * be called safely from compiled code paths.
-         * <p>
-         * The current language might vary between {@link RootNode#execute(VirtualFrame) executions}
-         * if the reference is used with interoperability APIs in the AST of a foreign language.
-         *
          * @since 19.0
+         * @deprecated in 21.3, use {@link #get(Node)} instead.
          */
+        @Deprecated
         public abstract L get();
+
+        /**
+         * Returns the current language instance associated with the current thread. An enclosing
+         * node should be provided as parameter if available, otherwise <code>null</code> may be
+         * provided. This method is designed to be called safely from compiled code paths. In order
+         * to maximize efficiency in compiled code paths, a partial evaluation constant and adopted
+         * node should be passed as parameter. If this is the case then the return context will get
+         * constant folded in compiled code paths if there is a only single context instance for the
+         * enclosing engine or lookup location/node.
+         * <p>
+         * The current language will not change for {@link RootNode#execute(VirtualFrame)
+         * executions} of {@link RootNode roots} of the current language. For roots of other
+         * languages, e.g. if invoked through the interoperability protocol, the language might
+         * change between consecutive executions. It is recommended to *not* cache values of the
+         * language in the AST to reduce footprint. Getting it through a language reference will
+         * either constant fold or be very efficient in compiled code paths.
+         * <p>
+         * If a context is accessed during {@link TruffleLanguage#createContext(Env) context
+         * creation}, on an unknown Thread, or in the language class constructor an
+         * {@link IllegalStateException} is thrown.
+         *
+         * @see ContextReference for a full usage example
+         * @since 21.3
+         */
+        public abstract L get(Node node);
+
+        /**
+         * Creates a new instance of a langauge reference for an registered language. Throws
+         * {@link IllegalArgumentException} if the provided language class is not
+         * {@link Registration registered}. Guaranteed to always return the same context reference
+         * for a given language class.
+         * <p>
+         * See {@link LanguageReference} for a usage example.
+         *
+         * @since 21.3
+         */
+        public static <T extends TruffleLanguage<?>> LanguageReference<T> create(Class<T> languageClass) {
+            Objects.requireNonNull(languageClass);
+            return LanguageAccessor.ENGINE.createLanguageReference(null, languageClass);
+        }
 
     }
 
     /**
-     * Represents a reference to the current context to be stored in an AST. A reference can be
-     * accessed using {@link Node#lookupContextReference(Class)} and the current context can be
-     * accessed using the {@link ContextReference#get()} method of the returned reference.
+     * Represents a reference to the current context. The current context is a thread local value
+     * that changes when polyglot context is entered or left. Context references are created using
+     * {@link #create(Class)} and are intended to be stored in static final fields and accessed at
+     * runtime using {@link ContextReference#get(Node)} with the current {@link Node}, if available,
+     * as parameter.
      * <p>
-     * The current context might vary between {@link RootNode#execute(VirtualFrame) executions} if
-     * resources or code is shared between multiple contexts.
+     * Example intended usage:
      *
-     * @since 0.25
+     * <pre>
+     * public final class MyContext  {
+     *
+     *     private static final ContextReference&lt;MyContext&gt; REFERENCE =
+     *                    ContextReference.create(MyLanguage.class);
+     *
+     *     public static MyContext get(Node node) {
+     *          return REFERENCE.get(node);
+     *     }
+     * }
+     *
+     * &#64;Registration(...)
+     * public final class MyLanguage extends TruffleLanguage<MyContext> {
+     *
+     *    // ...
+     *
+     *    private static final LanguageReference&lt;MyLanguage&gt; REFERENCE =
+     *                   LanguageReference.create(MyLanguage.class);
+     *
+     *    public static MyLanguage get(Node node) {
+     *         return REFERENCE.get(node);
+     *    }
+     * }
+     *
+     * public final class MyLanguageNode extends Node {
+     *
+     *     // ...
+     *     public Object execute(VirtualFrame frame) {
+     *         MyContext currentContext = getContext();
+     *         MyLanguage currentLanguage = getLanguage();
+     *
+     *         // use context or language on the fast-path
+     *
+     *         // references can also be used behind the boundary
+     *         exampleBoundary();
+     *     }
+     *
+     *     &#64;TruffleBoundary
+     *     public void exampleBoundary() {
+     *        MyLanguage currentLanguage = MyLanguage.get(null);
+     *        MyContext currentContext = MyContext.get(null);
+     *
+     *        // use context or language on the slow-path
+     *     }
+     *
+     *     public final MyLanguage getLanguage() {
+     *         return MyLanguage.get(this);
+     *     }
+     *
+     *     public final MyContext getContext() {
+     *         return MyContext.get(this);
+     *     }
+     * }
+     * </pre>
+     *
+     * @since 0.25 revised in 21.3
      */
     public abstract static class ContextReference<C> {
 
@@ -3053,18 +3897,51 @@ public abstract class TruffleLanguage<C> {
         }
 
         /**
-         * Returns the current language context of the current execution context. If a context is
-         * accessed during {@link TruffleLanguage#createContext(Env) context creation} or in the
-         * language class constructor an {@link IllegalStateException} is thrown. This methods is
-         * designed to be called safely from compiled code paths.
-         * <p>
-         * The current context might vary between {@link RootNode#execute(VirtualFrame) executions}
-         * if resources or code is shared between multiple contexts.
-         *
          * @since 0.25
+         * @deprecated in 21.3, use {@link #get(Node)} instead.
          */
         @SuppressWarnings("unchecked")
+        @Deprecated
         public abstract C get();
+
+        /**
+         * Returns the current language context associated with the current thread. An enclosing
+         * node should be provided as parameter if available, otherwise <code>null</code> may be
+         * provided. This method is designed to be called safely from compiled code paths. In order
+         * to maximize efficiency in compiled code paths, a partial evaluation constant and adopted
+         * node should be passed as parameter. If this is the case then the return context will get
+         * constant folded in compiled code paths if there is a only single language instance for
+         * the enclosing engine or lookup location/node.
+         * <p>
+         * The current context might vary between {@link RootNode#execute(VirtualFrame) executions}
+         * if resources or code is {@link ContextPolicy#SHARED shared} between multiple contexts or
+         * when used as part of an InteropLibrary export. It is recommended to *not* cache values of
+         * the context in the AST to reduce footprint. Getting it through a context reference will
+         * either constant fold or be very efficient in compiled code paths.
+         * <p>
+         * If a context is accessed during {@link TruffleLanguage#createContext(Env) context
+         * creation}, on an unknown Thread, or in the language class constructor an
+         * {@link IllegalStateException} is thrown.
+         *
+         * @see ContextReference for a full usage example
+         * @since 21.3
+         */
+        public abstract C get(Node node);
+
+        /**
+         * Creates a new instance of a context reference for an registered language. Throws
+         * {@link IllegalArgumentException} if the provided language class is not
+         * {@link Registration registered}. Guaranteed to always return the same context reference
+         * for a given language class.
+         * <p>
+         * See {@link ContextReference} for a usage example.
+         *
+         * @since 21.3
+         */
+        public static <T extends TruffleLanguage<C>, C> ContextReference<C> create(Class<T> languageClass) {
+            Objects.requireNonNull(languageClass);
+            return LanguageAccessor.ENGINE.createContextReference(null, languageClass);
+        }
     }
 
     /**
@@ -3164,6 +4041,27 @@ public abstract class TruffleLanguage<C> {
 
     }
 
+    /**
+     * Mode of exit operation.
+     *
+     * @since 22.0
+     * @see #exitContext(Object, ExitMode, int)
+     */
+    public enum ExitMode {
+        /**
+         * Natural exit that occurs during normal context close.
+         *
+         * @since 22.0
+         *
+         */
+        NATURAL,
+        /**
+         * Hard exit triggered by {@link TruffleContext#closeExited(Node, int)}.
+         *
+         * @since 22.0
+         */
+        HARD
+    }
 }
 
 class TruffleLanguageSnippets {
@@ -3199,6 +4097,7 @@ class TruffleLanguageSnippets {
         }
 
         final Assumption singleThreaded = Truffle.getRuntime().createAssumption();
+        final List<Thread> startedThreads = new ArrayList<>();
 
     }
 
@@ -3343,6 +4242,59 @@ class TruffleLanguageSnippets {
     }
     // END: TruffleLanguageSnippets.MultiThreadedLanguage#initializeThread
 
+    abstract
+    // BEGIN: TruffleLanguageSnippets.AsyncThreadLanguage#finalizeContext
+    class AsyncThreadLanguage extends TruffleLanguage<Context> {
+
+        @Override
+        protected Context createContext(Env env) {
+            return new Context(env);
+        }
+
+        @Override
+        protected boolean isThreadAccessAllowed(Thread thread,
+                        boolean singleThreaded) {
+            // allow access from any thread instead of just one
+            return true;
+        }
+
+        @Override
+        protected void initializeContext(Context context) throws Exception {
+            // create and start a Thread for the asynchronous task
+            // remeber the Thread reference to stop and join it in
+            // the finalizeContext
+            Thread t = context.env.createThread(new Runnable() {
+                @Override
+                public void run() {
+                    // asynchronous task
+                }
+            });
+            context.startedThreads.add(t);
+            t.start();
+        }
+
+        @Override
+        protected void finalizeContext(Context context) {
+            // stop and join all the created Threads
+            boolean interrupted = false;
+            for (int i = 0; i < context.startedThreads.size();) {
+                Thread threadToJoin  = context.startedThreads.get(i);
+                try {
+                    if (threadToJoin != Thread.currentThread()) {
+                        threadToJoin.interrupt();
+                        threadToJoin.join();
+                    }
+                    i++;
+                } catch (InterruptedException ie) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+    // END: TruffleLanguageSnippets.AsyncThreadLanguage#finalizeContext
 
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -56,7 +56,7 @@ public abstract class ToCharNode extends Node {
 
     @Specialization
     static char doByte(byte arg) {
-        return (char) arg;
+        return (char) Byte.toUnsignedInt(arg);
     }
 
     @Specialization
@@ -69,12 +69,12 @@ public abstract class ToCharNode extends Node {
         try {
             int asInt = args.asInt(arg);
             if (asInt > Character.MAX_VALUE) {
-                CompilerDirectives.transferToInterpreter();
+                CompilerDirectives.transferToInterpreterAndInvalidate();
                 throw UnsupportedTypeException.create(new Object[]{arg});
             }
             return (char) asInt;
         } catch (UnsupportedMessageException e) {
-            CompilerDirectives.transferToInterpreter();
+            CompilerDirectives.transferToInterpreterAndInvalidate();
             throw UnsupportedTypeException.create(new Object[]{arg});
         }
     }

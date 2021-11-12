@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -42,8 +42,9 @@ package org.graalvm.polyglot;
 
 import java.io.PrintStream;
 import java.io.PrintWriter;
+import java.time.Duration;
 
-import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractExceptionImpl;
+import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractExceptionDispatch;
 import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractStackFrameImpl;
 
 /**
@@ -69,6 +70,8 @@ import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractStackFrameImpl;
  * error. For syntax errors a {@link #getSourceLocation() location} may be available.
  * <li>{@link #isIncompleteSource() Incomplete Source}: Is <code>true</code> if this returns a
  * {@link #isSyntaxError() syntax error} that indicates that the source is incomplete.
+ * <li>{@link #isResourceExhausted() Resource exhausted}: Is <code>true</code> if a resource limit
+ * e.g. the maximum memory was exhausted.
  * <li>{@link #isInternalError() Internal Error}: Is <code>true</code> if an internal implementation
  * error occurred in the polyglot runtime, the guest language or an instrument. It is not
  * recommended to show such errors to the user in production. Please consider filing issues for
@@ -82,12 +85,14 @@ import org.graalvm.polyglot.impl.AbstractPolyglotImpl.AbstractStackFrameImpl;
 @SuppressWarnings("serial")
 public final class PolyglotException extends RuntimeException {
 
-    final AbstractExceptionImpl impl;
+    final AbstractExceptionDispatch dispatch;
+    final Object impl;
 
-    PolyglotException(String message, AbstractExceptionImpl impl) {
+    PolyglotException(String message, AbstractExceptionDispatch dispatch, Object receiver) {
         super(message);
-        this.impl = impl;
-        impl.onCreate(this);
+        this.dispatch = dispatch;
+        this.impl = receiver;
+        dispatch.onCreate(receiver, this);
         // we need to materialize the stack if this exception is printed as cause of another error.
         // unfortunately we cannot detect this easily
         super.setStackTrace(getStackTrace());
@@ -100,7 +105,7 @@ public final class PolyglotException extends RuntimeException {
      */
     @Override
     public void printStackTrace() {
-        impl.printStackTrace(System.err);
+        dispatch.printStackTrace(impl, System.err);
     }
 
     /**
@@ -111,7 +116,7 @@ public final class PolyglotException extends RuntimeException {
 
     @Override
     public void printStackTrace(PrintStream s) {
-        impl.printStackTrace(s);
+        dispatch.printStackTrace(impl, s);
     }
 
     /**
@@ -121,7 +126,7 @@ public final class PolyglotException extends RuntimeException {
      */
     @Override
     public void printStackTrace(PrintWriter s) {
-        impl.printStackTrace(s);
+        dispatch.printStackTrace(impl, s);
     }
 
     /**
@@ -145,7 +150,7 @@ public final class PolyglotException extends RuntimeException {
      */
     @Override
     public StackTraceElement[] getStackTrace() {
-        return impl.getStackTrace();
+        return dispatch.getStackTrace(impl);
     }
 
     /**
@@ -157,7 +162,7 @@ public final class PolyglotException extends RuntimeException {
      */
     @Override
     public String getMessage() {
-        return impl.getMessage();
+        return dispatch.getMessage(impl);
     }
 
     /**
@@ -167,7 +172,7 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public SourceSection getSourceLocation() {
-        return impl.getSourceLocation();
+        return dispatch.getSourceLocation(impl);
     }
 
     /**
@@ -222,7 +227,7 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public Iterable<StackFrame> getPolyglotStackTrace() {
-        return impl.getPolyglotStackTrace();
+        return dispatch.getPolyglotStackTrace(impl);
     }
 
     /**
@@ -233,7 +238,7 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public boolean isHostException() {
-        return impl.isHostException();
+        return dispatch.isHostException(impl);
     }
 
     /**
@@ -244,7 +249,7 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public boolean isGuestException() {
-        return !impl.isHostException();
+        return !dispatch.isHostException(impl);
     }
 
     /**
@@ -258,7 +263,7 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public Throwable asHostException() {
-        return impl.asHostException();
+        return dispatch.asHostException(impl);
     }
 
     /**
@@ -270,7 +275,32 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public boolean isInternalError() {
-        return impl.isInternalError();
+        return dispatch.isInternalError(impl);
+    }
+
+    /**
+     * Returns <code>true</code> if this exception indicates that a resource limit was exceeded,
+     * else <code>false</code>. Resource limit exceeded errors may be raised for the following
+     * reasons:
+     * <ul>
+     * <li>The host runtime run out of memory or stack space. For example if host runtime throws
+     * {@link OutOfMemoryError} or {@link StackOverflowError}, then they will be translated to a
+     * {@link PolyglotException} that return <code>true</code> for {@link #isResourceExhausted()}.
+     * <li>A configured {@link ResourceLimits resource limit} was exceeded.
+     * <li>A runtime specific per context resource limit was exceeded. Depending on the host runtime
+     * implementation additional options to restrict the resource usage of a context may be
+     * specified using options.
+     * </ul>
+     * <p>
+     * Resource limit exceptions may be originating from the {@link #isHostException() host} or
+     * {@link #isGuestException() guest}. Resource limit exceeded errors are never
+     * {@link #isInternalError() internal}, but may have caused the context to be
+     * {@link #isCancelled() cancelled} such that it is no longer usable.
+     *
+     * @since 20.2
+     */
+    public boolean isResourceExhausted() {
+        return dispatch.isResourceExhausted(impl);
     }
 
     /**
@@ -282,18 +312,30 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public boolean isCancelled() {
-        return impl.isCancelled();
+        return dispatch.isCancelled(impl);
+    }
+
+    /**
+     * Returns <code>true</code> if the current application thread was interrupted by an
+     * {@link InterruptedException}, or by calling {@link Context#interrupt(Duration)} from the
+     * host.
+     *
+     * @since 20.3
+     */
+    public boolean isInterrupted() {
+        return dispatch.isInterrupted(impl);
     }
 
     /**
      * Returns <code>true</code> if this exception is caused by an attempt of a guest language
-     * program to exit the application using a builtin command. The provided exit code can be
-     * accessed using {@link #getExitStatus()}.
+     * program to exit the application. The provided exit code can be accessed using
+     * {@link #getExitStatus()}. This can be the result of either the soft or the hard exit.
      *
      * @since 19.0
+     * @see Context
      */
     public boolean isExit() {
-        return impl.isExit();
+        return dispatch.isExit(impl);
     }
 
     /**
@@ -303,7 +345,7 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public boolean isSyntaxError() {
-        return impl.isSyntaxError();
+        return dispatch.isSyntaxError(impl);
     }
 
     /**
@@ -322,7 +364,7 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public boolean isIncompleteSource() {
-        return impl.isIncompleteSource();
+        return dispatch.isIncompleteSource(impl);
     }
 
     /**
@@ -332,18 +374,20 @@ public final class PolyglotException extends RuntimeException {
      * @since 19.0
      */
     public Value getGuestObject() {
-        return impl.getGuestObject();
+        return dispatch.getGuestObject(impl);
     }
 
     /**
      * Returns the exit status if this exception indicates that the application was {@link #isExit()
-     * exited}. The exit status is intended to be passed to {@link System#exit(int)}.
+     * exited}. The exit status is intended to be passed to {@link System#exit(int)}. In case of
+     * hard exit the application can be configured to call {@link System#exit(int)} directly using
+     * {@link Context.Builder#useSystemExit(boolean)}.
      *
-     * @see #isExit()
+     * @see Context
      * @since 19.0
      */
     public int getExitStatus() {
-        return impl.getExitStatus();
+        return dispatch.getExitStatus(impl);
     }
 
     /**

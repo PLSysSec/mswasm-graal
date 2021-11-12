@@ -40,128 +40,59 @@
  */
 package org.graalvm.wasm.nodes;
 
-import com.oracle.truffle.api.frame.FrameSlotTypeException;
-import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.CompilerDirectives;
 import org.graalvm.wasm.WasmCodeEntry;
 import org.graalvm.wasm.mswasm.Handle; // MSWasm
 
 public interface WasmNodeInterface {
     WasmCodeEntry codeEntry();
 
-    /* LOCALS operations */
+    /* Stack operations */
 
-    default long getLong(VirtualFrame frame, int slot) {
-        try {
-            return frame.getLong(codeEntry().localSlot(slot));
-        } catch (FrameSlotTypeException e) {
-            throw new RuntimeException(e);
-        }
+    default void push(long[] stack, int slot, long value) {
+        stack[slot] = value;
     }
 
-    default int getInt(VirtualFrame frame, int slot) {
-        try {
-            return frame.getInt(codeEntry().localSlot(slot));
-        } catch (FrameSlotTypeException e) {
-            throw new RuntimeException(e);
-        }
+    default void pushInt(long[] stack, int slot, int value) {
+        push(stack, slot, value & 0xffffffffL);
     }
 
-    default float getFloat(VirtualFrame frame, int slot) {
-        try {
-            return frame.getFloat(codeEntry().localSlot(slot));
-        } catch (FrameSlotTypeException e) {
-            throw new RuntimeException(e);
-        }
+    default void pushFloat(long[] stack, int slot, float value) {
+        pushInt(stack, slot, Float.floatToRawIntBits(value));
     }
 
-    default double getDouble(VirtualFrame frame, int slot) {
-        try {
-            return frame.getDouble(codeEntry().localSlot(slot));
-        } catch (FrameSlotTypeException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    // MSWasm - get local handle
-    default Handle getHandle(VirtualFrame frame, int slot) {
-        try {
-            return (Handle) frame.getObject(codeEntry().localSlot(slot));
-        } catch (FrameSlotTypeException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    default void setLong(VirtualFrame frame, int slot, long value) {
-        frame.setLong(codeEntry().localSlot(slot), value);
-    }
-
-    default void setInt(VirtualFrame frame, int slot, int value) {
-        frame.setInt(codeEntry().localSlot(slot), value);
-    }
-
-    default void setFloat(VirtualFrame frame, int slot, float value) {
-        frame.setFloat(codeEntry().localSlot(slot), value);
-    }
-
-    default void setDouble(VirtualFrame frame, int slot, double value) {
-        frame.setDouble(codeEntry().localSlot(slot), value);
-    }
-
-    // MSWasm - set local handle
-    default void setHandle(VirtualFrame frame, int slot, Handle value) {
-        frame.setObject(codeEntry().localSlot(slot), value);
-    }
-
-    /* STACK operations */
-
-    default void push(VirtualFrame frame, int slot, long value) {
-        frame.setLong(codeEntry().stackSlot(slot), value);
-    }
-
-    default void pushInt(VirtualFrame frame, int slot, int value) {
-        push(frame, slot, value & 0xffffffffL);
-    }
-
-    default void pushFloat(VirtualFrame frame, int slot, float value) {
-        pushInt(frame, slot, Float.floatToRawIntBits(value));
-    }
-
-    default void pushDouble(VirtualFrame frame, int slot, double value) {
-        push(frame, slot, Double.doubleToRawLongBits(value));
+    default void pushDouble(long[] stack, int slot, double value) {
+        push(stack, slot, Double.doubleToRawLongBits(value));
     }
 
     // MSWasm - push local handle
     default void pushHandle(VirtualFrame frame, int slot, Handle value) {
-        frame.setObject(codeEntry().stackSlot(slot), value);
+        push(stack, slot, Handle.handleToRawLongBits(value));
     }
 
-    default long pop(VirtualFrame frame, int slot) {
-        try {
-            return frame.getLong(codeEntry().stackSlot(slot));
-        } catch (FrameSlotTypeException e) {
-            throw new RuntimeException(e);
+    default long pop(long[] stack, int slot) {
+        long result = stack[slot];
+        if (CompilerDirectives.inCompiledCode()) {
+            // Needed to avoid keeping track of popped slots in FrameStates.
+            stack[slot] = 0L;
         }
+        return result;
     }
 
-    default int popInt(VirtualFrame frame, int slot) {
-        return (int) pop(frame, slot);
+    default int popInt(long[] stack, int slot) {
+        return (int) pop(stack, slot);
     }
 
-    default float popAsFloat(VirtualFrame frame, int slot) {
-        return Float.intBitsToFloat(popInt(frame, slot));
+    default float popAsFloat(long[] stack, int slot) {
+        return Float.intBitsToFloat(popInt(stack, slot));
     }
 
-    default double popAsDouble(VirtualFrame frame, int slot) {
-        return Double.longBitsToDouble(pop(frame, slot));
+    default double popAsDouble(long[] stack, int slot) {
+        return Double.longBitsToDouble(pop(stack, slot));
     }
 
-    // MSWasm - pop local handle
-    default Handle popHandle(VirtualFrame frame, int slot) {
-        try {
-            return (Handle)frame.getObject(codeEntry().stackSlot(slot));
-        } catch (FrameSlotTypeException e) {
-            throw new RuntimeException(e);
-        }
+    default Handle popAsHandle(long[] stack, int slot) {
+        return Handle.longBitsToHandle(pop(stack, slot));
     }
 
 }

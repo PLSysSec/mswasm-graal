@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,7 +39,13 @@ public class KnownTruffleTypes extends AbstractKnownTruffleTypes {
     public final ResolvedJavaType classFrameSlotKind = lookupType("com.oracle.truffle.api.frame.FrameSlotKind");
     public final ResolvedJavaType classExactMath = lookupType("com.oracle.truffle.api.ExactMath");
     public final ResolvedJavaType classArrayUtils = lookupType("com.oracle.truffle.api.ArrayUtils");
+    public final ResolvedJavaType classNode = lookupType("com.oracle.truffle.api.nodes.Node");
+    public final ResolvedJavaType classRootNode = lookupType("com.oracle.truffle.api.nodes.RootNode");
     public final ResolvedJavaType classMethodHandle = lookupType(MethodHandle.class);
+
+    public final ResolvedJavaField fieldTags = findField(classFrameClass, "tags");
+    public final ResolvedJavaField fieldLocals = findField(classFrameClass, "locals");
+    public final ResolvedJavaField fieldPrimitiveLocals = findField(classFrameClass, "primitiveLocals");
 
     public final ResolvedJavaField fieldFrameDescriptorDefaultValue = findField(classFrameDescriptor, "defaultValue");
     public final ResolvedJavaField fieldFrameDescriptorVersion = findField(classFrameDescriptor, "version");
@@ -55,6 +61,8 @@ public class KnownTruffleTypes extends AbstractKnownTruffleTypes {
     public final ResolvedJavaField fieldFrameSlotKindTag = findField(classFrameSlotKind, "tag");
 
     public final ResolvedJavaField fieldOptimizedAssumptionIsValid = findField(lookupType("com.oracle.truffle.api.impl.AbstractAssumption"), "isValid");
+
+    public final ResolvedJavaField fieldNodeParent = findField(classNode, "parent");
 
     public final ResolvedJavaField fieldStringValue = findField(lookupType(String.class), "value");
 
