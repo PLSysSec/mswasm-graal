@@ -698,37 +698,43 @@ public class BinaryParser extends BinaryStreamParser {
                     state.push(I32_TYPE);
                     break;
                 }
-                case Instructions.NEW_SEGMENT:
+                case Instructions.NEW_SEGMENT: {
                     state.popChecked(I32_TYPE);
                     state.push(HANDLE_TYPE);
                     break;
-                case Instructions.FREE_SEGMENT:
+                }
+                case Instructions.FREE_SEGMENT: {
                     state.popChecked(HANDLE_TYPE);
                     break;
-                case Instructions.SEGMENT_SLICE:
+                }
+                case Instructions.SEGMENT_SLICE: {
                     state.popChecked(HANDLE_TYPE);
                     state.popChecked(I32_TYPE);
                     state.popChecked(I32_TYPE);
                     state.push(HANDLE_TYPE);
                     break;
+                }
                 case Instructions.HANDLE_ADD:
-                case Instructions.HANDLE_SUB:
+                case Instructions.HANDLE_SUB: {
                     state.popChecked(I32_TYPE);
                     state.popChecked(HANDLE_TYPE);
                     state.push(HANDLE_TYPE);
                     break;
+                }
                 case Instructions.NULL_HANDLE:
                     state.push(HANDLE_TYPE);
                     break;
-                case Instructions.HANDLE_GET_OFFSET:
+                case Instructions.HANDLE_GET_OFFSET: {
                     state.popChecked(HANDLE_TYPE);
                     state.push(I32_TYPE);
                     break;
-                case Instructions.HANDLE_SET_OFFSET:
+                }
+                case Instructions.HANDLE_SET_OFFSET: {
                     state.popChecked(HANDLE_TYPE);
                     state.popChecked(I32_TYPE);
                     state.push(HANDLE_TYPE);
                     break;
+                }
                 default:
                     readNumericInstructions(state, opcode);
                     break;
