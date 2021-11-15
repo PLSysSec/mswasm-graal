@@ -67,6 +67,7 @@ public interface WasmNodeInterface {
 
     default void pushHandle(long[] stack, int slot, Handle value) {
         push(stack, slot, Handle.handleToRawLongBits(value));
+        // System.out.println("[DEBUG] Pushing handle key at slot " + slot + ": " + stack[slot]);
     }
 
     default long pop(long[] stack, int slot) {
@@ -91,6 +92,7 @@ public interface WasmNodeInterface {
     }
 
     default Handle popAsHandle(long[] stack, int slot) {
+        // System.out.println("[DEBUG] Popping handle key at slot " + slot + ": " + stack[slot]);
         return Handle.longBitsToHandle(pop(stack, slot));
     }
 

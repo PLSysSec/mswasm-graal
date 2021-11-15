@@ -52,6 +52,8 @@ public class Handle {
         this.isSlice = isSlice;
         this.key = generateKey(this);
         keysToHandles.put(key, this);
+        // System.out.println("[DEBUG] Manually defined segment with address = " + startAddress()
+        //                    + ", new key = " + this.key + ": " + keysToHandles.containsKey(this.key));
     }
 
     /*
@@ -72,6 +74,8 @@ public class Handle {
         this.isSlice = false;
         this.key = generateKey(this);
         keysToHandles.put(key, this);
+        // System.out.println("[DEBUG] Created new segment of size " + byteSize + ", address = " + startAddress()
+        //                    + ", key = " + this.key + ": " + keysToHandles.containsKey(this.key));
     }
 
     // Duplicate handle
@@ -85,6 +89,8 @@ public class Handle {
         this.isSlice = other.isSlice;
         this.key = generateKey(this);
         keysToHandles.put(key, this);
+        // System.out.println("[DEBUG] Duplicated segment with address = " + startAddress()
+        //                    + ", new key = " + this.key + ": " + keysToHandles.containsKey(this.key));
     }
 
 
@@ -94,14 +100,17 @@ public class Handle {
     }
 
     public static long handleToRawLongBits(Handle value) {
+        // System.out.println("[DEBUG] Getting key " + value.key + " for handle with address " + value.startAddress());
         return value.key;
     }
 
-    public static Handle longBitsToHandle(long value) {
-        if (!keysToHandles.containsKey(value)) {
+    public static Handle longBitsToHandle(long key) {
+        if (!keysToHandles.containsKey(key)) {
+            // System.out.println("[DEBUG] Couldn't find key " + key + ", returning null handle");
             return nullHandle();
         }
-        return keysToHandles.get(value);
+        // System.out.println("[DEBUG] Found key " + key + ", returning handle with address " + keysToHandles.get(key).startAddress());
+        return keysToHandles.get(key);
     }
 
     /**
@@ -111,7 +120,7 @@ public class Handle {
     @CompilerDirectives.TruffleBoundary
     public static long generateKey(Handle handle) {
         double rand = Math.random();
-        return (long) (0xffffffff_ffffffffL * rand);
+        return (long) (Long.MAX_VALUE * rand);
     }    
     
     public String toString() {

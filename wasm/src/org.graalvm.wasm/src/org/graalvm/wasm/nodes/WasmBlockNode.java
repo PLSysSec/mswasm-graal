@@ -860,25 +860,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     global_set(context, stacklocals, stackPointer, index);
                     break;
                 }
-                case I32_SEGMENT_LOAD: {
-                    /* The memAlign hint is not currently used or taken into account. */
-                    int memAlignOffsetDelta = offsetDelta(data, offset);
-                    offset += memAlignOffsetDelta;
-
-                    // region Load LEB128 Unsigned32 -> memOffset
-                    long valueLength = unsignedIntConstantAndLength(data, offset);
-                    int memOffset = value(valueLength);
-                    int offsetDelta = length(valueLength);
-                    offset += offsetDelta;
-                    // endregion
-
-                    Handle segment = popAsHandle(stacklocals, stackPointer - 1);
-                    segment.add(memOffset);
-
-                    int value = segment.load_i32(this);
-                    pushInt(stacklocals, stackPointer - 1, value);
-                    break;
-                }
+                case I32_SEGMENT_LOAD:
                 case I64_SEGMENT_LOAD:
                 case F32_SEGMENT_LOAD:
                 case F64_SEGMENT_LOAD:
@@ -891,7 +873,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I64_SEGMENT_LOAD16_S:
                 case I64_SEGMENT_LOAD16_U:
                 case I64_SEGMENT_LOAD32_S:
-                case I64_SEGMENT_LOAD32_U: {
+                case I64_SEGMENT_LOAD32_U:
+                case HANDLE_SEGMENT_LOAD: {
                     /* The memAlign hint is not currently used or taken into account. */
                     int memAlignOffsetDelta = offsetDelta(data, offset);
                     offset += memAlignOffsetDelta;
@@ -914,7 +897,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 case I32_SEGMENT_STORE_16:
                 case I64_SEGMENT_STORE_8:
                 case I64_SEGMENT_STORE_16:
-                case I64_SEGMENT_STORE_32: {
+                case I64_SEGMENT_STORE_32:
+                case HANDLE_SEGMENT_STORE: {
                     /* The memAlign hint is not currently used or taken into account. */
                     int memAlignOffsetDelta = offsetDelta(data, offset);
                     offset += memAlignOffsetDelta;
@@ -1485,7 +1469,6 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     break;
                 case NEW_SEGMENT: {
                     new_segment(stacklocals, stackPointer);
-                    stackPointer--;
                     break;
                 }
                 case FREE_SEGMENT: {
@@ -1672,6 +1655,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 push(stack, stackPointer, value);
                 break;
             }
+            case HANDLE_SEGMENT_LOAD: {
+                final Handle value = segment.load_handle(this);
+                pushHandle(stack, stackPointer, value);
+                break;
+            }
             default:
                 throw CompilerDirectives.shouldNotReachHere();
         }
@@ -1725,6 +1713,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case I64_SEGMENT_STORE_32: {
                 final int value = popInt(stack, stackPointer - 1);
                 segment.store_i64_32(this, value);
+                break;
+            }
+            case HANDLE_SEGMENT_STORE: {
+                final Handle value = popAsHandle(stack, stackPointer - 1);
+                segment.store_handle(this, value);
                 break;
             }
             default:
@@ -1851,10 +1844,14 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     private void local_set(long[] stacklocals, int stackPointer, int index) {
         final long value = pop(stacklocals, stackPointer);
         stacklocals[index] = value;
+        // System.out.println("[DEBUG] Setting local: stack idx " + stackPointer + 
+        //                    " --> local idx " + index + ", value " + value);
     }
 
     private void local_get(long[] stacklocals, int stackPointer, int index) {
         long value = stacklocals[index];
+        // System.out.println("[DEBUG] Getting local: local idx " + index + 
+        //                    "--> stack idx " + stackPointer + ", value " + value);
         push(stacklocals, stackPointer, value);
     }
 

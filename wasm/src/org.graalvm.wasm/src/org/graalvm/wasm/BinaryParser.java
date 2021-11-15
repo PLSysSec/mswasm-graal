@@ -665,6 +665,9 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.I64_SEGMENT_LOAD32_U:
                     load(state, I64_TYPE, 32);
                     break;
+                case Instructions.HANDLE_SEGMENT_LOAD:
+                    load(state, HANDLE_TYPE, 64);
+                    break;
                 case Instructions.F32_SEGMENT_STORE:
                     store(state, F32_TYPE, 32);
                     break;
@@ -683,6 +686,9 @@ public class BinaryParser extends BinaryStreamParser {
                 case Instructions.I64_SEGMENT_STORE:
                     store(state, I64_TYPE, 64);
                     break;
+                case Instructions.HANDLE_SEGMENT_STORE:
+                    store(state, HANDLE_TYPE, 64);
+                    break;
                 case Instructions.MEMORY_SIZE: {
                     final int flag = read1();
                     assertIntEqual(flag, 0, Failure.ZERO_FLAG_EXPECTED);
@@ -699,6 +705,7 @@ public class BinaryParser extends BinaryStreamParser {
                     break;
                 }
                 case Instructions.NEW_SEGMENT: {
+                    // System.out.println("[DEBUG] parsing new_segment");
                     state.popChecked(I32_TYPE);
                     state.push(HANDLE_TYPE);
                     break;
@@ -716,8 +723,9 @@ public class BinaryParser extends BinaryStreamParser {
                 }
                 case Instructions.HANDLE_ADD:
                 case Instructions.HANDLE_SUB: {
-                    state.popChecked(I32_TYPE);
+                    // System.out.println("[DEBUG] parsing handle.add");
                     state.popChecked(HANDLE_TYPE);
+                    state.popChecked(I32_TYPE);
                     state.push(HANDLE_TYPE);
                     break;
                 }
