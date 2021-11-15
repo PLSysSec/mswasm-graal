@@ -40,11 +40,14 @@
 ;;
 (module
     (memory 1 1)
-    (func (export "_main") (result i32)
-        i32.const 0
+    (func (export "_main") (result i32) (local $h handle)
+        i32.const 4
+        new_segment
+        set_local $h
+        get_local $h
         i32.const 155
         i32.store
-        i32.const 0
+        get_local $h
         i32.load
     )
 )
