@@ -366,7 +366,7 @@ class EmscriptenBuildTask(GraalWasmBuildTask):
         include_flags = []
         if hasattr(self.project, "includeset"):
             include_flags = ["-I", os.path.join(_suite.dir, "includes", self.project.includeset)]
-        emcc_flags = ["-s", "EXIT_RUNTIME=1", "-s", "STANDALONE_WASM", "-s", "WASM_BIGINT"] + cc_flags
+        emcc_flags = ["-s", "-s", "STANDALONE_WASM", "-s", "WASM_BIGINT"] + cc_flags
         if self.project.isBenchmarkProject():
             emcc_flags = emcc_flags + ["-s", "EXPORTED_FUNCTIONS=" + str(self.benchmark_methods()).replace("'", "\"") + ""]
         subdir_program_names = defaultdict(lambda: [])
