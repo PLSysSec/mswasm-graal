@@ -235,7 +235,8 @@ public final class Instructions {
     public static final int F32_REINTERPRET_I32 = 0xBE;
     public static final int F64_REINTERPRET_I64 = 0xBF;
 
-    public static final int MISC = 0xFC;
+    // Previously 0xFC. Changed to avoid conflict with MSWasm instructions
+    public static final int MISC = 0xFF;
 
     public static final int I32_TRUNC_SAT_F32_S = 0x00;
     public static final int I32_TRUNC_SAT_F32_U = 0x01;
@@ -251,6 +252,20 @@ public final class Instructions {
     public static final int I64_EXTEND8_S = 0xC2;
     public static final int I64_EXTEND16_S = 0xC3;
     public static final int I64_EXTEND32_S = 0xC4;
+
+    // MSWasm custom instructions
+
+    public static final int NEW_SEGMENT = 0xF4;
+    public static final int FREE_SEGMENT = 0xF5;
+    // public static final int SEGMENT_SLICE = 0xF6; // Unused
+    public static final int HANDLE_LOAD = 0xF7;
+    public static final int HANDLE_STORE = 0xF8;
+    public static final int HANDLE_ADD = 0xF9;
+    // public static final int HANDLE_SUB = 0xFA; // Unused
+    public static final int NULL_HANDLE = 0xFB;
+    public static final int HANDLE_GET_OFFSET = 0xFC;
+    public static final int HANDLE_EQ = 0xFD;
+    public static final int HANDLE_LT = 0xFE;
 
     private static String[] decodingTable = new String[256];
 

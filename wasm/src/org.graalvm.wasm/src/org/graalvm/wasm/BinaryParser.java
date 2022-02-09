@@ -51,6 +51,7 @@ import static org.graalvm.wasm.WasmType.F32_TYPE;
 import static org.graalvm.wasm.WasmType.F64_TYPE;
 import static org.graalvm.wasm.WasmType.I32_TYPE;
 import static org.graalvm.wasm.WasmType.I64_TYPE;
+import static org.graalvm.wasm.WasmType.HANDLE_TYPE;
 import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_DECLARATION_SIZE;
 import static org.graalvm.wasm.constants.Sizes.MAX_TABLE_DECLARATION_SIZE;
 
@@ -705,6 +706,37 @@ public class BinaryParser extends BinaryStreamParser {
                     state.push(I32_TYPE);
                     break;
                 }
+                case Instructions.HANDLE_LOAD:
+                    load(state, HANDLE_TYPE, 64);
+                    break;
+                case Instructions.HANDLE_STORE:
+                    store(state, HANDLE_TYPE, 64);
+                    break;
+                case Instructions.NEW_SEGMENT:
+                    state.popChecked(I32_TYPE);
+                    state.push(HANDLE_TYPE);
+                    break;
+                case Instructions.FREE_SEGMENT:
+                    state.popChecked(HANDLE_TYPE);
+                    break;
+                case Instructions.HANDLE_ADD:
+                    state.popChecked(HANDLE_TYPE);
+                    state.popChecked(I32_TYPE);
+                    state.push(HANDLE_TYPE);
+                    break;
+                case Instructions.NULL_HANDLE:
+                    state.push(HANDLE_TYPE);
+                    break;
+                case Instructions.HANDLE_GET_OFFSET:
+                    state.popChecked(HANDLE_TYPE);
+                    state.push(I32_TYPE);
+                    break;
+                case Instructions.HANDLE_EQ:
+                case Instructions.HANDLE_LT:
+                    state.popChecked(HANDLE_TYPE);
+                    state.popChecked(HANDLE_TYPE);
+                    state.push(I32_TYPE);
+                    break;
                 default:
                     readNumericInstructions(state, opcode);
                     break;

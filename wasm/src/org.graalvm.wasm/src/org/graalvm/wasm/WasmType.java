@@ -66,6 +66,8 @@ public class WasmType implements TruffleObject {
 
     public static final byte F64_TYPE = 0x7C;
 
+    public static final byte HANDLE_TYPE = 0x7B;
+
     public static final WasmType VOID = new WasmType("void");
 
     public static String toString(int valueType) {
@@ -79,6 +81,8 @@ public class WasmType implements TruffleObject {
                 return "f32";
             case F64_TYPE:
                 return "f64";
+            case HANDLE_TYPE:
+                return "handle";
             case VOID_TYPE:
                 return "void";
             default:
