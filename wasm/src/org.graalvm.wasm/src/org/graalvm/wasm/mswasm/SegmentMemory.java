@@ -3,6 +3,8 @@ package org.graalvm.wasm.mswasm;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 
+import java.nio.ByteBuffer;
+
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
 import com.oracle.truffle.api.CompilerDirectives;
@@ -12,8 +14,9 @@ import sun.misc.Unsafe;
 import com.oracle.truffle.api.nodes.Node;
 
 import org.graalvm.wasm.mswasm.*;
+import org.graalvm.wasm.memory.WasmMemory;
 
-public class SegmentMemory {
+public class SegmentMemory extends WasmMemory {
     private static final Unsafe unsafe;
     static {
         try {
@@ -26,8 +29,13 @@ public class SegmentMemory {
     }
 
     /** Stores segments according to their integer keys */
-    private static HashMap<Integer, Segment> segments = new HashMap<>();
+    private HashMap<Integer, Segment> segments;
 
+    public SegmentMemory() {
+        // Provide dummy values for WasmMemory constructor
+        super(0, Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        segments = new HashMap<>();
+    }
 
     // Methods to allocate and free memory
 
@@ -147,147 +155,254 @@ public class SegmentMemory {
 
     // Methods to load from a segment
 
-    public int load_i32(Node node, Handle h) {
+    @Override
+    public int load_i32(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         int value = unsafe.getInt(addr);
         return value;
     }
     
-    public long load_i64(Node node, Handle h) {
+    @Override
+    public long load_i64(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
         long value = unsafe.getLong(addr);
         return value;
     }
     
-    public float load_f32(Node node, Handle h) {
+    @Override
+    public float load_f32(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         float value = unsafe.getFloat(addr);
         return value;
     }
     
-    public double load_f64(Node node, Handle h) {
+    @Override
+    public double load_f64(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
         double value = unsafe.getDouble(addr);
         return value;
     }
     
-    public int load_i32_8s(Node node, Handle h) {
+    @Override
+    public int load_i32_8s(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
         int value = unsafe.getByte(addr);
         return value;
     }
     
-    public int load_i32_8u(Node node, Handle h) {
+    public int load_i32_8u(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
         int value = 0x0000_00ff & unsafe.getByte(addr);
         return value;
     }
     
-    public int load_i32_16s(Node node, Handle h) {
+    public int load_i32_16s(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
         int value = unsafe.getShort(addr);
         return value;
     }
     
-    public int load_i32_16u(Node node, Handle h) {
+    public int load_i32_16u(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
         int value = 0x0000_ffff & unsafe.getShort(addr);
         return value;
     }
     
-    public long load_i64_8s(Node node, Handle h) {
+    public long load_i64_8s(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
         long value = unsafe.getByte(addr);
         return value;
     }
     
-    public long load_i64_8u(Node node, Handle h) {
+    public long load_i64_8u(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
         long value = 0x0000_0000_0000_00ffL & unsafe.getByte(addr);
         return value;
     }
     
-    public long load_i64_16s(Node node, Handle h) {
+    public long load_i64_16s(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
         long value = unsafe.getShort(addr);
         return value;
     }
 
-    public long load_i64_16u(Node node, Handle h) {
+    public long load_i64_16u(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
         long value = 0x0000_0000_0000_ffffL & unsafe.getShort(addr);
         return value;
     }
     
-    public long load_i64_32s(Node node, Handle h) {
+    public long load_i64_32s(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         long value = unsafe.getInt(addr);
         return value;
     }
     
-    public long load_i64_32u(Node node, Handle h) {
+    public long load_i64_32u(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         long value = 0x0000_0000_ffff_ffffL & unsafe.getInt(addr);
         return value;
     }
 
-    public Handle load_handle(Node node, Handle h) {
+    /**
+     * Load a handle from memory as a 64-bit long.
+     */
+    public long load_handle(Node node, long handle) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        int key = unsafe.getInt(addr);
-        return Handle.longBitsToHandle(key);
+        long value = unsafe.getLong(addr);
+        return value;
     }
 
 
     // Methods to store data to segments
     
-    public void store_i32(Node node, Handle h, int value) {
+    public void store_i32(Node node, long handle, int value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         unsafe.putInt(addr, value);
     }
 
-    public void store_i64(Node node, Handle h, long value) {
+    public void store_i64(Node node, long handle, long value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
         unsafe.putLong(addr, value);
     }
     
-    public void store_f32(Node node, Handle h, float value) {
+    public void store_f32(Node node, long handle, float value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         unsafe.putFloat(addr, value);
     }
     
-    public void store_f64(Node node, Handle h, double value) {
+    public void store_f64(Node node, long handle, double value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
         unsafe.putDouble(addr, value);
     }
 
-    public void store_i32_8(Node node, Handle h, byte value) {
+    public void store_i32_8(Node node, long handle, byte value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
         unsafe.putByte(addr, value);
     }
     
-    public void store_i32_16(Node node, Handle h, short value) {
+    public void store_i32_16(Node node, long handle, short value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
         unsafe.putShort(addr, value);
     }
     
-    public void store_i64_8(Node node, Handle h, byte value) {
+    public void store_i64_8(Node node, long handle, byte value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
         unsafe.putByte(addr, value);
     }
     
-    public void store_i64_16(Node node, Handle h, short value) {
+    public void store_i64_16(Node node, long handle, short value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
         unsafe.putShort(addr, value);
     }
 
-    public void store_i64_32(Node node, Handle h, int value) {
+    public void store_i64_32(Node node, long handle, int value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         unsafe.putInt(addr, value);
     }
 
-    public void store_handle(Node node, Handle h, Handle value) {
+    /**
+     * Store a handle to memory as a 64-bit long.
+     */
+    public void store_handle(Node node, long handle, long value) {
+        Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);        
-        unsafe.putLong(addr, Handle.handleToRawLongBits(h));
+        unsafe.putLong(addr, value);
+    }
+
+
+    // Misc WasmMemory methods
+
+    /** 
+     * Copy should never be called with segment memory. Traps if invoked. 
+     */
+    @Override
+    public void copy(Node node, int src, int dst, int n) {
+        final String message = "Segment memory does not support copying memory";
+        throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
+    }
+
+    /** Placeholder. Returns max int. */
+    @Override
+    public int size() {
+        return Integer.MAX_VALUE;
+    }
+
+    /** Placeholder. Returns max long. */
+    @Override
+    public long byteSize() {
+        return Long.MAX_VALUE;
+    }
+
+    /** 
+     * Grow should never be called with segment memory. Traps if invoked.
+     */
+    @Override
+    public boolean grow(int extraPageSize) {
+        final String message = "Segment memory does not support growing memory";
+        throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
+    }
+
+    /**
+     * Frees all segments and empties the segment hashmap. (Equivalent to close().)
+     */
+    @Override
+    public void reset() {
+        for (Segment s : segments.values()) {
+            unsafe.freeMemory(s.memoryBase);
+            s.free();
+        }
+        segments.clear();
+    }
+
+    /**
+     * Duplicate should never be called with segment memory. Traps if invoked.
+     */
+    @Override
+    public WasmMemory duplicate() {
+        final String message = "Segment memory does not support duplicating memory";
+        throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
+    }
+
+    /**
+     * Frees all segments and empties the segment hashmap. (Equivalent to reset().)
+     */
+    @Override
+    public void close() {
+        reset();
+    }
+
+    /**
+     * Segment memory cannot be converted to a byte buffer. Traps if invoked.
+     */
+    @Override
+    public ByteBuffer asByteBuffer() {
+        final String message = "Segment memory cannot be converted to a byte buffer";
+        throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
     }
 
 }

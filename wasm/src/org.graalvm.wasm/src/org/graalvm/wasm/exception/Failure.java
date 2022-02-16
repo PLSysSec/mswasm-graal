@@ -126,6 +126,9 @@ public enum Failure {
     CALL_STACK_EXHAUSTED(Type.EXHAUSTION, "call stack exhausted"),
     MEMORY_ALLOCATION_FAILED(Type.EXHAUSTION, "could not allocate memory"),
 
+    // Generic MSWasm error:
+    INVALID_MSWASM_OPERATION(Type.INVALID, "invalid operation in mswasm context"),
+
     // TODO(mbovel): replace UNSPECIFIED_INTERNAL usages with assertInternal/shouldNotReachHere.
     UNSPECIFIED_INTERNAL(Type.INTERNAL, "unspecified");
 
