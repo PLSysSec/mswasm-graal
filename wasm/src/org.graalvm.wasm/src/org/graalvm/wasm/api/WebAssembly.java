@@ -76,6 +76,7 @@ import org.graalvm.wasm.globals.WasmGlobal;
 import org.graalvm.wasm.memory.ByteArrayWasmMemory;
 import org.graalvm.wasm.memory.UnsafeWasmMemory;
 import org.graalvm.wasm.memory.WasmMemory;
+import org.graalvm.wasm.mswasm.SegmentMemory;
 
 import com.oracle.truffle.api.CompilerAsserts;
 import com.oracle.truffle.api.TruffleContext;
@@ -566,11 +567,15 @@ public class WebAssembly extends Dictionary {
             throw new WasmJsApiException(WasmJsApiException.Kind.RangeError, "Min memory size exceeds implementation limit");
         }
         final int maxAllowedSize = minUnsigned(maximum, JS_LIMITS.memoryInstanceSizeLimit());
+        /*
         if (WasmContext.get(null).environment().getOptions().get(WasmOptions.UseUnsafeMemory)) {
             return new UnsafeWasmMemory(initial, maximum, maxAllowedSize);
         } else {
             return new ByteArrayWasmMemory(initial, maximum, maxAllowedSize);
         }
+        */
+        // MSWasm: Convert all memory to segment memory
+        return new SegmentMemory();
     }
 
     private static Object memGrow(Object[] args) {

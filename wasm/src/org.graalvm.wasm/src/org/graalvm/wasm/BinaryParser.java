@@ -1068,7 +1068,7 @@ public class BinaryParser extends BinaryStreamParser {
         readAlignHint(n); // align hint
         readUnsignedInt32(); // store offset
         state.popChecked(type); // value to store
-        state.popChecked(I32_TYPE); // base address
+        state.popChecked(HANDLE_TYPE); // base address
     }
 
     private void load(ValidationState state, byte type, int n) {
@@ -1079,7 +1079,7 @@ public class BinaryParser extends BinaryStreamParser {
         // during execution.
         readAlignHint(n); // align hint
         readUnsignedInt32(); // load offset
-        state.popChecked(I32_TYPE); // base address
+        state.popChecked(HANDLE_TYPE); // base address
         state.push(type); // loaded value
     }
 

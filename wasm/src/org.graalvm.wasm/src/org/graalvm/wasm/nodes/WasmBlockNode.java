@@ -233,10 +233,12 @@ import static org.graalvm.wasm.nodes.WasmFrame.popDouble;
 import static org.graalvm.wasm.nodes.WasmFrame.popFloat;
 import static org.graalvm.wasm.nodes.WasmFrame.popInt;
 import static org.graalvm.wasm.nodes.WasmFrame.popLong;
+import static org.graalvm.wasm.nodes.WasmFrame.popHandle;
 import static org.graalvm.wasm.nodes.WasmFrame.pushDouble;
 import static org.graalvm.wasm.nodes.WasmFrame.pushFloat;
 import static org.graalvm.wasm.nodes.WasmFrame.pushInt;
 import static org.graalvm.wasm.nodes.WasmFrame.pushLong;
+import static org.graalvm.wasm.nodes.WasmFrame.pushHandle;
 
 import org.graalvm.wasm.BinaryStreamParser;
 import org.graalvm.wasm.SymbolTable;
@@ -251,6 +253,7 @@ import org.graalvm.wasm.WasmType;
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
 import org.graalvm.wasm.memory.WasmMemory;
+import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerAsserts;
@@ -839,7 +842,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     offset += offsetDelta;
                     // endregion
 
-                    int baseAddress = popInt(frame, stackPointer - 1);
+                    Handle baseAddress = popHandle(frame, stackPointer - 1);
                     final long address = effectiveMemoryAddress(memOffset, baseAddress);
 
                     int value = memory.load_i32(this, address);
@@ -1524,12 +1527,13 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
      * The static address offset (u32) is added to the dynamic address (u32) operand, yielding a
      * 33-bit effective address that is the zero-based index at which the memory is accessed.
      */
-    private static long effectiveMemoryAddress(int staticAddressOffset, int dynamicAddress) {
-        return Integer.toUnsignedLong(dynamicAddress) + Integer.toUnsignedLong(staticAddressOffset);
+    private static long effectiveMemoryAddress(int staticAddressOffset, Handle dynamicAddress) {
+        // Add the static offset to the dynamic handle, then convert to long
+        return Handle.handleToRawLongBits(dynamicAddress.add(staticAddressOffset));
     }
 
     private void load(WasmMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
-        final int baseAddress = popInt(frame, stackPointer);
+        final Handle baseAddress = popHandle(frame, stackPointer);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
 
         switch (opcode) {
@@ -1609,7 +1613,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     }
 
     private void store(WasmMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
-        final int baseAddress = popInt(frame, stackPointer - 2);
+        final Handle baseAddress = popHandle(frame, stackPointer - 2);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
 
         switch (opcode) {
