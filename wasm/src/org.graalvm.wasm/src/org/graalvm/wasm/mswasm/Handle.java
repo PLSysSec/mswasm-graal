@@ -35,6 +35,10 @@ public class Handle implements Comparable<Handle> {
         return h;
     }
 
+    public int getOffset() {
+        return offset;
+    }
+
     public static Handle nullHandle() {
         Handle h = new Handle(0);
         h.isNull = true;

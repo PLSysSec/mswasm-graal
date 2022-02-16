@@ -43,7 +43,7 @@ public class SegmentMemory extends WasmMemory {
      * Allocate a segment with the given size in bytes. Returns a handle that accesses that
      * segment with offset 0.
      */
-    public Handle allocSegment(long byteSize) {
+    public Handle allocSegment(int byteSize) {
         // Allocate segment with byte size
         long base = unsafe.allocateMemory(byteSize);
         long bound = base + byteSize;
@@ -261,11 +261,11 @@ public class SegmentMemory extends WasmMemory {
     /**
      * Load a handle from memory as a 64-bit long.
      */
-    public long load_handle(Node node, long handle) {
+    public Handle load_handle(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
         long value = unsafe.getLong(addr);
-        return value;
+        return Handle.longBitsToHandle(value);
     }
 
 
@@ -328,10 +328,10 @@ public class SegmentMemory extends WasmMemory {
     /**
      * Store a handle to memory as a 64-bit long.
      */
-    public void store_handle(Node node, long handle, long value) {
+    public void store_handle(Node node, long handle, Handle value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);        
-        unsafe.putLong(addr, value);
+        unsafe.putLong(addr, Handle.handleToRawLongBits(value));
     }
 
 
