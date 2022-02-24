@@ -57,8 +57,8 @@ public class Handle implements Comparable<Handle> {
     }
 
     public static Handle longBitsToHandle(long key) {
-        boolean isNull = (key ^ (1 << 63)) != 0;
-        boolean isCorrupted = (key ^ (1 << 62)) != 0;
+        boolean isNull = (key & (1L << 63)) != 0;
+        boolean isCorrupted = (key & (1L << 62)) != 0;
         int segment = (int)(key >>> 32);
         int offset = (int)key;
 

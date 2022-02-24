@@ -629,6 +629,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             stackPointer++;
                             break;
                         }
+                        case WasmType.HANDLE_TYPE: {
+                            pushHandle(frame, stackPointer, (Handle) result);
+                            stackPointer++;
+                            break;
+                        }
                         case WasmType.VOID_TYPE: {
                             // Void return type - do nothing.
                             break;
@@ -756,6 +761,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                         }
                         case WasmType.F64_TYPE: {
                             pushDouble(frame, stackPointer, (double) result);
+                            stackPointer++;
+                            break;
+                        }
+                        case WasmType.HANDLE_TYPE: {
+                            pushHandle(frame, stackPointer, (Handle) result);
                             stackPointer++;
                             break;
                         }
@@ -1592,6 +1602,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     private void load(SegmentMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
         final Handle baseAddress = popHandle(frame, stackPointer);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
+        if (SegmentMemory.DEBUG) {
+            System.err.println("\n[load] Loading from " + baseAddress);
+            System.err.println(String.format("[load] Calculated memory address: 0x%08X", address));
+        }
 
         switch (opcode) {
             case I32_LOAD: {
@@ -1677,6 +1691,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     private void store(SegmentMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
         final Handle baseAddress = popHandle(frame, stackPointer - 2);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
+        if (SegmentMemory.DEBUG) {
+            System.err.println("\n[store] Storing to " + baseAddress);
+            System.err.println(String.format("[store] Calculated memory address: 0x%08X", address));
+        }
 
         switch (opcode) {
             case I32_STORE: {
@@ -1755,6 +1773,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case WasmType.F64_TYPE:
                 context.globals().storeLong(instance().globalAddress(index), Double.doubleToRawLongBits(popDouble(frame, stackPointer)));
                 break;
+            case WasmType.HANDLE_TYPE:
+                context.globals().storeLong(instance().globalAddress(index), Handle.handleToRawLongBits(popHandle(frame, stackPointer)));
+                break;
             default:
                 throw WasmException.create(Failure.UNSPECIFIED_TRAP, this, "Local variable cannot have the void type.");
         }
@@ -1775,6 +1796,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 break;
             case WasmType.F64_TYPE:
                 pushDouble(frame, stackPointer, Double.longBitsToDouble(context.globals().loadAsLong(instance().globalAddress(index))));
+                break;
+            case WasmType.HANDLE_TYPE:
+                pushHandle(frame, stackPointer, Handle.longBitsToHandle(context.globals().loadAsLong(instance().globalAddress(index))));
                 break;
             default:
                 throw WasmException.create(Failure.UNSPECIFIED_TRAP, this, "Local variable cannot have the void type.");
@@ -3188,6 +3212,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     break;
                 case WasmType.F64_TYPE:
                     args[i] = popDouble(frame, stackPointer);
+                    break;
+                case WasmType.HANDLE_TYPE:
+                    args[i] = popHandle(frame, stackPointer);
+                    if (SegmentMemory.DEBUG)
+                        System.err.println("\n[createArgumentsForCall] Put " + args[i] + " at index " + i);
                     break;
                 default: {
                     throw WasmException.format(Failure.UNSPECIFIED_TRAP, this, "Unknown type: %d", type);

@@ -72,6 +72,7 @@ import org.graalvm.wasm.WasmFunctionInstance;
 import org.graalvm.wasm.WasmInstance;
 import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.memory.WasmMemory;
+import org.graalvm.wasm.mswasm.SegmentMemory;
 import org.graalvm.wasm.test.options.WasmTestOptions;
 import org.graalvm.wasm.utils.cases.WasmCase;
 import org.graalvm.wasm.utils.cases.WasmCaseData;
@@ -528,6 +529,10 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         final WasmMemory actualMemory = actualState.memory();
         if (expectedMemory == null) {
             Assert.assertNull("Memory should be null", actualMemory);
+        } else if (expectedMemory instanceof SegmentMemory) {
+            Assert.assertNotNull("Memory should not be null", actualMemory);
+            Assert.assertTrue("Memory should be instance of segment memory", actualMemory instanceof SegmentMemory);
+            Assert.assertEquals("Mismatch in number of memory segments", actualMemory.size(), expectedMemory.size());
         } else {
             Assert.assertNotNull("Memory should not be null", actualMemory);
             Assert.assertEquals("Mismatch in memory lengths", expectedMemory.byteSize(), actualMemory.byteSize());

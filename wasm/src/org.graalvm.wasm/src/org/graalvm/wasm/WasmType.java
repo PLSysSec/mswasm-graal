@@ -66,7 +66,7 @@ public class WasmType implements TruffleObject {
 
     public static final byte F64_TYPE = 0x7C;
 
-    public static final byte HANDLE_TYPE = 0x7B;
+    public static final byte HANDLE_TYPE = 0x6E;
 
     public static final WasmType VOID = new WasmType("void");
 
@@ -144,6 +144,8 @@ public class WasmType implements TruffleObject {
                 return FrameSlotKind.Float;
             case F64_TYPE:
                 return FrameSlotKind.Double;
+            case HANDLE_TYPE:
+                return FrameSlotKind.Object;
             default:
                 return null;
         }

@@ -44,10 +44,12 @@ import static org.graalvm.wasm.nodes.WasmFrame.popLong;
 import static org.graalvm.wasm.nodes.WasmFrame.popDouble;
 import static org.graalvm.wasm.nodes.WasmFrame.popFloat;
 import static org.graalvm.wasm.nodes.WasmFrame.popInt;
+import static org.graalvm.wasm.nodes.WasmFrame.popHandle;
 import static org.graalvm.wasm.nodes.WasmFrame.pushLong;
 import static org.graalvm.wasm.nodes.WasmFrame.pushDouble;
 import static org.graalvm.wasm.nodes.WasmFrame.pushFloat;
 import static org.graalvm.wasm.nodes.WasmFrame.pushInt;
+import static org.graalvm.wasm.nodes.WasmFrame.pushHandle;
 
 import org.graalvm.wasm.WasmCodeEntry;
 import org.graalvm.wasm.WasmContext;
@@ -57,6 +59,7 @@ import org.graalvm.wasm.WasmType;
 import org.graalvm.wasm.WasmVoidResult;
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
+import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CompilerAsserts;
 import com.oracle.truffle.api.TruffleLanguage;
@@ -151,6 +154,8 @@ public class WasmRootNode extends RootNode {
                 return popFloat(frame, numLocals);
             case WasmType.F64_TYPE:
                 return popDouble(frame, numLocals);
+            case WasmType.HANDLE_TYPE:
+                return popHandle(frame, numLocals);
             default:
                 throw WasmException.format(Failure.UNSPECIFIED_INTERNAL, this, "Unknown return type id: %d", returnTypeId);
         }
@@ -181,6 +186,9 @@ public class WasmRootNode extends RootNode {
                 case WasmType.F64_TYPE:
                     pushDouble(frame, i, (double) arg);
                     break;
+                case WasmType.HANDLE_TYPE:
+                    pushHandle(frame, i, (Handle) arg);
+                    break;
             }
         }
     }
@@ -202,6 +210,9 @@ public class WasmRootNode extends RootNode {
                     break;
                 case WasmType.F64_TYPE:
                     pushDouble(frame, i, 0D);
+                    break;
+                case WasmType.HANDLE_TYPE:
+                    pushHandle(frame, i, Handle.nullHandle());
                     break;
             }
         }

@@ -40,9 +40,9 @@
 ;;
 (module
   (type (;0;) (func (result i32)))
-  (type (;1;) (func (param i32 i32 i32) (result i32)))
+  (type (;1;) (func (param handle handle i32) (result i32)))
   (memory 1 1)
-  (func (;0;) (type 1) (param i32 i32 i32) (result i32)
+  (func (;0;) (type 1) (param handle handle i32) (result i32)
     (local i32 i32)
     local.get 2
     if (result i32)  ;; label = @1
@@ -55,13 +55,13 @@
         local.tee 3
         i32.eq
         if  ;; label = @3
+          i32.const 1
           local.get 1
-          i32.const 1
-          i32.add
+          handle.add
           local.set 1
-          local.get 0
           i32.const 1
-          i32.add
+          local.get 0
+          handle.add
           local.set 0
           i32.const 0
           local.get 2
@@ -83,22 +83,29 @@
     return
     unreachable)
   (func (;1;) (type 0) (result i32)
-    i32.const 0
+    (local handle)
+    i32.const 12
+    new_segment
+    local.tee 0
     i32.const 3
     i32.store
-    i32.const 1
+    local.get 0
     i32.const 5
-    i32.store
-    i32.const 2
+    i32.store offset=1
+    local.get 0
     i32.const 3
-    i32.store
-    i32.const 3
+    i32.store offset=2
+    local.get 0
     i32.const 2
-    i32.store
-    i32.const 0
+    i32.store offset=3
+    local.get 0
     i32.const 2
+    local.get 0
+    handle.add
     i32.const 2
     call 0
+    local.get 0
+    free_segment
   )
   (export "_main" (func 1))
 )

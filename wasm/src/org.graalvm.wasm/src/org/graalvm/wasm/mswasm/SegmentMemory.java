@@ -3,6 +3,9 @@ package org.graalvm.wasm.mswasm;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 
+import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_DECLARATION_SIZE;
+import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_INSTANCE_SIZE;
+
 import java.nio.ByteBuffer;
 
 import org.graalvm.wasm.exception.Failure;
@@ -17,6 +20,8 @@ import org.graalvm.wasm.mswasm.*;
 import org.graalvm.wasm.memory.WasmMemory;
 
 public class SegmentMemory extends WasmMemory {
+    public static final boolean DEBUG = false;
+
     private static final Unsafe unsafe;
     static {
         try {
@@ -33,7 +38,7 @@ public class SegmentMemory extends WasmMemory {
 
     public SegmentMemory() {
         // Provide dummy values for WasmMemory constructor
-        super(0, Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        super(0, MAX_MEMORY_DECLARATION_SIZE, 0, MAX_MEMORY_INSTANCE_SIZE);
         segments = new HashMap<>();
     }
 
@@ -44,6 +49,9 @@ public class SegmentMemory extends WasmMemory {
      * segment with offset 0.
      */
     public Handle allocSegment(int byteSize) {
+        if (DEBUG) {
+            System.err.println("\n[allocSegment] called");
+        }
         // Allocate segment with byte size
         long base = unsafe.allocateMemory(byteSize);
         long bound = base + byteSize;
@@ -51,6 +59,11 @@ public class SegmentMemory extends WasmMemory {
 
         // Record segment and create handle
         segments.put(s.key(), s);
+        if (DEBUG) {
+            System.err.println("[allocSegment] Created segment " + s.key() + 
+                               " of size " + byteSize);
+            System.err.println("[allocSegment] segments: " + segments);
+        }
         return new Handle(s.key());
     }
 
@@ -59,11 +72,18 @@ public class SegmentMemory extends WasmMemory {
      * the segment is already freed.
      */
     public void freeSegment(Node node, Handle h) {
+        if (DEBUG) {
+            System.err.println("\n[freeSegment] called");
+        }
         Segment seg = getAndValidateSegment(node, h);
 
         // Safe to free the memory and the segment
         unsafe.freeMemory(seg.memoryBase);
         seg.free();
+        if (DEBUG) {
+            System.err.println("[freeSegment] Freed segment " + seg.key());
+            System.err.println("[freeSegment] segments: " + segments);
+        }
     }
 
 
@@ -72,19 +92,26 @@ public class SegmentMemory extends WasmMemory {
     /**
      * Retrieve the segment referenced by the given handle, validating
      * 
-     *   (1) the handle is not corrupted;
+     *   (1) the handle is neither null nor corrupted;
      *   (2) the segment exists; and
      *   (3) the segment has not been freed.
      * 
      * Traps if any of these conditions are violated. Otherwise, returns the segment.
      */
     public Segment getAndValidateSegment(Node node, Handle h) {
-        if (h.isCorrupted) {
-            throw trapCorrupted(node, h);
+        if (DEBUG) {
+            System.err.println("[getAndValidateSegment] called on " + h);
         }
-        
+        if (h.isNull) {
+            throw trapNull(node, h);
+        }
+
         int key = h.segment;
         if (!segments.containsKey(key)) {
+            if (DEBUG) {
+                System.err.println("[getAndValidateSegment] Couldn't find segment with key " + key);
+                System.err.println("[getAndValidateSegment] segments: " + segments);
+            }
             // If the segment does not exist, assume the handle is corrupted
             throw trapCorrupted(node, h);
         }
@@ -109,6 +136,9 @@ public class SegmentMemory extends WasmMemory {
      * If either condition is validated, traps. Otherwise, returns the address.
      */
     public long getAndValidateEffectiveAddress(Node node, Handle h, long accessSize) {
+        if (DEBUG) {
+            System.err.println("\n[getAndValidateEffectiveAddress] called");
+        }
         Segment s = getAndValidateSegment(node, h);
         long effectiveAddr = s.memoryBase + h.offset;
 
@@ -127,6 +157,26 @@ public class SegmentMemory extends WasmMemory {
     protected final WasmException trapCorrupted(Node node, Handle h) {
         final String message = String.format("Handle into segment %d with offset %d is corrupted",
                                              h.segment, h.offset);
+        if (DEBUG) {
+            System.out.println("[trapCorrupted] " + message + ". Printing stack trace...");
+            new Exception().printStackTrace();
+        }
+        return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
+    }
+
+    /**
+     * Trap on an attempt to dereference a null handle.
+     * @param node
+     * @return
+     */
+    @TruffleBoundary
+    protected final WasmException trapNull(Node node, Handle h) {
+        final String message = String.format("Handle into segment %d with offset %d is null",
+                                             h.segment, h.offset);
+        if (DEBUG) {
+            System.out.println("[trapNull] " + message + ". Printing stack trace...");
+            new Exception().printStackTrace();
+        }
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
     }
 
@@ -139,6 +189,10 @@ public class SegmentMemory extends WasmMemory {
     protected final WasmException trapFreed(Node node, int segmentKey) {
         final String message = String.format("Segment with key %d has already been freed",
                                     segmentKey);
+        if (DEBUG) {
+            System.out.println("[trapCorrupted] " + message + ". Printing stack trace...");
+            new Exception().printStackTrace();
+        }
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
     }
     
@@ -149,6 +203,10 @@ public class SegmentMemory extends WasmMemory {
     protected final WasmException trapOutOfBounds(Node node, long length, long address) {
         final String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds",
                         length, address, address);
+        if (DEBUG) {
+            System.out.println("[trapOutOfBounds] " + message + ". Printing stack trace...");
+            new Exception().printStackTrace();
+        }
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
     }
 
@@ -346,16 +404,16 @@ public class SegmentMemory extends WasmMemory {
         throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
     }
 
-    /** Placeholder. Returns max int. */
+    /** Returns number of segments in the segment memory. */
     @Override
     public int size() {
-        return Integer.MAX_VALUE;
+        return segments.size();
     }
 
-    /** Placeholder. Returns max long. */
+    /** Placeholder. Returns max int. */
     @Override
     public long byteSize() {
-        return Long.MAX_VALUE;
+        return Integer.MAX_VALUE;
     }
 
     /** 
@@ -373,19 +431,23 @@ public class SegmentMemory extends WasmMemory {
     @Override
     public void reset() {
         for (Segment s : segments.values()) {
-            unsafe.freeMemory(s.memoryBase);
-            s.free();
+            if (!s.isFree()) {
+                unsafe.freeMemory(s.memoryBase);
+                s.free();
+            }
         }
         segments.clear();
     }
 
     /**
-     * Duplicate should never be called with segment memory. Traps if invoked.
+     * Creates a "new" segment memory instance that references the same segment map as this
+     * segment memory.
      */
     @Override
     public WasmMemory duplicate() {
-        final String message = "Segment memory does not support duplicating memory";
-        throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
+        SegmentMemory memory = new SegmentMemory();
+        memory.segments = this.segments;
+        return memory;
     }
 
     /**

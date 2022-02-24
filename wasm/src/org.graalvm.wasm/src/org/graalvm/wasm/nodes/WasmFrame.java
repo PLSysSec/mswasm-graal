@@ -43,6 +43,7 @@ package org.graalvm.wasm.nodes;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
+import org.graalvm.wasm.mswasm.SegmentMemory;
 import org.graalvm.wasm.mswasm.Handle;
 
 public abstract class WasmFrame {
@@ -70,6 +71,8 @@ public abstract class WasmFrame {
     }
 
     public static void pushHandle(VirtualFrame frame, int slot, Handle value) {
+        if (SegmentMemory.DEBUG)
+            System.err.println("\n[pushHandle] pushing " + value + " to slot " + slot);
         frame.setObject(slot, value);
     }
 
@@ -126,6 +129,8 @@ public abstract class WasmFrame {
             // Needed to avoid keeping track of popped slots in FrameStates.
             frame.clear(slot);
         }
+        if (SegmentMemory.DEBUG)
+            System.err.println("\n[popHandle] popped " + result + " from slot " + slot);
         return result;
     }
 }

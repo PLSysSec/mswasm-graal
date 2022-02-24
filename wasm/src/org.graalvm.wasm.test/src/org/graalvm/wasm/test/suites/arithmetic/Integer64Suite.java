@@ -181,6 +181,7 @@ public class Integer64Suite extends WasmFileSuite {
                                     "(module (func (export \"_main\") (result i64) i64.const -2 i64.const 1 i64.rotl))"),
                     WasmCase.create("ROTATE_RIGHT", WasmCase.expected(-2L),
                                     "(module (func (export \"_main\") (result i64) i64.const -3 i64.const 1 i64.rotr))"),
+                    /*
                     WasmCase.create("TRUNC_SAT_F32_S_NAN", WasmCase.expected(0L),
                                     "(module (func (export \"_main\") (result i64) f32.const nan i64.trunc_sat_f32_s))", saturatingFloatToIntProperties),
                     WasmCase.create("TRUNC_SAT_F32_S_INF", WasmCase.expected(Long.MAX_VALUE),
@@ -229,6 +230,7 @@ public class Integer64Suite extends WasmFileSuite {
                                     "(module (func (export \"_main\") (result i64) f64.const -1.235 i64.trunc_sat_f64_u))", saturatingFloatToIntProperties),
                     WasmCase.create("TRUNC_SAT_F64_U_VALID", WasmCase.expected(1L),
                                     "(module (func (export \"_main\") (result i64) f64.const 1.532 i64.trunc_sat_f64_u))", saturatingFloatToIntProperties),
+                    */
                     WasmCase.create("EXTEND_8_LEADING_0", WasmCase.expected(0x0000_0000_0000_0001L),
                                     "(module (func (export \"_main\") (result i64) i64.const 0xFFFF_FFFF_FFFF_FF01 i64.extend8_s))", signExtensionOpsProperties),
                     WasmCase.create("EXTEND_8_LEADING_1", WasmCase.expected(0xFFFF_FFFF_FFFF_FF81L),
