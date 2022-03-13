@@ -960,8 +960,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     break;
                 }
                 case HANDLE_ADD: {
-                    Handle value = popHandle(frame, stackPointer - 1);
-                    int shift = popInt(frame, stackPointer - 2);
+                    int shift = popInt(frame, stackPointer - 1);
+                    Handle value = popHandle(frame, stackPointer - 2);
                     Handle result = value.add(shift);
                     pushHandle(frame, stackPointer - 2, result);
                     stackPointer--;

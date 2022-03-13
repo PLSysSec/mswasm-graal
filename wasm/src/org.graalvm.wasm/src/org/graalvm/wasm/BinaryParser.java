@@ -75,6 +75,8 @@ import org.graalvm.wasm.constants.Section;
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
 import org.graalvm.wasm.memory.WasmMemory;
+import org.graalvm.wasm.mswasm.SegmentMemory;
+import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.interop.ExceptionType;
@@ -717,22 +719,34 @@ public class BinaryParser extends BinaryStreamParser {
                     state.push(HANDLE_TYPE);
                     break;
                 case Instructions.FREE_SEGMENT:
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[BinaryParser] Parsing FREE_SEGMENT");
+                    }
                     state.popChecked(HANDLE_TYPE);
                     break;
                 case Instructions.HANDLE_ADD:
-                    state.popChecked(HANDLE_TYPE);
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[BinaryParser] Parsing HANDLE_ADD");
+                    }
                     state.popChecked(I32_TYPE);
+                    state.popChecked(HANDLE_TYPE);
                     state.push(HANDLE_TYPE);
                     break;
                 case Instructions.NULL_HANDLE:
                     state.push(HANDLE_TYPE);
                     break;
                 case Instructions.HANDLE_GET_OFFSET:
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[BinaryParser] Parsing HANDLE_GET_OFFSET");
+                    }
                     state.popChecked(HANDLE_TYPE);
                     state.push(I32_TYPE);
                     break;
                 case Instructions.HANDLE_EQ:
                 case Instructions.HANDLE_LT:
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[BinaryParser] Parsing handle comparison");
+                    }
                     state.popChecked(HANDLE_TYPE);
                     state.popChecked(HANDLE_TYPE);
                     state.push(I32_TYPE);
@@ -1068,6 +1082,9 @@ public class BinaryParser extends BinaryStreamParser {
         readAlignHint(n); // align hint
         readUnsignedInt32(); // store offset
         state.popChecked(type); // value to store
+        if (SegmentMemory.DEBUG) {
+            System.err.println("[BinaryParser] Parsing store");
+        }
         state.popChecked(HANDLE_TYPE); // base address
     }
 
@@ -1079,6 +1096,9 @@ public class BinaryParser extends BinaryStreamParser {
         // during execution.
         readAlignHint(n); // align hint
         readUnsignedInt32(); // load offset
+        if (SegmentMemory.DEBUG) {
+            System.err.println("[BinaryParser] Parsing load");
+        }
         state.popChecked(HANDLE_TYPE); // base address
         state.push(type); // loaded value
     }
@@ -1185,9 +1205,11 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private void readGlobalSection() {
+        System.out.println("reading global section");
         final int numGlobals = readLength();
         module.limits().checkGlobalCount(numGlobals);
         final int startingGlobalIndex = module.symbolTable().numGlobals();
+        System.err.println("found " + startingGlobalIndex + " initial globals");
         for (int globalIndex = startingGlobalIndex; globalIndex != startingGlobalIndex + numGlobals; globalIndex++) {
             final byte type = readValueType();
             // 0x00 means const, 0x01 means var
@@ -1219,6 +1241,11 @@ public class BinaryParser extends BinaryStreamParser {
                     value = readFloatAsInt64();
                     isInitialized = true;
                     break;
+                case (byte)Instructions.NULL_HANDLE:
+                    System.err.println("Found global handle at index " + globalIndex);
+                    value = Handle.handleToRawLongBits(Handle.nullHandle());
+                    isInitialized = true;
+                    break;
                 case Instructions.GLOBAL_GET:
                     existingIndex = readGlobalIndex();
                     assertUnsignedIntLess(existingIndex, module.symbolTable().importedGlobals().size(), Failure.UNKNOWN_GLOBAL);
@@ -1226,7 +1253,7 @@ public class BinaryParser extends BinaryStreamParser {
                     isInitialized = false;
                     break;
                 default:
-                    throw WasmException.create(Failure.TYPE_MISMATCH);
+                    throw WasmException.format(Failure.TYPE_MISMATCH, "Unexpected global initiatlization opcode %x", instruction);
             }
             readEnd();
 
@@ -1254,10 +1281,13 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private void readDataSection(WasmContext linkedContext, WasmInstance linkedInstance) {
+        System.err.println("Reading data section");
         final int numDataSegments = readLength();
         module.limits().checkDataSegmentCount(numDataSegments);
         for (int dataSegmentId = 0; dataSegmentId != numDataSegments; ++dataSegmentId) {
+            System.err.println("Reading data segment");
             readMemoryIndex();
+            System.err.println("Read memory index");
 
             // Data dataOffset expression must be a constant expression with result type i32.
             // https://webassembly.github.io/spec/core/syntax/modules.html#data-segments
@@ -1283,26 +1313,48 @@ public class BinaryParser extends BinaryStreamParser {
 
             readEnd();
 
+            // Read the memory offsets into the data segment that need to be initialized as new handles
+            // numPointers is 2 x the actual number of pointers, so that the length read includes both
+            // the initialization offsets and the required segment sizes
+            final int numPointers = readUnsignedInt32();
+            final int[] pointerOffsetsAndSizes = new int[numPointers];
+            for (int ptr = 0; ptr < numPointers; ++ptr) {
+                pointerOffsetsAndSizes[ptr] = readUnsignedInt32();
+            }
+
             final int byteLength = readLength();
 
-            if (linkedInstance != null) {
-                if (offsetGlobalIndex != -1) {
-                    int offsetGlobalAddress = linkedInstance.globalAddress(offsetGlobalIndex);
-                    offsetAddress = linkedContext.globals().loadAsInt(offsetGlobalAddress);
-                }
+            // if (linkedInstance != null) {
+            //     System.err.println("linkedInstance not null");
+            //     if (offsetGlobalIndex != -1) {
+            //         int offsetGlobalAddress = linkedInstance.globalAddress(offsetGlobalIndex);
+            //         offsetAddress = linkedContext.globals().loadAsInt(offsetGlobalAddress);
+            //     }
 
-                // Reading of the data segment is called after linking, so initialize the memory
-                // directly.
-                final WasmMemory memory = linkedInstance.memory();
+            //     // Reading of the data segment is called after linking, so initialize the memory
+            //     // directly.
+            //     final WasmMemory memory = linkedInstance.memory();
 
-                Assert.assertUnsignedIntLessOrEqual(offsetAddress, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
-                Assert.assertUnsignedIntLessOrEqual(offsetAddress + byteLength, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
+            //     long baseAddress = linkedContext.globals().loadAsLong(1) + offsetAddress;
 
-                for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
-                    final byte b = read1();
-                    memory.store_i32_8(null, offsetAddress + writeOffset, b);
-                }
-            } else {
+            //     // Assert.assertUnsignedIntLessOrEqual(offsetAddress, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
+            //     // Assert.assertUnsignedIntLessOrEqual(offsetAddress + byteLength, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
+
+            //     for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
+            //         final byte b = read1();
+            //         memory.store_i32_8(null, baseAddress + writeOffset, b);
+            //     }
+
+            //     // Initialize pointers in data segment
+            //     Assert.assertTrue(pointerOffsetsAndSizes.length % 2 == 0, "pointerOffsetsAndSizes must have even length", Failure.DATA_SEGMENT_DOES_NOT_FIT);
+            //     for (int ptr = 0; ptr < pointerOffsetsAndSizes.length; ptr += 2) {
+            //         int writeOffset = pointerOffsetsAndSizes[ptr];
+            //         int segmentSize = pointerOffsetsAndSizes[ptr + 1];
+            //         ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, ((SegmentMemory) memory).allocSegment(segmentSize));
+            //     }
+
+            // } else {
+                System.err.println("linkedInstance null");
                 // Reading of the data segment occurs during parsing, so add a linker action.
                 final byte[] dataSegment = new byte[byteLength];
                 for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
@@ -1313,9 +1365,10 @@ public class BinaryParser extends BinaryStreamParser {
                 final int currentOffsetAddress = offsetAddress;
                 final int currentOffsetGlobalIndex = offsetGlobalIndex;
                 module.addLinkAction((context, instance) -> context.linker().resolveDataSegment(context, instance, currentDataSegmentId, currentOffsetAddress, currentOffsetGlobalIndex, byteLength,
-                                dataSegment));
-            }
+                                dataSegment, pointerOffsetsAndSizes));
+            // }
         }
+    System.err.println("End read data section");
     }
 
     private void readFunctionType() {

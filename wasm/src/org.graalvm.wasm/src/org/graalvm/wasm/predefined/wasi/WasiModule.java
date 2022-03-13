@@ -48,6 +48,7 @@ import org.graalvm.wasm.predefined.BuiltinModule;
 
 import static org.graalvm.wasm.WasmType.I32_TYPE;
 import static org.graalvm.wasm.WasmType.I64_TYPE;
+import static org.graalvm.wasm.WasmType.HANDLE_TYPE;
 import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_DECLARATION_SIZE;
 
 public final class WasiModule extends BuiltinModule {
@@ -57,17 +58,17 @@ public final class WasiModule extends BuiltinModule {
     protected WasmInstance createInstance(WasmLanguage language, WasmContext context, String name) {
         WasmInstance instance = new WasmInstance(context, WasmModule.createBuiltin(name), NUMBER_OF_FUNCTIONS);
         importMemory(instance, "main", "memory", 0, MAX_MEMORY_DECLARATION_SIZE);
-        defineFunction(instance, "args_sizes_get", types(I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiArgsSizesGetNode(language, instance));
-        defineFunction(instance, "args_get", types(I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiArgsGetNode(language, instance));
+        defineFunction(instance, "args_sizes_get", types(HANDLE_TYPE, HANDLE_TYPE), types(I32_TYPE), new WasiArgsSizesGetNode(language, instance));
+        defineFunction(instance, "args_get", types(HANDLE_TYPE, HANDLE_TYPE), types(I32_TYPE), new WasiArgsGetNode(language, instance));
         defineFunction(instance, "environ_sizes_get", types(I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiEnvironSizesGetNode(language, instance));
         defineFunction(instance, "environ_get", types(I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiEnvironGetNode(language, instance));
-        defineFunction(instance, "clock_time_get", types(I32_TYPE, I64_TYPE, I32_TYPE), types(I32_TYPE), new WasiClockTimeGetNode(language, instance));
+        defineFunction(instance, "clock_time_get", types(I32_TYPE, I64_TYPE, HANDLE_TYPE), types(I32_TYPE), new WasiClockTimeGetNode(language, instance));
         defineFunction(instance, "proc_exit", types(I32_TYPE), types(), new WasiProcExitNode(language, instance));
-        defineFunction(instance, "fd_write", types(I32_TYPE, I32_TYPE, I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiFdWriteNode(language, instance));
+        defineFunction(instance, "fd_write", types(I32_TYPE, HANDLE_TYPE, I32_TYPE, HANDLE_TYPE), types(I32_TYPE), new WasiFdWriteNode(language, instance));
         defineFunction(instance, "fd_read", types(I32_TYPE, I32_TYPE, I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiFdReadNode(language, instance));
         defineFunction(instance, "fd_close", types(I32_TYPE), types(I32_TYPE), new WasiFdCloseNode(language, instance));
-        defineFunction(instance, "fd_seek", types(I32_TYPE, I64_TYPE, I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiFdSeekNode(language, instance));
-        defineFunction(instance, "fd_fdstat_get", types(I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiFdFdstatGetNode(language, instance));
+        defineFunction(instance, "fd_seek", types(I32_TYPE, I64_TYPE, I32_TYPE, HANDLE_TYPE), types(I32_TYPE), new WasiFdSeekNode(language, instance));
+        defineFunction(instance, "fd_fdstat_get", types(I32_TYPE, HANDLE_TYPE), types(I32_TYPE), new WasiFdFdstatGetNode(language, instance));
         defineFunction(instance, "fd_fdstat_set_flags", types(I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiFdFdstatSetFlagsNode(language, instance));
         defineFunction(instance, "fd_prestat_get", types(I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiFdPrestatGetNode(language, instance));
         defineFunction(instance, "fd_prestat_dir_name", types(I32_TYPE, I32_TYPE, I32_TYPE), types(I32_TYPE), new WasiFdPrestatDirNameNode(language, instance));

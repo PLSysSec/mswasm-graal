@@ -235,8 +235,7 @@ public final class Instructions {
     public static final int F32_REINTERPRET_I32 = 0xBE;
     public static final int F64_REINTERPRET_I64 = 0xBF;
 
-    // Previously 0xFC. Changed to avoid conflict with MSWasm instructions
-    public static final int MISC = 0xFF;
+    public static final int MISC = 0xFC;
 
     public static final int I32_TRUNC_SAT_F32_S = 0x00;
     public static final int I32_TRUNC_SAT_F32_U = 0x01;
@@ -263,7 +262,7 @@ public final class Instructions {
     public static final int HANDLE_ADD = 0xF9;
     // public static final int HANDLE_SUB = 0xFA; // Unused
     public static final int NULL_HANDLE = 0xFB;
-    public static final int HANDLE_GET_OFFSET = 0xFC;
+    public static final int HANDLE_GET_OFFSET = 0xFF;
     public static final int HANDLE_EQ = 0xFD;
     public static final int HANDLE_LT = 0xFE;
 

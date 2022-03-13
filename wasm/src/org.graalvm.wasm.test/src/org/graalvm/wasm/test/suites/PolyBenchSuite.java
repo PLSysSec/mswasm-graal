@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -38,51 +38,28 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-package org.graalvm.wasm.predefined.wasi;
+package org.graalvm.wasm.test.suites;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.frame.VirtualFrame;
-import org.graalvm.wasm.WasmContext;
-import org.graalvm.wasm.WasmInstance;
-import org.graalvm.wasm.WasmLanguage;
-import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
-import org.graalvm.wasm.predefined.wasi.types.Errno;
+import java.io.IOException;
 
-import org.graalvm.wasm.mswasm.SegmentMemory;
-import org.graalvm.wasm.mswasm.Handle;
+import org.graalvm.wasm.test.WasmFileSuite;
+import org.junit.Test;
 
-public final class WasiArgsGetNode extends WasmBuiltinRootNode {
-
-    public WasiArgsGetNode(WasmLanguage language, WasmInstance module) {
-        super(language, module);
+public class PolyBenchSuite extends WasmFileSuite {
+    @Override
+    protected String testResource() {
+        return "polybench";
     }
 
     @Override
-    public Object executeWithContext(VirtualFrame frame, WasmContext context) {
-        final Object[] args = frame.getArguments();
-        return argsGet((Handle) args[0], (Handle) args[1]);
-    }
-
-    @TruffleBoundary
-    private int argsGet(Handle argvAddress, Handle argvBuffAddress) {
-        final String[] arguments = getContext().environment().getApplicationArguments();
-        long argvPointer = Handle.handleToRawLongBits(argvAddress);
-        long argvBuffPointer = Handle.handleToRawLongBits(argvBuffAddress);
-        for (final String argument : arguments) {
-            ((SegmentMemory) memory()).store_handle(this, argvPointer, Handle.longBitsToHandle(argvBuffPointer));
-            argvPointer += 4;
-            argvBuffPointer += ((SegmentMemory) memory()).writeString(this, argument, argvBuffPointer);
-            memory().store_i32_8(this, argvBuffPointer, (byte) 0);
-            ++argvBuffPointer;
-
-        }
-
-        return Errno.Success.ordinal();
+    protected String includedExternalModules() {
+        return super.includedExternalModules() + ",wasi_snapshot_preview1";
     }
 
     @Override
-    public String builtinNodeName() {
-        return "__wasi_args_get";
+    @Test
+    public void test() throws IOException {
+        // This is here just to make mx aware of the test suite class.
+        super.test();
     }
-
 }

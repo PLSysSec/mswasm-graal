@@ -7,9 +7,12 @@ import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_DECLARATION_SIZE;
 import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_INSTANCE_SIZE;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import org.graalvm.wasm.collection.ByteArrayList;
 
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
+import org.graalvm.wasm.nodes.WasmNode;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.interop.TruffleObject;
@@ -20,7 +23,7 @@ import org.graalvm.wasm.mswasm.*;
 import org.graalvm.wasm.memory.WasmMemory;
 
 public class SegmentMemory extends WasmMemory {
-    public static final boolean DEBUG = false;
+    public static final boolean DEBUG = true;
 
     private static final Unsafe unsafe;
     static {
@@ -465,6 +468,77 @@ public class SegmentMemory extends WasmMemory {
     public ByteBuffer asByteBuffer() {
         final String message = "Segment memory cannot be converted to a byte buffer";
         throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
+    }
+
+
+    // String reading/writing methods
+    
+    /**
+     * Reads the null-terminated UTF-8 string starting at {@code startOffset}.
+     *
+     * @param startOffset memory index of the first character
+     * @param node a node indicating the location where this read occurred in the Truffle AST. It
+     *            may be {@code null} to indicate that the location is not available.
+     * @return the read {@code String}
+     */
+    @CompilerDirectives.TruffleBoundary
+    public String readString(long startOffset, WasmNode node) {
+        ByteArrayList bytes = new ByteArrayList();
+        byte currentByte;
+        long offset = startOffset;
+
+        while ((currentByte = (byte) load_i32_8u(node, offset)) != 0) {
+            bytes.add(currentByte);
+            ++offset;
+        }
+
+        return new String(bytes.toArray(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Reads the UTF-8 string of length {@code length} starting at {@code startOffset}.
+     *
+     * @param startOffset memory index of the first character
+     * @param length length of the UTF-8 string to read in bytes
+     * @param node a node indicating the location where this read occurred in the Truffle AST. It
+     *            may be {@code null} to indicate that the location is not available.
+     * @return the read {@code String}
+     */
+    @CompilerDirectives.TruffleBoundary
+    public final String readString(long startOffset, int length, Node node) {
+        ByteArrayList bytes = new ByteArrayList();
+
+        for (int i = 0; i < length; ++i) {
+            bytes.add((byte) load_i32_8u(node, startOffset + i));
+        }
+
+        return new String(bytes.toArray(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Writes a Java String at offset {@code offset}.
+     * <p>
+     * The written string is encoded as UTF-8 and <em>not</em> terminated with a null character.
+     *
+     * @param node a node indicating the location where this write occurred in the Truffle AST. It
+     *            may be {@code null} to indicate that the location is not available.
+     * @param string the string to write
+     * @param offset memory index where to write the string
+     * @param length the maximum number of bytes to write, including the trailing null character
+     * @return the number of bytes written, including the trailing null character
+     */
+    @CompilerDirectives.TruffleBoundary
+    public final int writeString(Node node, String string, long offset, int length) {
+        final byte[] bytes = string.getBytes(StandardCharsets.UTF_8);
+        int i = 0;
+        for (; i < bytes.length && i < length; ++i) {
+            store_i32_8(node, offset + i, bytes[i]);
+        }
+        return i;
+    }
+
+    public final int writeString(Node node, String string, long offset) {
+        return writeString(node, string, offset, Integer.MAX_VALUE);
     }
 
 }

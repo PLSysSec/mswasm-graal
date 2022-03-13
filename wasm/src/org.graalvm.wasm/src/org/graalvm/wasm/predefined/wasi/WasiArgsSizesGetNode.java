@@ -44,8 +44,10 @@ import org.graalvm.wasm.WasmContext;
 import org.graalvm.wasm.WasmInstance;
 import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.memory.WasmMemory;
+import org.graalvm.wasm.mswasm.Handle;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
+import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.frame.VirtualFrame;
@@ -59,11 +61,11 @@ public final class WasiArgsSizesGetNode extends WasmBuiltinRootNode {
     @Override
     public Object executeWithContext(VirtualFrame frame, WasmContext context) {
         final Object[] args = frame.getArguments();
-        return argsSizesGet((int) args[0], (int) args[1]);
+        return argsSizesGet((Handle) args[0], (Handle) args[1]);
     }
 
     @TruffleBoundary
-    private int argsSizesGet(int argcAddress, int argvBufSizeAddress) {
+    private int argsSizesGet(Handle argcAddress, Handle argvBufSizeAddress) {
         final String[] arguments = getContext().environment().getApplicationArguments();
         final int argc = arguments.length;
         int argvBufSize = 0;
@@ -72,8 +74,8 @@ public final class WasiArgsSizesGetNode extends WasmBuiltinRootNode {
             argvBufSize += 1; // extra byte needed for the trailing null character
         }
 
-        memory().store_i32(this, argcAddress, argc);
-        memory().store_i32(this, argvBufSizeAddress, argvBufSize);
+        memory().store_i32(this, Handle.handleToRawLongBits(argcAddress), argc);
+        memory().store_i32(this, Handle.handleToRawLongBits(argvBufSizeAddress), argvBufSize);
         return Errno.Success.ordinal();
     }
 
