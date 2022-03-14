@@ -55,13 +55,15 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.TimeUnit;
 
+import org.graalvm.wasm.mswasm.Handle;
+
 final class FdUtils {
 
     private FdUtils() {
 
     }
 
-    static Errno writeToStream(Node node, WasmMemory memory, OutputStream stream, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    static Errno writeToStream(Node node, WasmMemory memory, OutputStream stream, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (stream == null) {
             return Errno.Acces;
         }
@@ -69,9 +71,10 @@ final class FdUtils {
         int totalBytesWritten = 0;
         try {
             for (int i = 0; i < iovecCount; i++) {
-                final int iovecAddress = iovecArrayAddress + i * Iovec.BYTES;
-                final int start = Iovec.readBuf(node, memory, iovecAddress);
+                final long iovecAddress = iovecArrayAddress + i * Iovec.BYTES;
+                final long start = Handle.handleToRawLongBits(Iovec.readBuf(node, memory, iovecAddress));
                 final int len = Iovec.readBufLen(node, memory, iovecAddress);
+                // System.err.println("Printing " + len + " bytes");
                 for (int j = 0; j < len; j++) {
                     stream.write(memory.load_i32_8u(node, start + j));
                     ++totalBytesWritten;
@@ -82,10 +85,11 @@ final class FdUtils {
         }
 
         memory.store_i32(null, sizeAddress, totalBytesWritten);
+        // System.err.println("Wrote " + totalBytesWritten + " total bytes, stored at " + Handle.longBitsToHandle(sizeAddress));
         return Errno.Success;
     }
 
-    static Errno readFromStream(Node node, WasmMemory memory, InputStream stream, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    static Errno readFromStream(Node node, WasmMemory memory, InputStream stream, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (stream == null) {
             return Errno.Acces;
         }
@@ -94,8 +98,8 @@ final class FdUtils {
         int byteRead = 0;
         try {
             for (int i = 0; i < iovecCount; i++) {
-                final int iovecAddress = iovecArrayAddress + i * Iovec.BYTES;
-                final int start = Iovec.readBuf(node, memory, iovecAddress);
+                final long iovecAddress = iovecArrayAddress + i * Iovec.BYTES;
+                final long start = Handle.handleToRawLongBits(Iovec.readBuf(node, memory, iovecAddress));
                 final int len = Iovec.readBufLen(node, memory, iovecAddress);
                 for (int j = 0; j < len; j++) {
                     byteRead = stream.read();
@@ -119,7 +123,7 @@ final class FdUtils {
      * "https://github.com/WebAssembly/WASI/blob/a206794fea66118945a520f6e0af3754cc51860b/phases/snapshot/docs.md#-fdstat-struct"><code>fdstat</code></a>
      * structure to memory.
      */
-    static Errno writeFdstat(Node node, WasmMemory memory, int address, Filetype type, short fsFlags, long fsRightsBase, long fsRightsInherting) {
+    static Errno writeFdstat(Node node, WasmMemory memory, long address, Filetype type, short fsFlags, long fsRightsBase, long fsRightsInherting) {
         Fdstat.writeFsFiletype(node, memory, address, type);
         Fdstat.writeFsFlags(node, memory, address, fsFlags);
         Fdstat.writeFsRightsBase(node, memory, address, fsRightsBase);
@@ -132,7 +136,7 @@ final class FdUtils {
      * "https://github.com/WebAssembly/WASI/blob/a206794fea66118945a520f6e0af3754cc51860b/phases/snapshot/docs.md#-filestat-struct"><code>filestat</code></a>
      * structure to memory.
      */
-    static Errno writeFilestat(Node node, WasmMemory memory, int address, TruffleFile file) {
+    static Errno writeFilestat(Node node, WasmMemory memory, long address, TruffleFile file) {
         // Write filestat structure
         // https://github.com/WebAssembly/WASI/blob/main/phases/snapshot/docs.md#-filestat-struct
         try {

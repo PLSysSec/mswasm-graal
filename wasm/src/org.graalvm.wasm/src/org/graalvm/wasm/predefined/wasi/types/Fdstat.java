@@ -59,32 +59,32 @@ public final class Fdstat {
     public static final int BYTES = 24;
 
     /** Reads file type. */
-    public static Filetype readFsFiletype(Node node, WasmMemory memory, int address) {
+    public static Filetype readFsFiletype(Node node, WasmMemory memory, long address) {
         return Filetype.fromValue((byte) memory.load_i32_8u(node, address + 0));
     }
 
     /** Writes file type. */
-    public static void writeFsFiletype(Node node, WasmMemory memory, int address, Filetype value) {
+    public static void writeFsFiletype(Node node, WasmMemory memory, long address, Filetype value) {
         memory.store_i32_8(node, address + 0, value.toValue());
     }
 
     /** Reads file descriptor flags. */
-    public static short readFsFlags(Node node, WasmMemory memory, int address) {
+    public static short readFsFlags(Node node, WasmMemory memory, long address) {
         return (short) memory.load_i32_16u(node, address + 2);
     }
 
     /** Writes file descriptor flags. */
-    public static void writeFsFlags(Node node, WasmMemory memory, int address, short value) {
+    public static void writeFsFlags(Node node, WasmMemory memory, long address, short value) {
         memory.store_i32_16(node, address + 2, value);
     }
 
     /** Reads rights that apply to this file descriptor. */
-    public static long readFsRightsBase(Node node, WasmMemory memory, int address) {
+    public static long readFsRightsBase(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 8);
     }
 
     /** Writes rights that apply to this file descriptor. */
-    public static void writeFsRightsBase(Node node, WasmMemory memory, int address, long value) {
+    public static void writeFsRightsBase(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 8, value);
     }
 
@@ -92,7 +92,7 @@ public final class Fdstat {
      * Reads maximum set of rights that may be installed on new file descriptors that are created
      * through this file descriptor, e.g., through {@code path_open}.
      */
-    public static long readFsRightsInheriting(Node node, WasmMemory memory, int address) {
+    public static long readFsRightsInheriting(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 16);
     }
 
@@ -100,7 +100,7 @@ public final class Fdstat {
      * Writes maximum set of rights that may be installed on new file descriptors that are created
      * through this file descriptor, e.g., through {@code path_open}.
      */
-    public static void writeFsRightsInheriting(Node node, WasmMemory memory, int address, long value) {
+    public static void writeFsRightsInheriting(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 16, value);
     }
 

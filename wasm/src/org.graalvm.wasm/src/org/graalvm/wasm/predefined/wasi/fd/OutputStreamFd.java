@@ -71,7 +71,7 @@ final class OutputStreamFd extends Fd {
     }
 
     @Override
-    public Errno write(Node node, WasmMemory memory, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    public Errno write(Node node, WasmMemory memory, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (!isSet(fsRightsBase, Rights.FdWrite)) {
             return Errno.Notcapable;
         }

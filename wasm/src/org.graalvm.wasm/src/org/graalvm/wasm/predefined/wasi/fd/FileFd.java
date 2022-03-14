@@ -141,7 +141,7 @@ class FileFd extends SeekableByteChannelFd {
     }
 
     @Override
-    public Errno filestatGet(Node node, WasmMemory memory, int resultAddress) {
+    public Errno filestatGet(Node node, WasmMemory memory, long resultAddress) {
         if (!isSet(fsRightsBase, Rights.FdFilestatGet)) {
             return Errno.Notcapable;
         }

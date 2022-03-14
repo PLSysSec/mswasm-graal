@@ -59,12 +59,12 @@ public final class PrestatDir {
     public static final int BYTES = 4;
 
     /** Reads the length of the directory name for use with {@code fd_prestat_dir_name}. */
-    public static int readPrNameLen(Node node, WasmMemory memory, int address) {
+    public static int readPrNameLen(Node node, WasmMemory memory, long address) {
         return memory.load_i32(node, address + 0);
     }
 
     /** Writes the length of the directory name for use with {@code fd_prestat_dir_name}. */
-    public static void writePrNameLen(Node node, WasmMemory memory, int address, int value) {
+    public static void writePrNameLen(Node node, WasmMemory memory, long address, int value) {
         memory.store_i32(node, address + 0, value);
     }
 

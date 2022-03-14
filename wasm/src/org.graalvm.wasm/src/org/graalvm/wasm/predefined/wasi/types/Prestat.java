@@ -59,12 +59,12 @@ public final class Prestat {
     public static final int CONTENTSOFFSET = 4;
 
     /** Reads union tag. */
-    public static Preopentype readTag(Node node, WasmMemory memory, int address) {
+    public static Preopentype readTag(Node node, WasmMemory memory, long address) {
         return Preopentype.fromValue((byte) memory.load_i32_8u(node, address + 0));
     }
 
     /** Writes union tag. */
-    public static void writeTag(Node node, WasmMemory memory, int address, Preopentype tag) {
+    public static void writeTag(Node node, WasmMemory memory, long address, Preopentype tag) {
         memory.store_i32_8(node, address + 0, tag.toValue());
     }
 

@@ -71,8 +71,8 @@ public abstract class WasmFrame {
     }
 
     public static void pushHandle(VirtualFrame frame, int slot, Handle value) {
-        if (SegmentMemory.DEBUG)
-            System.err.println("\n[pushHandle] pushing " + value + " to slot " + slot);
+        // if (SegmentMemory.DEBUG)
+        //     System.err.println("\n[pushHandle] pushing " + value + " to slot " + slot);
         frame.setObject(slot, value);
     }
 
@@ -129,8 +129,8 @@ public abstract class WasmFrame {
             // Needed to avoid keeping track of popped slots in FrameStates.
             frame.clear(slot);
         }
-        if (SegmentMemory.DEBUG)
-            System.err.println("\n[popHandle] popped " + result + " from slot " + slot);
+        // if (SegmentMemory.DEBUG)
+        //     System.err.println("\n[popHandle] popped " + result + " from slot " + slot);
         return result;
     }
 }

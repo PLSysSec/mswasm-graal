@@ -52,6 +52,8 @@ import org.graalvm.wasm.predefined.wasi.types.Rights;
 
 import static org.graalvm.wasm.predefined.wasi.FlagUtils.allFlagsSet;
 
+import org.graalvm.wasm.mswasm.SegmentMemory;
+
 /**
  * File descriptor representing a pre-opened directory.
  */
@@ -69,16 +71,16 @@ final class PreopenedDirectoryFd extends DirectoryFd {
     }
 
     @Override
-    public Errno prestatGet(Node node, WasmMemory memory, int prestatAddress) {
+    public Errno prestatGet(Node node, WasmMemory memory, long prestatAddress) {
         Prestat.writeTag(node, memory, prestatAddress, Preopentype.Dir);
-        final int prestatDirAddress = prestatAddress + Prestat.CONTENTSOFFSET;
+        final long prestatDirAddress = prestatAddress + Prestat.CONTENTSOFFSET;
         PrestatDir.writePrNameLen(node, memory, prestatDirAddress, WasmMemory.encodedStringLength(virtualPath));
         return Errno.Success;
     }
 
     @Override
-    public Errno prestatDirName(Node node, WasmMemory memory, int pathAddress, int pathLength) {
-        memory.writeString(node, virtualPath, pathAddress, pathLength);
+    public Errno prestatDirName(Node node, WasmMemory memory, long pathAddress, int pathLength) {
+        ((SegmentMemory)memory).writeString(node, virtualPath, pathAddress, pathLength);
         return Errno.Success;
     }
 

@@ -282,6 +282,8 @@ import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RepeatingNode;
 import com.oracle.truffle.api.profiles.ConditionProfile;
 
+import java.util.Arrays;
+
 public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
     /**
@@ -601,8 +603,14 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     Object[] args = createArgumentsForCall(frame, function.typeIndex(), numArgs, stackPointer);
                     stackPointer -= args.length;
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[WasmBlockNode] Calling function " + function + " with args " + Arrays.toString(args));
+                    }
 
                     Object result = executeDirectCall(childrenOffset, function, args);
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[WasmBlockNode] " + function + " returned " + result);
+                    }
                     childrenOffset++;
 
                     // At the moment, WebAssembly functions may return up to one value.
@@ -670,6 +678,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     if (element instanceof WasmFunctionInstance) {
                         functionInstance = (WasmFunctionInstance) element;
                         function = functionInstance.function();
+                        if (SegmentMemory.DEBUG) {
+                            System.err.println("[WasmBlockNode] Indirect call into function " + function);
+                        }
                         target = functionInstance.target();
                         functionInstanceContext = functionInstance.context();
                     } else {
@@ -949,6 +960,9 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 // MSWasm instructions
                 case NEW_SEGMENT: {
                     int bytes = popInt(frame, stackPointer - 1);
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[WasmBlockNode] Calling new_segment(" + bytes + ")");
+                    }
                     Handle addr = memory.allocSegment(bytes);
                     pushHandle(frame, stackPointer - 1, addr);
                     break;

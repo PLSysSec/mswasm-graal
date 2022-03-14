@@ -1205,11 +1205,13 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private void readGlobalSection() {
-        System.out.println("reading global section");
+        if (SegmentMemory.DEBUG)
+            System.err.println("reading global section");
         final int numGlobals = readLength();
         module.limits().checkGlobalCount(numGlobals);
         final int startingGlobalIndex = module.symbolTable().numGlobals();
-        System.err.println("found " + startingGlobalIndex + " initial globals");
+        if (SegmentMemory.DEBUG)
+            System.err.println("found " + startingGlobalIndex + " initial globals");
         for (int globalIndex = startingGlobalIndex; globalIndex != startingGlobalIndex + numGlobals; globalIndex++) {
             final byte type = readValueType();
             // 0x00 means const, 0x01 means var
@@ -1242,7 +1244,8 @@ public class BinaryParser extends BinaryStreamParser {
                     isInitialized = true;
                     break;
                 case (byte)Instructions.NULL_HANDLE:
-                    System.err.println("Found global handle at index " + globalIndex);
+                    if (SegmentMemory.DEBUG)
+                        System.err.println("Found global handle at index " + globalIndex);
                     value = Handle.handleToRawLongBits(Handle.nullHandle());
                     isInitialized = true;
                     break;
@@ -1281,13 +1284,16 @@ public class BinaryParser extends BinaryStreamParser {
     }
 
     private void readDataSection(WasmContext linkedContext, WasmInstance linkedInstance) {
-        System.err.println("Reading data section");
+        if (SegmentMemory.DEBUG)
+            System.err.println("Reading data section");
         final int numDataSegments = readLength();
         module.limits().checkDataSegmentCount(numDataSegments);
         for (int dataSegmentId = 0; dataSegmentId != numDataSegments; ++dataSegmentId) {
-            System.err.println("Reading data segment");
+            if (SegmentMemory.DEBUG)
+                System.err.println("Reading data segment");
             readMemoryIndex();
-            System.err.println("Read memory index");
+            if (SegmentMemory.DEBUG)
+                System.err.println("Read memory index");
 
             // Data dataOffset expression must be a constant expression with result type i32.
             // https://webassembly.github.io/spec/core/syntax/modules.html#data-segments
@@ -1325,7 +1331,6 @@ public class BinaryParser extends BinaryStreamParser {
             final int byteLength = readLength();
 
             // if (linkedInstance != null) {
-            //     System.err.println("linkedInstance not null");
             //     if (offsetGlobalIndex != -1) {
             //         int offsetGlobalAddress = linkedInstance.globalAddress(offsetGlobalIndex);
             //         offsetAddress = linkedContext.globals().loadAsInt(offsetGlobalAddress);
@@ -1354,7 +1359,6 @@ public class BinaryParser extends BinaryStreamParser {
             //     }
 
             // } else {
-                System.err.println("linkedInstance null");
                 // Reading of the data segment occurs during parsing, so add a linker action.
                 final byte[] dataSegment = new byte[byteLength];
                 for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
@@ -1368,7 +1372,8 @@ public class BinaryParser extends BinaryStreamParser {
                                 dataSegment, pointerOffsetsAndSizes));
             // }
         }
-    System.err.println("End read data section");
+        if (SegmentMemory.DEBUG)
+            System.err.println("End read data section");
     }
 
     private void readFunctionType() {

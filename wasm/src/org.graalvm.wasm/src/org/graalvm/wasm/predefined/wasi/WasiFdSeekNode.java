@@ -69,7 +69,7 @@ public final class WasiFdSeekNode extends WasmBuiltinRootNode {
         if (handle == null) {
             return Errno.Badf.ordinal();
         }
-        return handle.seek(this, memory(), offset, Whence.values()[whence], (int)Handle.handleToRawLongBits(filesizeAddress)).ordinal();
+        return handle.seek(this, memory(), offset, Whence.values()[whence], Handle.handleToRawLongBits(filesizeAddress)).ordinal();
     }
 
     @Override

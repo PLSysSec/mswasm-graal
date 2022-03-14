@@ -173,8 +173,8 @@ public abstract class Fd implements Closeable {
      *      "https://github.com/WebAssembly/WASI/blob/a206794fea66118945a520f6e0af3754cc51860b/phases/snapshot/docs.md#path_open">WASI
      *      <code>path_open</code> documentation</a>
      */
-    public Errno pathOpen(Node node, WasmMemory memory, int dirflags, int pathAddress, int pathLength, short oflags, long childFsRightsBase, long childFsRightsInheriting, short fdflags,
-                    int fdAddress) {
+    public Errno pathOpen(Node node, WasmMemory memory, int dirflags, long pathAddress, int pathLength, short oflags, long childFsRightsBase, long childFsRightsInheriting, short fdflags,
+                    long fdAddress) {
         if (!isSet(fsRightsBase, Rights.PathOpen) || !isSubsetOf(childFsRightsBase, fsRightsBase) || !isSubsetOf(childFsRightsBase, fsRightsInheriting)) {
             return Errno.Notcapable;
         }
@@ -200,7 +200,7 @@ public abstract class Fd implements Closeable {
      * @return {@link Errno#Success} in case of success, or another {@link Errno} in case of error
      * @throws WasmException if an error happens while writing or reading to {@code memory}
      */
-    public Errno write(Node node, WasmMemory memory, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    public Errno write(Node node, WasmMemory memory, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (!isSet(fsRightsBase, Rights.FdWrite)) {
             return Errno.Notcapable;
         }
@@ -226,7 +226,7 @@ public abstract class Fd implements Closeable {
      * @return {@link Errno#Success} in case of success, or another {@link Errno} in case of error
      * @throws WasmException if an error happens while writing or reading to {@code memory}
      */
-    public Errno read(Node node, WasmMemory memory, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    public Errno read(Node node, WasmMemory memory, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (!isSet(fsRightsBase, Rights.FdRead)) {
             return Errno.Notcapable;
         }
@@ -249,7 +249,7 @@ public abstract class Fd implements Closeable {
      * @return {@link Errno#Success} in case of success, or another {@link Errno} in case of error
      * @throws WasmException if an error happens while writing or reading to {@code memory}
      */
-    public Errno seek(Node node, WasmMemory memory, long offset, Whence whence, int newOffsetAddress) {
+    public Errno seek(Node node, WasmMemory memory, long offset, Whence whence, long newOffsetAddress) {
         if (!isSet(fsRightsBase, Rights.FdSeek)) {
             return Errno.Notcapable;
         }
@@ -271,7 +271,7 @@ public abstract class Fd implements Closeable {
      * @return {@link Errno#Success} in case of success, or another {@link Errno} in case of error
      * @throws WasmException if an error happens while writing or reading to {@code memory}
      */
-    public Errno fdstatGet(Node node, WasmMemory memory, int resultAddress) {
+    public Errno fdstatGet(Node node, WasmMemory memory, long resultAddress) {
         // There is no right needed to call this method.
         return FdUtils.writeFdstat(node, memory, resultAddress, type, fdFlags, fsRightsBase, fsRightsInheriting);
     }
@@ -309,7 +309,7 @@ public abstract class Fd implements Closeable {
      * @return {@link Errno#Success} in case of success, or another {@link Errno} in case of error
      * @throws WasmException if an error happens while writing or reading to {@code memory}
      */
-    public Errno filestatGet(Node node, WasmMemory memory, int resultAddress) {
+    public Errno filestatGet(Node node, WasmMemory memory, long resultAddress) {
         if (!isSet(fsRightsBase, Rights.FdFilestatGet)) {
             return Errno.Notcapable;
         }
@@ -330,7 +330,7 @@ public abstract class Fd implements Closeable {
      * @throws WasmException if an error happens while writing or reading to {@code memory}
      * @see <a href="#preopened">Pre-opened directories</a>
      */
-    public Errno prestatGet(Node node, WasmMemory memory, int resultAddress) {
+    public Errno prestatGet(Node node, WasmMemory memory, long resultAddress) {
         // There is no right needed to call this method.
         return Errno.Acces;
     }
@@ -348,7 +348,7 @@ public abstract class Fd implements Closeable {
      * @throws WasmException if an error happens while writing or reading to {@code memory}
      * @see <a href="#preopened">Pre-opened directories</a>
      */
-    public Errno prestatDirName(Node node, WasmMemory memory, int pathAddress, int pathLength) {
+    public Errno prestatDirName(Node node, WasmMemory memory, long pathAddress, int pathLength) {
         // There is no right needed to call this method.
         return Errno.Acces;
     }

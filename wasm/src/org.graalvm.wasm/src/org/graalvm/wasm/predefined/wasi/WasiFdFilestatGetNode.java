@@ -68,7 +68,7 @@ public final class WasiFdFilestatGetNode extends WasmBuiltinRootNode {
         if (handle == null) {
             return Errno.Badf.ordinal();
         }
-        return handle.filestatGet(this, memory(), (int)Handle.handleToRawLongBits(bufferAddress)).ordinal();
+        return handle.filestatGet(this, memory(), Handle.handleToRawLongBits(bufferAddress)).ordinal();
     }
 
     @Override

@@ -145,7 +145,7 @@ public class SegmentMemory extends WasmMemory {
         Segment s = getAndValidateSegment(node, h);
         long effectiveAddr = s.memoryBase + h.offset;
 
-        if (effectiveAddr >= s.memoryBound || effectiveAddr + accessSize >= s.memoryBound) {
+        if (effectiveAddr >= s.memoryBound || effectiveAddr + accessSize > s.memoryBound) {
             throw trapOutOfBounds(node, accessSize, effectiveAddr);
         }
         return effectiveAddr;
@@ -161,7 +161,7 @@ public class SegmentMemory extends WasmMemory {
         final String message = String.format("Handle into segment %d with offset %d is corrupted",
                                              h.segment, h.offset);
         if (DEBUG) {
-            System.out.println("[trapCorrupted] " + message + ". Printing stack trace...");
+            System.err.println("[trapCorrupted] " + message + ". Printing stack trace...");
             new Exception().printStackTrace();
         }
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
@@ -177,7 +177,7 @@ public class SegmentMemory extends WasmMemory {
         final String message = String.format("Handle into segment %d with offset %d is null",
                                              h.segment, h.offset);
         if (DEBUG) {
-            System.out.println("[trapNull] " + message + ". Printing stack trace...");
+            System.err.println("[trapNull] " + message + ". Printing stack trace...");
             new Exception().printStackTrace();
         }
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
@@ -193,7 +193,7 @@ public class SegmentMemory extends WasmMemory {
         final String message = String.format("Segment with key %d has already been freed",
                                     segmentKey);
         if (DEBUG) {
-            System.out.println("[trapCorrupted] " + message + ". Printing stack trace...");
+            System.err.println("[trapCorrupted] " + message + ". Printing stack trace...");
             new Exception().printStackTrace();
         }
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
@@ -207,7 +207,7 @@ public class SegmentMemory extends WasmMemory {
         final String message = String.format("%d-byte segment memory access at address 0x%016X (%d) is out-of-bounds",
                         length, address, address);
         if (DEBUG) {
-            System.out.println("[trapOutOfBounds] " + message + ". Printing stack trace...");
+            System.err.println("[trapOutOfBounds] " + message + ". Printing stack trace...");
             new Exception().printStackTrace();
         }
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);

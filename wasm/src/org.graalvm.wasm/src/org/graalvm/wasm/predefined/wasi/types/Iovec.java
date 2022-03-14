@@ -47,6 +47,8 @@ package org.graalvm.wasm.predefined.wasi.types;
 
 import com.oracle.truffle.api.nodes.Node;
 import org.graalvm.wasm.memory.WasmMemory;
+import org.graalvm.wasm.mswasm.SegmentMemory;
+import org.graalvm.wasm.mswasm.Handle;
 
 /** A region of memory for scatter/gather reads. */
 public final class Iovec {
@@ -56,26 +58,26 @@ public final class Iovec {
     }
 
     /** Size of this structure, in bytes. */
-    public static final int BYTES = 8;
+    public static final int BYTES = 12;
 
     /** Reads the address of the buffer to be filled. */
-    public static int readBuf(Node node, WasmMemory memory, int address) {
-        return memory.load_i32(node, address + 0);
+    public static Handle readBuf(Node node, WasmMemory memory, long address) {
+        return ((SegmentMemory)memory).load_handle(node, address + 4);
     }
 
     /** Writes the address of the buffer to be filled. */
-    public static void writeBuf(Node node, WasmMemory memory, int address, int value) {
-        memory.store_i32(node, address + 0, value);
+    public static void writeBuf(Node node, WasmMemory memory, long address, Handle value) {
+        ((SegmentMemory)memory).store_handle(node, address + 4, value);
     }
 
     /** Reads the length of the buffer to be filled. */
-    public static int readBufLen(Node node, WasmMemory memory, int address) {
-        return memory.load_i32(node, address + 4);
+    public static int readBufLen(Node node, WasmMemory memory, long address) {
+        return memory.load_i32(node, address + 12);
     }
 
     /** Writes the length of the buffer to be filled. */
-    public static void writeBufLen(Node node, WasmMemory memory, int address, int value) {
-        memory.store_i32(node, address + 4, value);
+    public static void writeBufLen(Node node, WasmMemory memory, long address, int value) {
+        memory.store_i32(node, address + 12, value);
     }
 
 }

@@ -57,6 +57,8 @@ import java.nio.file.FileAlreadyExistsException;
 import static org.graalvm.wasm.predefined.wasi.FlagUtils.isSet;
 import static org.graalvm.wasm.predefined.wasi.FlagUtils.isSubsetOf;
 
+import org.graalvm.wasm.mswasm.SegmentMemory;
+
 /**
  * File descriptor representing a directory.
  */
@@ -74,15 +76,15 @@ class DirectoryFd extends Fd {
     }
 
     @Override
-    public Errno pathOpen(Node node, WasmMemory memory, int dirFlags, int pathAddress, int pathLength, short childOflags, long childFsRightsBase, long childFsRightsInheriting, short childFdFlags,
-                    int fdAddress) {
+    public Errno pathOpen(Node node, WasmMemory memory, int dirFlags, long pathAddress, int pathLength, short childOflags, long childFsRightsBase, long childFsRightsInheriting, short childFdFlags,
+    long fdAddress) {
         // Check that the rights of the newly created fd are both a subset of fsRightsBase and
         // fsRightsInheriting.
         if (!isSet(fsRightsBase, Rights.PathOpen) || !isSubsetOf(childFsRightsBase, fsRightsBase) || !isSubsetOf(childFsRightsBase, fsRightsInheriting)) {
             return Errno.Notcapable;
         }
 
-        final String path = memory.readString(pathAddress, pathLength, node);
+        final String path = ((SegmentMemory)memory).readString(pathAddress, pathLength, node);
         final TruffleFile virtualChildFile = preopenedRoot.containedVirtualFile(virtualFile.resolve(path));
         if (virtualChildFile == null) {
             return Errno.Notcapable;

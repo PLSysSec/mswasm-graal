@@ -68,7 +68,7 @@ public final class WasiFdWriteNode extends WasmBuiltinRootNode {
         if (handle == null) {
             return Errno.Badf.ordinal();
         }
-        return handle.write(this, memory(), (int)Handle.handleToRawLongBits(iov), iovcnt, (int)Handle.handleToRawLongBits(sizeAddress)).ordinal();
+        return handle.write(this, memory(), Handle.handleToRawLongBits(iov), iovcnt, Handle.handleToRawLongBits(sizeAddress)).ordinal();
     }
 
     @Override

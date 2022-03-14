@@ -71,7 +71,7 @@ final class InputStreamFd extends Fd {
     }
 
     @Override
-    public Errno read(Node node, WasmMemory memory, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    public Errno read(Node node, WasmMemory memory, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (!isSet(fsRightsBase, Rights.FdRead)) {
             return Errno.Notcapable;
         }

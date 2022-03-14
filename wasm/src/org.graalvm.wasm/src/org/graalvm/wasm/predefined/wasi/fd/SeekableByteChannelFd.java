@@ -82,7 +82,7 @@ abstract class SeekableByteChannelFd extends Fd {
     }
 
     @Override
-    public Errno read(Node node, WasmMemory memory, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    public Errno read(Node node, WasmMemory memory, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (!isSet(fsRightsBase, Rights.FdRead)) {
             return Errno.Notcapable;
         }
@@ -90,7 +90,7 @@ abstract class SeekableByteChannelFd extends Fd {
     }
 
     @Override
-    public Errno write(Node node, WasmMemory memory, int iovecArrayAddress, int iovecCount, int sizeAddress) {
+    public Errno write(Node node, WasmMemory memory, long iovecArrayAddress, int iovecCount, long sizeAddress) {
         if (!isSet(fsRightsBase, Rights.FdWrite)) {
             return Errno.Notcapable;
         }
@@ -98,7 +98,7 @@ abstract class SeekableByteChannelFd extends Fd {
     }
 
     @Override
-    public Errno seek(Node node, WasmMemory memory, long offset, Whence whence, int newOffsetAddress) {
+    public Errno seek(Node node, WasmMemory memory, long offset, Whence whence, long newOffsetAddress) {
         if (!isSet(fsRightsBase, Rights.FdSeek)) {
             return Errno.Notcapable;
         }

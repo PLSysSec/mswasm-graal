@@ -59,42 +59,42 @@ public final class Filestat {
     public static final int BYTES = 64;
 
     /** Reads device id of device containing the file. */
-    public static long readDev(Node node, WasmMemory memory, int address) {
+    public static long readDev(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 0);
     }
 
     /** Writes device id of device containing the file. */
-    public static void writeDev(Node node, WasmMemory memory, int address, long value) {
+    public static void writeDev(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 0, value);
     }
 
     /** Reads file serial number. */
-    public static long readIno(Node node, WasmMemory memory, int address) {
+    public static long readIno(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 8);
     }
 
     /** Writes file serial number. */
-    public static void writeIno(Node node, WasmMemory memory, int address, long value) {
+    public static void writeIno(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 8, value);
     }
 
     /** Reads file type. */
-    public static Filetype readFiletype(Node node, WasmMemory memory, int address) {
+    public static Filetype readFiletype(Node node, WasmMemory memory, long address) {
         return Filetype.fromValue((byte) memory.load_i32_8u(node, address + 16));
     }
 
     /** Writes file type. */
-    public static void writeFiletype(Node node, WasmMemory memory, int address, Filetype value) {
+    public static void writeFiletype(Node node, WasmMemory memory, long address, Filetype value) {
         memory.store_i32_8(node, address + 16, value.toValue());
     }
 
     /** Reads number of hard links to the file. */
-    public static long readNlink(Node node, WasmMemory memory, int address) {
+    public static long readNlink(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 24);
     }
 
     /** Writes number of hard links to the file. */
-    public static void writeNlink(Node node, WasmMemory memory, int address, long value) {
+    public static void writeNlink(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 24, value);
     }
 
@@ -102,7 +102,7 @@ public final class Filestat {
      * Reads for regular files, the file size in bytes. for symbolic links, the length in bytes of
      * the pathname contained in the symbolic link.
      */
-    public static long readSize(Node node, WasmMemory memory, int address) {
+    public static long readSize(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 32);
     }
 
@@ -110,37 +110,37 @@ public final class Filestat {
      * Writes for regular files, the file size in bytes. for symbolic links, the length in bytes of
      * the pathname contained in the symbolic link.
      */
-    public static void writeSize(Node node, WasmMemory memory, int address, long value) {
+    public static void writeSize(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 32, value);
     }
 
     /** Reads last data access timestamp. */
-    public static long readAtim(Node node, WasmMemory memory, int address) {
+    public static long readAtim(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 40);
     }
 
     /** Writes last data access timestamp. */
-    public static void writeAtim(Node node, WasmMemory memory, int address, long value) {
+    public static void writeAtim(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 40, value);
     }
 
     /** Reads last data modification timestamp. */
-    public static long readMtim(Node node, WasmMemory memory, int address) {
+    public static long readMtim(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 48);
     }
 
     /** Writes last data modification timestamp. */
-    public static void writeMtim(Node node, WasmMemory memory, int address, long value) {
+    public static void writeMtim(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 48, value);
     }
 
     /** Reads last file status change timestamp. */
-    public static long readCtim(Node node, WasmMemory memory, int address) {
+    public static long readCtim(Node node, WasmMemory memory, long address) {
         return memory.load_i64(node, address + 56);
     }
 
     /** Writes last file status change timestamp. */
-    public static void writeCtim(Node node, WasmMemory memory, int address, long value) {
+    public static void writeCtim(Node node, WasmMemory memory, long address, long value) {
         memory.store_i64(node, address + 56, value);
     }
 

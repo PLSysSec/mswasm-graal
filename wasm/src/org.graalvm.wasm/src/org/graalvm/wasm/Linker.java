@@ -282,7 +282,6 @@ public class Linker {
                                 "', does not exist in the imported module '" + function.importedModuleName() + "'.");
             }
             if (!function.type().equals(importedFunction.type())) {
-                System.err.println("mismatched function import types");
                 throw WasmException.create(Failure.INCOMPATIBLE_IMPORT_TYPE);
             }
             final CallTarget target = importedInstance.target(importedFunction.index());
@@ -335,7 +334,6 @@ public class Linker {
             // https://webassembly.github.io/spec/core/exec/modules.html#limits
             // If no max size is declared, then declaredMaxSize value will be
             // MAX_TABLE_DECLARATION_SIZE, so this condition will pass.
-            System.err.println("mismatched memory sizes");
             assertUnsignedIntLessOrEqual(declaredMinSize, memory.declaredMinSize(), Failure.INCOMPATIBLE_IMPORT_TYPE);
             assertUnsignedIntGreaterOrEqual(declaredMaxSize, memory.declaredMaxSize(), Failure.INCOMPATIBLE_IMPORT_TYPE);
             instance.setMemory(memory);
@@ -359,7 +357,8 @@ public class Linker {
         context.globals().storeLong(1, Handle.handleToRawLongBits(dataSegment));
 
         final Runnable resolveAction = () -> {
-            System.err.println("Resolving data section");
+            if (SegmentMemory.DEBUG)
+                System.err.println("[Linker] Resolving data section");
             WasmMemory memory = instance.memory();
             Assert.assertNotNull(memory, String.format("No memory declared or imported in the module '%s'", instance.name()), Failure.UNSPECIFIED_MALFORMED);
 
@@ -389,7 +388,14 @@ public class Linker {
             for (int ptr = 0; ptr < pointerOffsetsAndSizes.length; ptr += 2) {
                 int writeOffset = pointerOffsetsAndSizes[ptr];
                 int segmentSize = pointerOffsetsAndSizes[ptr + 1];
-                ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, ((SegmentMemory) memory).allocSegment(segmentSize));
+                if (SegmentMemory.DEBUG) {
+                    System.err.println("[Linker] Initializing data segment at offset " + writeOffset + " of size " + segmentSize);
+                }
+                if (segmentSize == 0) {
+                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, Handle.nullHandle());
+                } else {
+                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, ((SegmentMemory) memory).allocSegment(segmentSize));
+                }
             }
         };
         final ArrayList<Sym> dependencies = new ArrayList<>();
@@ -428,7 +434,6 @@ public class Linker {
                 // https://webassembly.github.io/spec/core/exec/modules.html#limits
                 // If no max size is declared, then declaredMaxSize value will be
                 // MAX_TABLE_DECLARATION_SIZE, so this condition will pass.
-                System.err.println("mismatched table sizes");
                 assertUnsignedIntLessOrEqual(declaredMinSize, table.declaredMinSize(), Failure.INCOMPATIBLE_IMPORT_TYPE);
                 assertUnsignedIntGreaterOrEqual(declaredMaxSize, table.declaredMaxSize(), Failure.INCOMPATIBLE_IMPORT_TYPE);
                 instance.setTable(table);
