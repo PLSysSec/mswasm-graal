@@ -184,6 +184,7 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
             ContextState firstIterationContextState = null;
 
             for (int i = 0; i != iterations; ++i) {
+                // System.err.println("!!Running test case iteration " + i);
                 try {
                     TEST_OUT.reset();
                     final Value result = arg == null ? mainFunction.execute() : mainFunction.execute(arg);
@@ -366,9 +367,9 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
             runInContext(testCase, context, sources, syncInlineIterations, PHASE_SYNC_INLINE_ICON, "sync,inl");
 
             // Run with normal, asynchronous compilation.
-            // int asyncIterations = Integer.parseInt(testCase.options().getProperty("async-iterations", String.valueOf(DEFAULT_ASYNC_ITERATIONS)));
-            // context = getAsyncCompiled(contextBuilder);
-            // runInContext(testCase, context, sources, asyncIterations, PHASE_ASYNC_ICON, "async,multi");
+            int asyncIterations = Integer.parseInt(testCase.options().getProperty("async-iterations", String.valueOf(DEFAULT_ASYNC_ITERATIONS)));
+            context = getAsyncCompiled(contextBuilder);
+            runInContext(testCase, context, sources, asyncIterations, PHASE_ASYNC_ICON, "async,multi");
         } catch (InterruptedException | IOException e) {
             Assert.fail(String.format("Test %s failed: %s", testCase.name(), e.getMessage()));
         } finally {
