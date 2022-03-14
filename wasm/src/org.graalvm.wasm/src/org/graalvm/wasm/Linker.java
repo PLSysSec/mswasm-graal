@@ -353,6 +353,8 @@ public class Linker {
         assertTrue(instance.symbolTable().memoryExists(), String.format("No memory declared or imported in the module '%s'", instance.name()), Failure.UNSPECIFIED_MALFORMED);
 
         // Initialize data segment in memory and set as global 1
+        if (SegmentMemory.DEBUG)
+            System.err.println("[BinaryParser] Initializing memory segment for global data");
         Handle dataSegment = ((SegmentMemory)instance.memory()).allocSegment(8192);
         context.globals().storeLong(1, Handle.handleToRawLongBits(dataSegment));
 

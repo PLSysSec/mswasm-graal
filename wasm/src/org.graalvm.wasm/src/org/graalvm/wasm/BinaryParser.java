@@ -1285,15 +1285,22 @@ public class BinaryParser extends BinaryStreamParser {
 
     private void readDataSection(WasmContext linkedContext, WasmInstance linkedInstance) {
         if (SegmentMemory.DEBUG)
-            System.err.println("Reading data section");
+            System.err.println("[BinaryParser] Reading data section");
+
+        // Initialize data segment in memory and set as global 1
+        if (linkedInstance != null) {
+            if (SegmentMemory.DEBUG)
+                System.err.println("[BinaryParser] Initializing memory segment for global data");
+            Handle dataPointer = ((SegmentMemory)linkedInstance.memory()).allocSegment(8192);
+            linkedContext.globals().storeLong(1, Handle.handleToRawLongBits(dataPointer));
+        }
+        
         final int numDataSegments = readLength();
         module.limits().checkDataSegmentCount(numDataSegments);
         for (int dataSegmentId = 0; dataSegmentId != numDataSegments; ++dataSegmentId) {
             if (SegmentMemory.DEBUG)
-                System.err.println("Reading data segment");
+                System.err.println("[BinaryParser] Parsing one data segment");
             readMemoryIndex();
-            if (SegmentMemory.DEBUG)
-                System.err.println("Read memory index");
 
             // Data dataOffset expression must be a constant expression with result type i32.
             // https://webassembly.github.io/spec/core/syntax/modules.html#data-segments
@@ -1330,35 +1337,38 @@ public class BinaryParser extends BinaryStreamParser {
 
             final int byteLength = readLength();
 
-            // if (linkedInstance != null) {
-            //     if (offsetGlobalIndex != -1) {
-            //         int offsetGlobalAddress = linkedInstance.globalAddress(offsetGlobalIndex);
-            //         offsetAddress = linkedContext.globals().loadAsInt(offsetGlobalAddress);
-            //     }
+            if (linkedInstance != null) {
+                if (offsetGlobalIndex != -1) {
+                    int offsetGlobalAddress = linkedInstance.globalAddress(offsetGlobalIndex);
+                    offsetAddress = linkedContext.globals().loadAsInt(offsetGlobalAddress);
+                }
 
-            //     // Reading of the data segment is called after linking, so initialize the memory
-            //     // directly.
-            //     final WasmMemory memory = linkedInstance.memory();
+                // Reading of the data segment is called after linking, so initialize the memory
+                // directly.
+                final WasmMemory memory = linkedInstance.memory();
 
-            //     long baseAddress = linkedContext.globals().loadAsLong(1) + offsetAddress;
+                long baseAddress = linkedContext.globals().loadAsLong(1) + offsetAddress;
 
-            //     // Assert.assertUnsignedIntLessOrEqual(offsetAddress, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
-            //     // Assert.assertUnsignedIntLessOrEqual(offsetAddress + byteLength, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
+                // Assert.assertUnsignedIntLessOrEqual(offsetAddress, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
+                // Assert.assertUnsignedIntLessOrEqual(offsetAddress + byteLength, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
 
-            //     for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
-            //         final byte b = read1();
-            //         memory.store_i32_8(null, baseAddress + writeOffset, b);
-            //     }
+                if (SegmentMemory.DEBUG)
+                    System.err.println("[BinaryParser:readDataSection] Writing static data to " + Handle.longBitsToHandle(baseAddress));
+                for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
+                    final byte b = read1();
+                    memory.store_i32_8(null, baseAddress + writeOffset, b);
+                }
 
-            //     // Initialize pointers in data segment
-            //     Assert.assertTrue(pointerOffsetsAndSizes.length % 2 == 0, "pointerOffsetsAndSizes must have even length", Failure.DATA_SEGMENT_DOES_NOT_FIT);
-            //     for (int ptr = 0; ptr < pointerOffsetsAndSizes.length; ptr += 2) {
-            //         int writeOffset = pointerOffsetsAndSizes[ptr];
-            //         int segmentSize = pointerOffsetsAndSizes[ptr + 1];
-            //         ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, ((SegmentMemory) memory).allocSegment(segmentSize));
-            //     }
-
-            // } else {
+                // Initialize pointers in data segment
+                if (SegmentMemory.DEBUG)
+                    System.err.println("[BinaryParser:readDataSection] Initializing global pointers at " + Handle.longBitsToHandle(baseAddress));
+                Assert.assertTrue(pointerOffsetsAndSizes.length % 2 == 0, "pointerOffsetsAndSizes must have even length", Failure.DATA_SEGMENT_DOES_NOT_FIT);
+                for (int ptr = 0; ptr < pointerOffsetsAndSizes.length; ptr += 2) {
+                    int writeOffset = pointerOffsetsAndSizes[ptr];
+                    int segmentSize = pointerOffsetsAndSizes[ptr + 1];
+                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, ((SegmentMemory) memory).allocSegment(segmentSize));
+                }
+            } else {
                 // Reading of the data segment occurs during parsing, so add a linker action.
                 final byte[] dataSegment = new byte[byteLength];
                 for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
@@ -1370,7 +1380,7 @@ public class BinaryParser extends BinaryStreamParser {
                 final int currentOffsetGlobalIndex = offsetGlobalIndex;
                 module.addLinkAction((context, instance) -> context.linker().resolveDataSegment(context, instance, currentDataSegmentId, currentOffsetAddress, currentOffsetGlobalIndex, byteLength,
                                 dataSegment, pointerOffsetsAndSizes));
-            // }
+            }
         }
         if (SegmentMemory.DEBUG)
             System.err.println("End read data section");

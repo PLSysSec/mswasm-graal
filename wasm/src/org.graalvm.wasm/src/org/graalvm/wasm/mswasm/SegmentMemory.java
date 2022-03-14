@@ -23,7 +23,7 @@ import org.graalvm.wasm.mswasm.*;
 import org.graalvm.wasm.memory.WasmMemory;
 
 public class SegmentMemory extends WasmMemory {
-    public static final boolean DEBUG = true;
+    public static final boolean DEBUG = false;
 
     private static final Unsafe unsafe;
     static {
