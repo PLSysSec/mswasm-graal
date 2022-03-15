@@ -269,6 +269,8 @@ import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RepeatingNode;
 import com.oracle.truffle.api.profiles.ConditionProfile;
 
+import java.util.Arrays;
+
 public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
     /**
@@ -588,8 +590,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     Object[] args = createArgumentsForCall(frame, function.typeIndex(), numArgs, stackPointer);
                     stackPointer -= args.length;
-
+                    
+                    System.err.println("[WasmBlockNode] Calling function " + function + " with args " + Arrays.toString(args));
                     Object result = executeDirectCall(childrenOffset, function, args);
+                    System.err.println("[WasmBlockNode] " + function + " returned " + result);
+
                     childrenOffset++;
 
                     // At the moment, WebAssembly functions may return up to one value.
