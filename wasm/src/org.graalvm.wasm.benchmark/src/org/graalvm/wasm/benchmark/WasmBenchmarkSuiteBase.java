@@ -98,8 +98,8 @@ public abstract class WasmBenchmarkSuiteBase {
             Value benchmarkSetupOnce = benchmarkModule.getMember("benchmarkSetupOnce");
             benchmarkSetupEach = benchmarkModule.getMember("benchmarkSetupEach");
             benchmarkTeardownEach = benchmarkModule.getMember("benchmarkTeardownEach");
-            benchmarkRun = benchmarkModule.getMember("benchmarkRun");
-            Assert.assertNotNull(String.format("No benchmarkRun method in %s.", benchmarkCase.name()), benchmarkRun);
+            benchmarkRun = benchmarkModule.getMember("_start"); // formerly "benchmarkRun"
+            Assert.assertNotNull(String.format("No _start method in %s.", benchmarkCase.name()), benchmarkRun);
 
             if (benchmarkSetupOnce != null) {
                 benchmarkSetupOnce.execute();
