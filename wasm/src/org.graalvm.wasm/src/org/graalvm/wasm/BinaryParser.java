@@ -719,13 +719,13 @@ public class BinaryParser extends BinaryStreamParser {
                     state.push(HANDLE_TYPE);
                     break;
                 case Instructions.FREE_SEGMENT:
-                    if (SegmentMemory.DEBUG) {
+                    if (SegmentMemory.DEBUG_FINE) {
                         System.err.println("[BinaryParser] Parsing FREE_SEGMENT");
                     }
                     state.popChecked(HANDLE_TYPE);
                     break;
                 case Instructions.HANDLE_ADD:
-                    if (SegmentMemory.DEBUG) {
+                    if (SegmentMemory.DEBUG_FINE) {
                         System.err.println("[BinaryParser] Parsing HANDLE_ADD");
                     }
                     state.popChecked(I32_TYPE);
@@ -736,7 +736,7 @@ public class BinaryParser extends BinaryStreamParser {
                     state.push(HANDLE_TYPE);
                     break;
                 case Instructions.HANDLE_GET_OFFSET:
-                    if (SegmentMemory.DEBUG) {
+                    if (SegmentMemory.DEBUG_FINE) {
                         System.err.println("[BinaryParser] Parsing HANDLE_GET_OFFSET");
                     }
                     state.popChecked(HANDLE_TYPE);
@@ -744,7 +744,7 @@ public class BinaryParser extends BinaryStreamParser {
                     break;
                 case Instructions.HANDLE_EQ:
                 case Instructions.HANDLE_LT:
-                    if (SegmentMemory.DEBUG) {
+                    if (SegmentMemory.DEBUG_FINE) {
                         System.err.println("[BinaryParser] Parsing handle comparison");
                     }
                     state.popChecked(HANDLE_TYPE);
@@ -1082,7 +1082,7 @@ public class BinaryParser extends BinaryStreamParser {
         readAlignHint(n); // align hint
         readUnsignedInt32(); // store offset
         state.popChecked(type); // value to store
-        if (SegmentMemory.DEBUG) {
+        if (SegmentMemory.DEBUG_FINE) {
             System.err.println("[BinaryParser] Parsing store");
         }
         state.popChecked(HANDLE_TYPE); // base address
@@ -1096,7 +1096,7 @@ public class BinaryParser extends BinaryStreamParser {
         // during execution.
         readAlignHint(n); // align hint
         readUnsignedInt32(); // load offset
-        if (SegmentMemory.DEBUG) {
+        if (SegmentMemory.DEBUG_FINE) {
             System.err.println("[BinaryParser] Parsing load");
         }
         state.popChecked(HANDLE_TYPE); // base address
@@ -1206,12 +1206,12 @@ public class BinaryParser extends BinaryStreamParser {
 
     private void readGlobalSection() {
         if (SegmentMemory.DEBUG)
-            System.err.println("reading global section");
+            System.err.println("[BinaryParser] reading global section");
         final int numGlobals = readLength();
         module.limits().checkGlobalCount(numGlobals);
         final int startingGlobalIndex = module.symbolTable().numGlobals();
         if (SegmentMemory.DEBUG)
-            System.err.println("found " + startingGlobalIndex + " initial globals");
+            System.err.println("[BinaryParser] found " + startingGlobalIndex + " initial globals");
         for (int globalIndex = startingGlobalIndex; globalIndex != startingGlobalIndex + numGlobals; globalIndex++) {
             final byte type = readValueType();
             // 0x00 means const, 0x01 means var
@@ -1245,7 +1245,7 @@ public class BinaryParser extends BinaryStreamParser {
                     break;
                 case (byte)Instructions.NULL_HANDLE:
                     if (SegmentMemory.DEBUG)
-                        System.err.println("Found global handle at index " + globalIndex);
+                        System.err.println("[BinaryParser] Found global handle at index " + globalIndex);
                     value = Handle.handleToRawLongBits(Handle.nullHandle());
                     isInitialized = true;
                     break;
@@ -1383,7 +1383,7 @@ public class BinaryParser extends BinaryStreamParser {
             }
         }
         if (SegmentMemory.DEBUG)
-            System.err.println("End read data section");
+            System.err.println("[BinaryParser] End read data section");
     }
 
     private void readFunctionType() {

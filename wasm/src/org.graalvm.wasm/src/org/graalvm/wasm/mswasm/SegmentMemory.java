@@ -23,7 +23,8 @@ import org.graalvm.wasm.mswasm.*;
 import org.graalvm.wasm.memory.WasmMemory;
 
 public class SegmentMemory extends WasmMemory {
-    public static final boolean DEBUG = false;
+    public static final boolean DEBUG = true;
+    public static final boolean DEBUG_FINE = false;
 
     private static final Unsafe unsafe;
     static {
@@ -52,7 +53,7 @@ public class SegmentMemory extends WasmMemory {
      * segment with offset 0.
      */
     public Handle allocSegment(int byteSize) {
-        if (DEBUG) {
+        if (DEBUG_FINE) {
             System.err.println("\n[allocSegment] called");
         }
         // Allocate segment with byte size
@@ -62,7 +63,7 @@ public class SegmentMemory extends WasmMemory {
 
         // Record segment and create handle
         segments.put(s.key(), s);
-        if (DEBUG) {
+        if (DEBUG_FINE) {
             System.err.println("[allocSegment] Created segment " + s.key() + 
                                " of size " + byteSize);
             System.err.println("[allocSegment] segments: " + segments);
@@ -75,7 +76,7 @@ public class SegmentMemory extends WasmMemory {
      * the segment is already freed.
      */
     public void freeSegment(Node node, Handle h) {
-        if (DEBUG) {
+        if (DEBUG_FINE) {
             System.err.println("\n[freeSegment] called");
         }
         Segment seg = getAndValidateSegment(node, h);
@@ -83,7 +84,7 @@ public class SegmentMemory extends WasmMemory {
         // Safe to free the memory and the segment
         unsafe.freeMemory(seg.memoryBase);
         seg.free();
-        if (DEBUG) {
+        if (DEBUG_FINE) {
             System.err.println("[freeSegment] Freed segment " + seg.key());
             System.err.println("[freeSegment] segments: " + segments);
         }
@@ -102,7 +103,7 @@ public class SegmentMemory extends WasmMemory {
      * Traps if any of these conditions are violated. Otherwise, returns the segment.
      */
     public Segment getAndValidateSegment(Node node, Handle h) {
-        if (DEBUG) {
+        if (DEBUG_FINE) {
             System.err.println("[getAndValidateSegment] called on " + h);
         }
         if (h.isNull) {
@@ -139,7 +140,7 @@ public class SegmentMemory extends WasmMemory {
      * If either condition is validated, traps. Otherwise, returns the address.
      */
     public long getAndValidateEffectiveAddress(Node node, Handle h, long accessSize) {
-        if (DEBUG) {
+        if (DEBUG_FINE) {
             System.err.println("\n[getAndValidateEffectiveAddress] called");
         }
         Segment s = getAndValidateSegment(node, h);

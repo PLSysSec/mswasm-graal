@@ -960,7 +960,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 // MSWasm instructions
                 case NEW_SEGMENT: {
                     int bytes = popInt(frame, stackPointer - 1);
-                    if (SegmentMemory.DEBUG) {
+                    if (SegmentMemory.DEBUG_FINE) {
                         System.err.println("[WasmBlockNode] Calling new_segment(" + bytes + ")");
                     }
                     Handle addr = memory.allocSegment(bytes);
@@ -1616,7 +1616,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     private void load(SegmentMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
         final Handle baseAddress = popHandle(frame, stackPointer);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
-        if (SegmentMemory.DEBUG) {
+        if (SegmentMemory.DEBUG_FINE) {
             System.err.println("\n[load] Loading from " + baseAddress);
             System.err.println(String.format("[load] Calculated memory address: 0x%08X", address));
         }
@@ -1705,7 +1705,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     private void store(SegmentMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
         final Handle baseAddress = popHandle(frame, stackPointer - 2);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
-        if (SegmentMemory.DEBUG) {
+        if (SegmentMemory.DEBUG_FINE) {
             System.err.println("\n[store] Storing to " + baseAddress);
             System.err.println(String.format("[store] Calculated memory address: 0x%08X", address));
         }

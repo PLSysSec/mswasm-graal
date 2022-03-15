@@ -189,7 +189,7 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
                     TEST_OUT.reset();
                     final Value result = arg == null ? mainFunction.execute() : mainFunction.execute(arg);
                     // No expected result for polybench
-                    // WasmCase.validateResult(testCase.data().resultValidator(), result, TEST_OUT);
+                    WasmCase.validateResult(testCase.data().resultValidator(), result, TEST_OUT);
                 } catch (PolyglotException e) {
                     // If no exception is expected and the program returns with success exit status,
                     // then we check stdout.
@@ -355,21 +355,21 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
             // Run in synchronous compiled mode, with inlining turned off.
             // We need to run the test at least twice like this, since the first run will lead to
             // de-opts due to empty profiles.
-            int syncNoinlineIterations = Integer.parseInt(testCase.options().getProperty("sync-noinline-iterations", String.valueOf(DEFAULT_SYNC_NOINLINE_ITERATIONS)));
-            context = getSyncCompiledNoInline(contextBuilder);
-            runInContext(testCase, context, sources, syncNoinlineIterations, PHASE_SYNC_NO_INLINE_ICON, "sync,no-inl");
+            // int syncNoinlineIterations = Integer.parseInt(testCase.options().getProperty("sync-noinline-iterations", String.valueOf(DEFAULT_SYNC_NOINLINE_ITERATIONS)));
+            // context = getSyncCompiledNoInline(contextBuilder);
+            // runInContext(testCase, context, sources, syncNoinlineIterations, PHASE_SYNC_NO_INLINE_ICON, "sync,no-inl");
 
             // Run in synchronous compiled mode, with inlining turned on.
             // We need to run the test at least twice like this, since the first run will lead to
             // de-opts due to empty profiles.
-            int syncInlineIterations = Integer.parseInt(testCase.options().getProperty("sync-inline-iterations", String.valueOf(DEFAULT_SYNC_INLINE_ITERATIONS)));
-            context = getSyncCompiledWithInline(contextBuilder);
-            runInContext(testCase, context, sources, syncInlineIterations, PHASE_SYNC_INLINE_ICON, "sync,inl");
+            // int syncInlineIterations = Integer.parseInt(testCase.options().getProperty("sync-inline-iterations", String.valueOf(DEFAULT_SYNC_INLINE_ITERATIONS)));
+            // context = getSyncCompiledWithInline(contextBuilder);
+            // runInContext(testCase, context, sources, syncInlineIterations, PHASE_SYNC_INLINE_ICON, "sync,inl");
 
             // Run with normal, asynchronous compilation.
-            int asyncIterations = Integer.parseInt(testCase.options().getProperty("async-iterations", String.valueOf(DEFAULT_ASYNC_ITERATIONS)));
-            context = getAsyncCompiled(contextBuilder);
-            runInContext(testCase, context, sources, asyncIterations, PHASE_ASYNC_ICON, "async,multi");
+            // int asyncIterations = Integer.parseInt(testCase.options().getProperty("async-iterations", String.valueOf(DEFAULT_ASYNC_ITERATIONS)));
+            // context = getAsyncCompiled(contextBuilder);
+            // runInContext(testCase, context, sources, asyncIterations, PHASE_ASYNC_ICON, "async,multi");
         } catch (InterruptedException | IOException e) {
             Assert.fail(String.format("Test %s failed: %s", testCase.name(), e.getMessage()));
         } finally {
