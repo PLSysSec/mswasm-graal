@@ -3229,8 +3229,6 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     break;
                 case WasmType.HANDLE_TYPE:
                     args[i] = popHandle(frame, stackPointer);
-                    if (SegmentMemory.DEBUG)
-                        System.err.println("\n[createArgumentsForCall] Put " + args[i] + " at index " + i);
                     break;
                 default: {
                     throw WasmException.format(Failure.UNSPECIFIED_TRAP, this, "Unknown type: %d", type);
