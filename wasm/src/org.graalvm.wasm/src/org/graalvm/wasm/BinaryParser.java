@@ -1331,8 +1331,10 @@ public class BinaryParser extends BinaryStreamParser {
             // the initialization offsets and the required segment sizes
             final int numPointers = readUnsignedInt32();
             final int[] pointerOffsetsAndSizes = new int[numPointers];
-            for (int ptr = 0; ptr < numPointers; ++ptr) {
+            for (int ptr = 0; ptr < numPointers; ptr +=2) {
+                // Read offset, then size
                 pointerOffsetsAndSizes[ptr] = readUnsignedInt32();
+                pointerOffsetsAndSizes[ptr + 1] = readUnsignedInt32();
             }
 
             final int byteLength = readLength();

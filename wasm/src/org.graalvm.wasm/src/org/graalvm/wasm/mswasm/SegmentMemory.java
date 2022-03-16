@@ -23,7 +23,7 @@ import org.graalvm.wasm.mswasm.*;
 import org.graalvm.wasm.memory.WasmMemory;
 
 public class SegmentMemory extends WasmMemory {
-    public static final boolean DEBUG = true;
+    public static final boolean DEBUG = false;
     public static final boolean DEBUG_FINE = false;
 
     private static final Unsafe unsafe;
@@ -106,7 +106,7 @@ public class SegmentMemory extends WasmMemory {
         if (DEBUG_FINE) {
             System.err.println("[getAndValidateSegment] called on " + h);
         }
-        if (h.isNull) {
+        if (h.isNull()) {
             throw trapNull(node, h);
         }
 
@@ -141,7 +141,7 @@ public class SegmentMemory extends WasmMemory {
      */
     public long getAndValidateEffectiveAddress(Node node, Handle h, long accessSize) {
         if (DEBUG_FINE) {
-            System.err.println("\n[getAndValidateEffectiveAddress] called");
+            System.err.println("[getAndValidateEffectiveAddress] called");
         }
         Segment s = getAndValidateSegment(node, h);
         long effectiveAddr = s.memoryBase + h.offset;

@@ -603,12 +603,12 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
 
                     Object[] args = createArgumentsForCall(frame, function.typeIndex(), numArgs, stackPointer);
                     stackPointer -= args.length;
-                    if (SegmentMemory.DEBUG) {
+                    if (SegmentMemory.DEBUG && !function.toString().equals("memset")) {
                         System.err.println("[WasmBlockNode] Calling function " + function + " with args " + Arrays.toString(args));
                     }
 
                     Object result = executeDirectCall(childrenOffset, function, args);
-                    if (SegmentMemory.DEBUG) {
+                    if (SegmentMemory.DEBUG && !function.toString().equals("memset")) {
                         System.err.println("[WasmBlockNode] " + function + " returned " + result);
                     }
                     childrenOffset++;
@@ -1617,7 +1617,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
         final Handle baseAddress = popHandle(frame, stackPointer);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
         if (SegmentMemory.DEBUG_FINE) {
-            System.err.println("\n[load] Loading from " + baseAddress);
+            System.err.println("\n[load] Loading " + opcode + " from " + baseAddress);
             System.err.println(String.format("[load] Calculated memory address: 0x%08X", address));
         }
 
@@ -1625,11 +1625,15 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case I32_LOAD: {
                 final int value = memory.load_i32(this, address);
                 pushInt(frame, stackPointer, value);
+                if (SegmentMemory.DEBUG_FINE)
+                    System.err.println("[load] Loaded " + value);
                 break;
             }
             case I64_LOAD: {
                 final long value = memory.load_i64(this, address);
                 pushLong(frame, stackPointer, value);
+                if (SegmentMemory.DEBUG_FINE)
+                    System.err.println("[load] Loaded " + value);
                 break;
             }
             case F32_LOAD: {
@@ -1650,6 +1654,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case I32_LOAD8_U: {
                 final int value = memory.load_i32_8u(this, address);
                 pushInt(frame, stackPointer, value);
+                if (SegmentMemory.DEBUG_FINE)
+                    System.err.println("[load] Loaded " + value);
                 break;
             }
             case I32_LOAD16_S: {
@@ -1695,6 +1701,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case HANDLE_LOAD: {
                 final Handle value = memory.load_handle(this, address);
                 pushHandle(frame, stackPointer, value);
+                if (SegmentMemory.DEBUG_FINE)
+                    System.err.println("[load] Loaded " + value);
                 break;
             }
             default:
@@ -1706,7 +1714,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
         final Handle baseAddress = popHandle(frame, stackPointer - 2);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
         if (SegmentMemory.DEBUG_FINE) {
-            System.err.println("\n[store] Storing to " + baseAddress);
+            System.err.println("\n[store] Storing " + opcode + " to " + baseAddress);
             System.err.println(String.format("[store] Calculated memory address: 0x%08X", address));
         }
 
@@ -1714,11 +1722,15 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case I32_STORE: {
                 final int value = popInt(frame, stackPointer - 1);
                 memory.store_i32(this, address, value);
+                if (SegmentMemory.DEBUG_FINE)
+                    System.err.println("[store] Stored " + value);
                 break;
             }
             case I64_STORE: {
                 final long value = popLong(frame, stackPointer - 1);
                 memory.store_i64(this, address, value);
+                if (SegmentMemory.DEBUG_FINE)
+                    System.err.println("[store] Stored " + value);
                 break;
             }
             case F32_STORE: {
@@ -1759,6 +1771,8 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
             case HANDLE_STORE: {
                 final Handle value = popHandle(frame, stackPointer - 1);
                 memory.store_handle(this, address, value);
+                if (SegmentMemory.DEBUG_FINE)
+                    System.err.println("[store] Stored " + value);
                 break;
             }
             default:

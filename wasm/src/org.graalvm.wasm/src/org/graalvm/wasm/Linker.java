@@ -395,8 +395,15 @@ public class Linker {
                 }
                 if (segmentSize == 0) {
                     ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, Handle.nullHandle());
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[Linker] Stored null handle at " + Handle.longBitsToHandle(baseAddress + writeOffset));
+                    }
                 } else {
-                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, ((SegmentMemory) memory).allocSegment(segmentSize));
+                    Handle h = ((SegmentMemory) memory).allocSegment(segmentSize);
+                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, h);
+                    if (SegmentMemory.DEBUG) {
+                        System.err.println("[Linker] Stored " + h + " at " + Handle.longBitsToHandle(baseAddress + writeOffset));
+                    }
                 }
             }
         };

@@ -58,26 +58,26 @@ public final class Iovec {
     }
 
     /** Size of this structure, in bytes. */
-    public static final int BYTES = 12;
+    public static final int BYTES = 16;
 
     /** Reads the address of the buffer to be filled. */
     public static Handle readBuf(Node node, WasmMemory memory, long address) {
-        return ((SegmentMemory)memory).load_handle(node, address + 4);
+        return ((SegmentMemory)memory).load_handle(node, address + 0);
     }
 
     /** Writes the address of the buffer to be filled. */
     public static void writeBuf(Node node, WasmMemory memory, long address, Handle value) {
-        ((SegmentMemory)memory).store_handle(node, address + 4, value);
+        ((SegmentMemory)memory).store_handle(node, address + 0, value);
     }
 
     /** Reads the length of the buffer to be filled. */
     public static int readBufLen(Node node, WasmMemory memory, long address) {
-        return memory.load_i32(node, address + 12);
+        return memory.load_i32(node, address + 8);
     }
 
     /** Writes the length of the buffer to be filled. */
     public static void writeBufLen(Node node, WasmMemory memory, long address, int value) {
-        memory.store_i32(node, address + 12, value);
+        memory.store_i32(node, address + 8, value);
     }
 
 }
