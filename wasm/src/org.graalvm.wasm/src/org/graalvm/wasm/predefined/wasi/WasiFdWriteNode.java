@@ -48,7 +48,6 @@ import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.fd.Fd;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
-import org.graalvm.wasm.mswasm.Handle;
 
 public final class WasiFdWriteNode extends WasmBuiltinRootNode {
 
@@ -59,16 +58,16 @@ public final class WasiFdWriteNode extends WasmBuiltinRootNode {
     @Override
     public Object executeWithContext(VirtualFrame frame, WasmContext context) {
         final Object[] args = frame.getArguments();
-        return fdWrite(context, (int) args[0], (Handle) args[1], (int) args[2], (Handle) args[3]);
+        return fdWrite(context, (int) args[0], (long) args[1], (int) args[2], (long) args[3]);
     }
 
     @TruffleBoundary
-    private int fdWrite(WasmContext context, int fd, Handle iov, int iovcnt, Handle sizeAddress) {
+    private int fdWrite(WasmContext context, int fd, long iov, int iovcnt, long sizeAddress) {
         final Fd handle = context.fdManager().get(fd);
         if (handle == null) {
             return Errno.Badf.ordinal();
         }
-        return handle.write(this, memory(), Handle.handleToRawLongBits(iov), iovcnt, Handle.handleToRawLongBits(sizeAddress)).ordinal();
+        return handle.write(this, memory(), iov, iovcnt, sizeAddress).ordinal();
     }
 
     @Override

@@ -48,7 +48,6 @@ import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
 import org.graalvm.wasm.mswasm.SegmentMemory;
-import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.frame.VirtualFrame;

@@ -49,7 +49,6 @@ import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
 
 import org.graalvm.wasm.mswasm.SegmentMemory;
-import org.graalvm.wasm.mswasm.Handle;
 
 public final class WasiArgsGetNode extends WasmBuiltinRootNode {
 
@@ -60,16 +59,16 @@ public final class WasiArgsGetNode extends WasmBuiltinRootNode {
     @Override
     public Object executeWithContext(VirtualFrame frame, WasmContext context) {
         final Object[] args = frame.getArguments();
-        return argsGet((Handle) args[0], (Handle) args[1]);
+        return argsGet((long) args[0], (long) args[1]);
     }
 
     @TruffleBoundary
-    private int argsGet(Handle argvAddress, Handle argvBuffAddress) {
+    private int argsGet(long argvAddress, long argvBuffAddress) {
         final String[] arguments = getContext().environment().getApplicationArguments();
-        long argvPointer = Handle.handleToRawLongBits(argvAddress);
-        long argvBuffPointer = Handle.handleToRawLongBits(argvBuffAddress);
+        long argvPointer = argvAddress;
+        long argvBuffPointer = argvBuffAddress;
         for (final String argument : arguments) {
-            ((SegmentMemory) memory()).store_handle(this, argvPointer, Handle.longBitsToHandle(argvBuffPointer));
+            ((SegmentMemory) memory()).store_handle(this, argvPointer, argvBuffPointer);
             argvPointer += 4;
             argvBuffPointer += ((SegmentMemory) memory()).writeString(this, argument, argvBuffPointer);
             memory().store_i32_8(this, argvBuffPointer, (byte) 0);

@@ -48,7 +48,6 @@ package org.graalvm.wasm.predefined.wasi.types;
 import com.oracle.truffle.api.nodes.Node;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.mswasm.SegmentMemory;
-import org.graalvm.wasm.mswasm.Handle;
 
 /** A region of memory for scatter/gather reads. */
 public final class Iovec {
@@ -61,12 +60,12 @@ public final class Iovec {
     public static final int BYTES = 16;
 
     /** Reads the address of the buffer to be filled. */
-    public static Handle readBuf(Node node, WasmMemory memory, long address) {
+    public static long readBuf(Node node, WasmMemory memory, long address) {
         return ((SegmentMemory)memory).load_handle(node, address + 0);
     }
 
     /** Writes the address of the buffer to be filled. */
-    public static void writeBuf(Node node, WasmMemory memory, long address, Handle value) {
+    public static void writeBuf(Node node, WasmMemory memory, long address, long value) {
         ((SegmentMemory)memory).store_handle(node, address + 0, value);
     }
 
