@@ -74,7 +74,7 @@ final class FdUtils {
                 final long iovecAddress = iovecArrayAddress + i * Iovec.BYTES;
                 final long start = Handle.handleToRawLongBits(Iovec.readBuf(node, memory, iovecAddress));
                 final int len = Iovec.readBufLen(node, memory, iovecAddress);
-                System.err.println("Printing " + len + " bytes");
+                // System.err.println("Printing " + len + " bytes");
                 for (int j = 0; j < len; j++) {
                     stream.write(memory.load_i32_8u(node, start + j));
                     ++totalBytesWritten;
@@ -85,7 +85,7 @@ final class FdUtils {
         }
 
         memory.store_i32(null, sizeAddress, totalBytesWritten);
-        System.err.println("Wrote " + totalBytesWritten + " total bytes, stored at " + Handle.longBitsToHandle(sizeAddress));
+        // System.err.println("Wrote " + totalBytesWritten + " total bytes, stored at " + Handle.longBitsToHandle(sizeAddress));
         return Errno.Success;
     }
 
