@@ -591,9 +591,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     Object[] args = createArgumentsForCall(frame, function.typeIndex(), numArgs, stackPointer);
                     stackPointer -= args.length;
                     
-                    System.err.println("[WasmBlockNode] Calling function " + function + " with args " + Arrays.toString(args));
                     Object result = executeDirectCall(childrenOffset, function, args);
-                    System.err.println("[WasmBlockNode] " + function + " returned " + result);
 
                     childrenOffset++;
 
