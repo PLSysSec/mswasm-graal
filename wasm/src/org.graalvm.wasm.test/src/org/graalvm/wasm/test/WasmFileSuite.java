@@ -117,6 +117,8 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "false");
 
+        contextBuilder.option("engine.CompilationStatisticDetails", "true");
+        contextBuilder.option("engine.TracePerformanceWarnings", "all");
         contextBuilder.option("engine.TraceCompilationDetails", "true");
         contextBuilder.option("engine.TraceCompilationAST", "true");
         contextBuilder.option("engine.PrintExpansionHistogram", "true");
@@ -129,6 +131,8 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "true");
 
+        contextBuilder.option("engine.CompilationStatisticDetails", "true");
+        contextBuilder.option("engine.TracePerformanceWarnings", "all");
         contextBuilder.option("engine.TraceCompilationDetails", "true");
         contextBuilder.option("engine.TraceCompilationAST", "true");
         contextBuilder.option("engine.PrintExpansionHistogram", "true");
@@ -142,6 +146,8 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.Inlining", "false");
         contextBuilder.option("engine.FirstTierCompilationThreshold", "100");
 
+        contextBuilder.option("engine.CompilationStatisticDetails", "true");
+        contextBuilder.option("engine.TracePerformanceWarnings", "all");
         contextBuilder.option("engine.TraceCompilationDetails", "true");
         contextBuilder.option("engine.TraceCompilationAST", "true");
         contextBuilder.option("engine.PrintExpansionHistogram", "true");
