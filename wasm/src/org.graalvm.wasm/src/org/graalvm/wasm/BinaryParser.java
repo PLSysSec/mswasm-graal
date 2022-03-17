@@ -1368,7 +1368,18 @@ public class BinaryParser extends BinaryStreamParser {
                 for (int ptr = 0; ptr < pointerOffsetsAndSizes.length; ptr += 2) {
                     int writeOffset = pointerOffsetsAndSizes[ptr];
                     int segmentSize = pointerOffsetsAndSizes[ptr + 1];
-                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, ((SegmentMemory) memory).allocSegment(segmentSize));
+                    if (segmentSize == 0) {
+                        ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, Handle.nullHandle());
+                        if (SegmentMemory.DEBUG) {
+                            System.err.println(String.format("[BinaryParser:readDataSection] Stored null handle at %016X", baseAddress + writeOffset));
+                        }
+                    } else {
+                        Handle h = ((SegmentMemory) memory).allocSegment(segmentSize);
+                        ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, h); 
+                        if (SegmentMemory.DEBUG) {
+                            System.err.println(String.format("[BinaryParser:readDataSection] Stored handle %016X at %016X", h, baseAddress + writeOffset));
+                        }
+                    }
                 }
             } else {
                 // Reading of the data segment occurs during parsing, so add a linker action.
