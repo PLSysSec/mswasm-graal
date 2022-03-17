@@ -54,6 +54,7 @@ import org.graalvm.wasm.exception.WasmException;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.nodes.WasmBlockNode;
 import org.graalvm.wasm.mswasm.SegmentMemory;
+import org.graalvm.wasm.mswasm.Handle;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -354,8 +355,8 @@ public class Linker {
         // Initialize data segment in memory and set as global 1
         if (SegmentMemory.DEBUG)
             System.err.println("[BinaryParser] Initializing memory segment for global data");
-        long dataSegment = ((SegmentMemory)instance.memory()).allocSegment(8192);
-        context.globals().storeLong(1, dataSegment);
+        Handle dataSegment = ((SegmentMemory)instance.memory()).allocSegment(8192);
+        context.globals().storeLong(1, Handle.handleToRawLongBits(dataSegment));
 
         final Runnable resolveAction = () -> {
             if (SegmentMemory.DEBUG)
@@ -393,15 +394,15 @@ public class Linker {
                     System.err.println("[Linker] Initializing data segment at offset " + writeOffset + " of size " + segmentSize);
                 }
                 if (segmentSize == 0) {
-                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, 0L);
+                    ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, Handle.nullHandle());
                     if (SegmentMemory.DEBUG) {
-                        System.err.println(String.format("[Linker] Stored null handle at %016X", baseAddress + writeOffset));
+                        System.err.println("[Linker] Stored null handle at " + Handle.longBitsToHandle(baseAddress + writeOffset));
                     }
                 } else {
-                    long h = ((SegmentMemory) memory).allocSegment(segmentSize);
+                    Handle h = ((SegmentMemory) memory).allocSegment(segmentSize);
                     ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, h);
                     if (SegmentMemory.DEBUG) {
-                        System.err.println(String.format("[Linker] Stored handle %016X at %016X", h, baseAddress + writeOffset));
+                        System.err.println("[Linker] Stored " + h + " at " + Handle.longBitsToHandle(baseAddress + writeOffset));
                     }
                 }
             }

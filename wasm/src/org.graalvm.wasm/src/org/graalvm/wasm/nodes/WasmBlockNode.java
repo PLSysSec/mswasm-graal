@@ -263,6 +263,7 @@ import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.mswasm.SegmentMemory;
+import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerAsserts;
@@ -637,7 +638,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case WasmType.HANDLE_TYPE: {
-                            pushHandle(frame, stackPointer, (long) result);
+                            pushHandle(frame, stackPointer, (Handle) result);
                             stackPointer++;
                             break;
                         }
@@ -775,7 +776,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                             break;
                         }
                         case WasmType.HANDLE_TYPE: {
-                            pushHandle(frame, stackPointer, (long) result);
+                            pushHandle(frame, stackPointer, (Handle) result);
                             stackPointer++;
                             break;
                         }
@@ -872,7 +873,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     offset += offsetDelta;
                     // endregion
 
-                    long baseAddress = popHandle(frame, stackPointer - 1);
+                    Handle baseAddress = popHandle(frame, stackPointer - 1);
                     final long address = effectiveMemoryAddress(memOffset, baseAddress);
 
                     int value = memory.load_i32(this, address);
@@ -962,44 +963,45 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                     if (SegmentMemory.DEBUG_FINE) {
                         System.err.println("[WasmBlockNode] Calling new_segment(" + bytes + ")");
                     }
-                    long addr = memory.allocSegment(bytes);
+                    Handle addr = memory.allocSegment(bytes);
                     pushHandle(frame, stackPointer - 1, addr);
                     break;
                 }
                 case FREE_SEGMENT: {
-                    long addr = popHandle(frame, stackPointer - 1);
+                    Handle addr = popHandle(frame, stackPointer - 1);
                     memory.freeSegment(this, addr);
                     stackPointer--;
                     break;
                 }
                 case HANDLE_ADD: {
                     int shift = popInt(frame, stackPointer - 1);
-                    long value = popHandle(frame, stackPointer - 2);
-                    pushHandle(frame, stackPointer - 2, value + shift);
+                    Handle value = popHandle(frame, stackPointer - 2);
+                    Handle result = value.add(shift);
+                    pushHandle(frame, stackPointer - 2, result);
                     stackPointer--;
                     break;
                 }
                 case NULL_HANDLE: {
-                    pushHandle(frame, stackPointer, 0);
+                    pushHandle(frame, stackPointer, Handle.nullHandle());
                     stackPointer++;
                     break;
                 }
                 case HANDLE_GET_OFFSET: {
-                    long value = popHandle(frame, stackPointer - 1);
-                    pushInt(frame, stackPointer - 1, (int)value);
+                    Handle value = popHandle(frame, stackPointer - 1);
+                    pushInt(frame, stackPointer - 1, value.getOffset());
                     break;
                 }
                 case HANDLE_EQ: {
-                    long rhs = popHandle(frame, stackPointer - 1);
-                    long lhs = popHandle(frame, stackPointer - 2);
-                    pushInt(frame, stackPointer - 2, lhs == rhs ? 1 : 0);
+                    Handle rhs = popHandle(frame, stackPointer - 1);
+                    Handle lhs = popHandle(frame, stackPointer - 2);
+                    pushInt(frame, stackPointer - 2, lhs.equals(rhs) ? 1 : 0);
                     stackPointer--;
                     break;
                 }
                 case HANDLE_LT: {
-                    long rhs = popHandle(frame, stackPointer - 1);
-                    long lhs = popHandle(frame, stackPointer - 2);
-                    pushInt(frame, stackPointer - 2, lhs < rhs ? 1 : 0);
+                    Handle rhs = popHandle(frame, stackPointer - 1);
+                    Handle lhs = popHandle(frame, stackPointer - 2);
+                    pushInt(frame, stackPointer - 2, lhs.compareTo(rhs) < 0 ? 1 : 0);
                     stackPointer--;
                     break;
                 }
@@ -1606,16 +1608,17 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
      * The static address offset (u32) is added to the dynamic address (u32) operand, yielding a
      * 33-bit effective address that is the zero-based index at which the memory is accessed.
      */
-    private static long effectiveMemoryAddress(int staticAddressOffset, long dynamicAddress) {
+    private static long effectiveMemoryAddress(int staticAddressOffset, Handle dynamicAddress) {
         // Add the static offset to the dynamic handle, then convert to long
-        return dynamicAddress + staticAddressOffset;
+        return Handle.handleToRawLongBits(dynamicAddress.add(staticAddressOffset));
     }
 
     private void load(SegmentMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
-        final long baseAddress = popHandle(frame, stackPointer);
+        final Handle baseAddress = popHandle(frame, stackPointer);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
         if (SegmentMemory.DEBUG_FINE) {
-            System.err.println(String.format("[load] Loading " + opcode + " from handle: 0x%08X", address));
+            System.err.println("\n[load] Loading " + opcode + " from " + baseAddress);
+            System.err.println(String.format("[load] Calculated memory address: 0x%08X", address));
         }
 
         switch (opcode) {
@@ -1696,10 +1699,10 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 break;
             }
             case HANDLE_LOAD: {
-                final long value = memory.load_handle(this, address);
+                final Handle value = memory.load_handle(this, address);
                 pushHandle(frame, stackPointer, value);
                 if (SegmentMemory.DEBUG_FINE)
-                    System.err.println(String.format("[load] Loaded handle %x", value));
+                    System.err.println("[load] Loaded " + value);
                 break;
             }
             default:
@@ -1708,10 +1711,11 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
     }
 
     private void store(SegmentMemory memory, VirtualFrame frame, int stackPointer, int opcode, int memOffset) {
-        final long baseAddress = popHandle(frame, stackPointer - 2);
+        final Handle baseAddress = popHandle(frame, stackPointer - 2);
         final long address = effectiveMemoryAddress(memOffset, baseAddress);
         if (SegmentMemory.DEBUG_FINE) {
-            System.err.println(String.format("[store] Loading %d from handle: 0x%08X", opcode, address));
+            System.err.println("\n[store] Storing " + opcode + " to " + baseAddress);
+            System.err.println(String.format("[store] Calculated memory address: 0x%08X", address));
         }
 
         switch (opcode) {
@@ -1765,7 +1769,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 break;
             }
             case HANDLE_STORE: {
-                final long value = popHandle(frame, stackPointer - 1);
+                final Handle value = popHandle(frame, stackPointer - 1);
                 memory.store_handle(this, address, value);
                 if (SegmentMemory.DEBUG_FINE)
                     System.err.println("[store] Stored " + value);
@@ -1798,7 +1802,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 context.globals().storeLong(instance().globalAddress(index), Double.doubleToRawLongBits(popDouble(frame, stackPointer)));
                 break;
             case WasmType.HANDLE_TYPE:
-                context.globals().storeLong(instance().globalAddress(index), popHandle(frame, stackPointer));
+                context.globals().storeLong(instance().globalAddress(index), Handle.handleToRawLongBits(popHandle(frame, stackPointer)));
                 break;
             default:
                 throw WasmException.create(Failure.UNSPECIFIED_TRAP, this, "Local variable cannot have the void type.");
@@ -1822,7 +1826,7 @@ public final class WasmBlockNode extends WasmNode implements RepeatingNode {
                 pushDouble(frame, stackPointer, Double.longBitsToDouble(context.globals().loadAsLong(instance().globalAddress(index))));
                 break;
             case WasmType.HANDLE_TYPE:
-                pushHandle(frame, stackPointer, context.globals().loadAsLong(instance().globalAddress(index)));
+                pushHandle(frame, stackPointer, Handle.longBitsToHandle(context.globals().loadAsLong(instance().globalAddress(index))));
                 break;
             default:
                 throw WasmException.create(Failure.UNSPECIFIED_TRAP, this, "Local variable cannot have the void type.");

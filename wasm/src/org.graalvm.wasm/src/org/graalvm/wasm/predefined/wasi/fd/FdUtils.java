@@ -55,6 +55,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.TimeUnit;
 
+import org.graalvm.wasm.mswasm.Handle;
+
 final class FdUtils {
 
     private FdUtils() {
@@ -70,7 +72,7 @@ final class FdUtils {
         try {
             for (int i = 0; i < iovecCount; i++) {
                 final long iovecAddress = iovecArrayAddress + i * Iovec.BYTES;
-                final long start = Iovec.readBuf(node, memory, iovecAddress);
+                final long start = Handle.handleToRawLongBits(Iovec.readBuf(node, memory, iovecAddress));
                 final int len = Iovec.readBufLen(node, memory, iovecAddress);
                 // System.err.println("Printing " + len + " bytes");
                 for (int j = 0; j < len; j++) {
@@ -97,7 +99,7 @@ final class FdUtils {
         try {
             for (int i = 0; i < iovecCount; i++) {
                 final long iovecAddress = iovecArrayAddress + i * Iovec.BYTES;
-                final long start = Iovec.readBuf(node, memory, iovecAddress);
+                final long start = Handle.handleToRawLongBits(Iovec.readBuf(node, memory, iovecAddress));
                 final int len = Iovec.readBufLen(node, memory, iovecAddress);
                 for (int j = 0; j < len; j++) {
                     byteRead = stream.read();
