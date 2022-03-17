@@ -106,7 +106,7 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.Compilation", "false");
         contextBuilder.option("engine.Inlining", "false");
 
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
+        // contextBuilder.option("engine.TraceCompilationDetails", "true");
         return contextBuilder.build();
     }
 
@@ -116,9 +116,9 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "false");
 
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        // contextBuilder.option("engine.TraceCompilationDetails", "true");
+        // contextBuilder.option("engine.TraceCompilationAST", "true");
+        // contextBuilder.option("engine.PrintExpansionHistogram", "true");
         return contextBuilder.build();
     }
 
@@ -128,9 +128,9 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "true");
 
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        // contextBuilder.option("engine.TraceCompilationDetails", "true");
+        // contextBuilder.option("engine.TraceCompilationAST", "true");
+        // contextBuilder.option("engine.PrintExpansionHistogram", "true");
         return contextBuilder.build();
     }
 
@@ -141,9 +141,9 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.Inlining", "false");
         contextBuilder.option("engine.FirstTierCompilationThreshold", "100");
 
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        // contextBuilder.option("engine.TraceCompilationDetails", "true");
+        // contextBuilder.option("engine.TraceCompilationAST", "true");
+        // contextBuilder.option("engine.PrintExpansionHistogram", "true");
         return contextBuilder.build();
     }
 
@@ -200,7 +200,7 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
                 try {
                     TEST_OUT.reset();
                     final Value result = arg == null ? mainFunction.execute() : mainFunction.execute(arg);
-                    // WasmCase.validateResult(testCase.data().resultValidator(), result, TEST_OUT);
+                    WasmCase.validateResult(testCase.data().resultValidator(), result, TEST_OUT);
                 } catch (PolyglotException e) {
                     // If no exception is expected and the program returns with success exit status,
                     // then we check stdout.
