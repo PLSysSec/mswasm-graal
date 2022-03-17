@@ -1371,13 +1371,13 @@ public class BinaryParser extends BinaryStreamParser {
                     if (segmentSize == 0) {
                         ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, Handle.nullHandle());
                         if (SegmentMemory.DEBUG) {
-                            System.err.println(String.format("[BinaryParser:readDataSection] Stored null handle at %016X", baseAddress + writeOffset));
+                            System.err.println(String.format("[BinaryParser:readDataSection] Stored null handle at " + Handle.longBitsToHandle(baseAddress + writeOffset)));
                         }
                     } else {
                         Handle h = ((SegmentMemory) memory).allocSegment(segmentSize);
                         ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, h); 
                         if (SegmentMemory.DEBUG) {
-                            System.err.println(String.format("[BinaryParser:readDataSection] Stored handle %016X at %016X", h, baseAddress + writeOffset));
+                            System.err.println(String.format("[BinaryParser:readDataSection] Stored handle " + h + " at " + Handle.longBitsToHandle(baseAddress + writeOffset)));
                         }
                     }
                 }

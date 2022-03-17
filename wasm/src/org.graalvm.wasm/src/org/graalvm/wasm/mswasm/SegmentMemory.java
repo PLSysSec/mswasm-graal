@@ -1,7 +1,7 @@
 package org.graalvm.wasm.mswasm;
 
 import java.lang.reflect.Field;
-import java.util.HashMap;
+import java.util.ArrayList;
 
 import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_DECLARATION_SIZE;
 import static org.graalvm.wasm.constants.Sizes.MAX_MEMORY_INSTANCE_SIZE;
@@ -33,17 +33,17 @@ public class SegmentMemory extends WasmMemory {
             f.setAccessible(true);
             unsafe = (Unsafe) f.get(null);
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw CompilerDirectives.shouldNotReachHere(e);
         }
     }
 
     /** Stores segments according to their integer keys */
-    private HashMap<Integer, Segment> segments;
+    private SegmentList segments;
 
     public SegmentMemory() {
         // Provide dummy values for WasmMemory constructor
         super(0, MAX_MEMORY_DECLARATION_SIZE, 0, MAX_MEMORY_INSTANCE_SIZE);
-        segments = new HashMap<>();
+        segments = new SegmentList();
     }
 
     // Methods to allocate and free memory
@@ -53,17 +53,14 @@ public class SegmentMemory extends WasmMemory {
      * segment with offset 0.
      */
     public Handle allocSegment(int byteSize) {
-        if (DEBUG_FINE) {
-            System.err.println("\n[allocSegment] called");
-        }
         // Allocate segment with byte size
         long base = unsafe.allocateMemory(byteSize);
         long bound = base + byteSize;
         Segment s = new Segment(base, bound);
 
         // Record segment and create handle
-        segments.put(s.key(), s);
-        if (DEBUG_FINE) {
+        segments.insert(s);
+        if (DEBUG) {
             System.err.println("[allocSegment] Created segment " + s.key() + 
                                " of size " + byteSize);
             System.err.println("[allocSegment] segments: " + segments);
@@ -76,9 +73,6 @@ public class SegmentMemory extends WasmMemory {
      * the segment is already freed.
      */
     public void freeSegment(Node node, Handle h) {
-        if (DEBUG_FINE) {
-            System.err.println("\n[freeSegment] called");
-        }
         Segment seg = getAndValidateSegment(node, h);
 
         // Safe to free the memory and the segment
@@ -107,16 +101,18 @@ public class SegmentMemory extends WasmMemory {
             System.err.println("[getAndValidateSegment] called on " + h);
         }
         if (h.isNull()) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
             throw trapNull(node, h);
         }
 
         int key = h.segment;
-        if (!segments.containsKey(key)) {
+        if (!segments.contains(key)) {
             if (DEBUG) {
                 System.err.println("[getAndValidateSegment] Couldn't find segment with key " + key);
                 System.err.println("[getAndValidateSegment] segments: " + segments);
             }
             // If the segment does not exist, assume the handle is corrupted
+            CompilerDirectives.transferToInterpreterAndInvalidate();
             throw trapCorrupted(node, h);
         }
 
@@ -147,6 +143,7 @@ public class SegmentMemory extends WasmMemory {
         long effectiveAddr = s.memoryBase + h.offset;
 
         if (effectiveAddr >= s.memoryBound || effectiveAddr + accessSize > s.memoryBound) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
             throw trapOutOfBounds(node, accessSize, effectiveAddr);
         }
         return effectiveAddr;
@@ -404,6 +401,7 @@ public class SegmentMemory extends WasmMemory {
      */
     @Override
     public void copy(Node node, int src, int dst, int n) {
+        CompilerDirectives.transferToInterpreterAndInvalidate();
         final String message = "Segment memory does not support copying memory";
         throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
     }
@@ -425,6 +423,7 @@ public class SegmentMemory extends WasmMemory {
      */
     @Override
     public boolean grow(int extraPageSize) {
+        CompilerDirectives.transferToInterpreterAndInvalidate();
         final String message = "Segment memory does not support growing memory";
         throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
     }
@@ -434,8 +433,8 @@ public class SegmentMemory extends WasmMemory {
      */
     @Override
     public void reset() {
-        for (Segment s : segments.values()) {
-            if (!s.isFree()) {
+        for (Segment s : segments.segments) {
+            if (s != null && !s.isFree()) {
                 unsafe.freeMemory(s.memoryBase);
                 s.free();
             }
@@ -467,6 +466,7 @@ public class SegmentMemory extends WasmMemory {
      */
     @Override
     public ByteBuffer asByteBuffer() {
+        CompilerDirectives.transferToInterpreterAndInvalidate();
         final String message = "Segment memory cannot be converted to a byte buffer";
         throw WasmException.create(Failure.INVALID_MSWASM_OPERATION, message);
     }

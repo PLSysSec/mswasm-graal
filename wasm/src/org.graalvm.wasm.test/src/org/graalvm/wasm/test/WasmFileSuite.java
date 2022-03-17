@@ -103,11 +103,15 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
     private static final int STATE_CHECK_PERIODICITY = 2000;
     private static final ByteArrayOutputStream TEST_OUT = new ByteArrayOutputStream();
 
+    private static final boolean TRACING = false;
+
     private static Context getInterpretedNoInline(Context.Builder contextBuilder) {
         contextBuilder.option("engine.Compilation", "false");
         contextBuilder.option("engine.Inlining", "false");
 
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
+        if (TRACING) {
+            contextBuilder.option("engine.TraceCompilationDetails", "true");
+        }
         return contextBuilder.build();
     }
 
@@ -117,11 +121,13 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "false");
 
-        contextBuilder.option("engine.CompilationStatisticDetails", "true");
-        contextBuilder.option("engine.TracePerformanceWarnings", "all");
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        if (TRACING) {
+            contextBuilder.option("engine.CompilationStatisticDetails", "true");
+            contextBuilder.option("engine.TracePerformanceWarnings", "all");
+            contextBuilder.option("engine.TraceCompilationDetails", "true");
+            contextBuilder.option("engine.TraceCompilationAST", "true");
+            contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        }
         return contextBuilder.build();
     }
 
@@ -131,11 +137,13 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.CompileImmediately", "true");
         contextBuilder.option("engine.Inlining", "true");
 
-        contextBuilder.option("engine.CompilationStatisticDetails", "true");
-        contextBuilder.option("engine.TracePerformanceWarnings", "all");
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        if (TRACING) {
+            contextBuilder.option("engine.CompilationStatisticDetails", "true");
+            contextBuilder.option("engine.TracePerformanceWarnings", "all");
+            contextBuilder.option("engine.TraceCompilationDetails", "true");
+            contextBuilder.option("engine.TraceCompilationAST", "true");
+            contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        }
         return contextBuilder.build();
     }
 
@@ -146,11 +154,13 @@ public abstract class WasmFileSuite extends AbstractWasmSuite {
         contextBuilder.option("engine.Inlining", "false");
         contextBuilder.option("engine.FirstTierCompilationThreshold", "100");
 
-        contextBuilder.option("engine.CompilationStatisticDetails", "true");
-        contextBuilder.option("engine.TracePerformanceWarnings", "all");
-        contextBuilder.option("engine.TraceCompilationDetails", "true");
-        contextBuilder.option("engine.TraceCompilationAST", "true");
-        contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        if (TRACING) {
+            contextBuilder.option("engine.CompilationStatisticDetails", "true");
+            contextBuilder.option("engine.TracePerformanceWarnings", "all");
+            contextBuilder.option("engine.TraceCompilationDetails", "true");
+            contextBuilder.option("engine.TraceCompilationAST", "true");
+            contextBuilder.option("engine.PrintExpansionHistogram", "true");
+        }
         return contextBuilder.build();
     }
 
