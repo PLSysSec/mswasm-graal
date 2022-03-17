@@ -1,6 +1,6 @@
 enable-io=true
 zero-memory=true
 interpreter-iterations=1
-sync-noinline-iteration=0
-sync-inline-iterations=0
-async-iterations=0
+sync-noinline-iteration=3
+sync-inline-iterations=3
+async-iterations=10
