@@ -211,6 +211,56 @@ public class SegmentMemory extends WasmMemory {
         return WasmException.create(Failure.OUT_OF_BOUNDS_MEMORY_ACCESS, node, message);
     }
 
+    // Private methods for loading & storing different value types
+
+    private int getInt(long addr) {
+        return unsafe.getInt(addr);
+    }
+
+    private long getLong(long addr) {
+        return unsafe.getLong(addr);
+    }
+
+    private float getFloat(long addr) {
+        return unsafe.getFloat(addr);
+    }
+
+    private double getDouble(long addr) {
+        return unsafe.getDouble(addr);
+    }
+
+    private short getShort(long addr) {
+        return unsafe.getShort(addr);
+    }
+
+    private byte getByte(long addr) {
+        return unsafe.getByte(addr);
+    }
+
+    private void putInt(long addr, int value) {
+        unsafe.putInt(addr, value);
+    }
+
+    private void putLong(long addr, long value) {
+        unsafe.putLong(addr, value);
+    }
+
+    private void putFloat(long addr, float value) {
+        unsafe.putFloat(addr, value);
+    }
+
+    private void putDouble(long addr, double value) {
+        unsafe.putDouble(addr, value);
+    }
+
+    private void putShort(long addr, short value) {
+        unsafe.putShort(addr, value);
+    }
+
+    private void putByte(long addr, byte value) {
+        unsafe.putByte(addr, value);
+    }
+
 
     // Methods to load from a segment
 
@@ -218,7 +268,7 @@ public class SegmentMemory extends WasmMemory {
     public int load_i32(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        int value = unsafe.getInt(addr);
+        int value = getInt(addr);
         return value;
     }
     
@@ -226,7 +276,7 @@ public class SegmentMemory extends WasmMemory {
     public long load_i64(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
-        long value = unsafe.getLong(addr);
+        long value = getLong(addr);
         return value;
     }
     
@@ -234,7 +284,7 @@ public class SegmentMemory extends WasmMemory {
     public float load_f32(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        float value = unsafe.getFloat(addr);
+        float value = getFloat(addr);
         return value;
     }
     
@@ -242,7 +292,7 @@ public class SegmentMemory extends WasmMemory {
     public double load_f64(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
-        double value = unsafe.getDouble(addr);
+        double value = getDouble(addr);
         return value;
     }
     
@@ -250,70 +300,70 @@ public class SegmentMemory extends WasmMemory {
     public int load_i32_8s(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
-        int value = unsafe.getByte(addr);
+        int value = getByte(addr);
         return value;
     }
     
     public int load_i32_8u(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
-        int value = 0x0000_00ff & unsafe.getByte(addr);
+        int value = 0x0000_00ff & getByte(addr);
         return value;
     }
     
     public int load_i32_16s(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
-        int value = unsafe.getShort(addr);
+        int value = getShort(addr);
         return value;
     }
     
     public int load_i32_16u(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
-        int value = 0x0000_ffff & unsafe.getShort(addr);
+        int value = 0x0000_ffff & getShort(addr);
         return value;
     }
     
     public long load_i64_8s(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
-        long value = unsafe.getByte(addr);
+        long value = getByte(addr);
         return value;
     }
     
     public long load_i64_8u(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
-        long value = 0x0000_0000_0000_00ffL & unsafe.getByte(addr);
+        long value = 0x0000_0000_0000_00ffL & getByte(addr);
         return value;
     }
     
     public long load_i64_16s(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
-        long value = unsafe.getShort(addr);
+        long value = getShort(addr);
         return value;
     }
 
     public long load_i64_16u(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
-        long value = 0x0000_0000_0000_ffffL & unsafe.getShort(addr);
+        long value = 0x0000_0000_0000_ffffL & getShort(addr);
         return value;
     }
     
     public long load_i64_32s(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        long value = unsafe.getInt(addr);
+        long value = getInt(addr);
         return value;
     }
     
     public long load_i64_32u(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        long value = 0x0000_0000_ffff_ffffL & unsafe.getInt(addr);
+        long value = 0x0000_0000_ffff_ffffL & getInt(addr);
         return value;
     }
 
@@ -323,7 +373,7 @@ public class SegmentMemory extends WasmMemory {
     public Handle load_handle(Node node, long handle) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        long value = unsafe.getLong(addr);
+        long value = getLong(addr);
         return Handle.longBitsToHandle(value);
     }
 
@@ -333,55 +383,55 @@ public class SegmentMemory extends WasmMemory {
     public void store_i32(Node node, long handle, int value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        unsafe.putInt(addr, value);
+        putInt(addr, value);
     }
 
     public void store_i64(Node node, long handle, long value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
-        unsafe.putLong(addr, value);
+        putLong(addr, value);
     }
     
     public void store_f32(Node node, long handle, float value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        unsafe.putFloat(addr, value);
+        putFloat(addr, value);
     }
     
     public void store_f64(Node node, long handle, double value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 8);
-        unsafe.putDouble(addr, value);
+        putDouble(addr, value);
     }
 
     public void store_i32_8(Node node, long handle, byte value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
-        unsafe.putByte(addr, value);
+        putByte(addr, value);
     }
     
     public void store_i32_16(Node node, long handle, short value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
-        unsafe.putShort(addr, value);
+        putShort(addr, value);
     }
     
     public void store_i64_8(Node node, long handle, byte value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 1);
-        unsafe.putByte(addr, value);
+        putByte(addr, value);
     }
     
     public void store_i64_16(Node node, long handle, short value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 2);
-        unsafe.putShort(addr, value);
+        putShort(addr, value);
     }
 
     public void store_i64_32(Node node, long handle, int value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);
-        unsafe.putInt(addr, value);
+        putInt(addr, value);
     }
 
     /**
@@ -390,7 +440,7 @@ public class SegmentMemory extends WasmMemory {
     public void store_handle(Node node, long handle, Handle value) {
         Handle h = Handle.longBitsToHandle(handle);
         long addr = getAndValidateEffectiveAddress(node, h, 4);        
-        unsafe.putLong(addr, Handle.handleToRawLongBits(value));
+        putLong(addr, Handle.handleToRawLongBits(value));
     }
 
 
