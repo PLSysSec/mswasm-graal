@@ -48,7 +48,6 @@ import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.fd.Fd;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
-import org.graalvm.wasm.mswasm.Handle;
 
 public final class WasiFdFilestatGetNode extends WasmBuiltinRootNode {
 
@@ -59,16 +58,16 @@ public final class WasiFdFilestatGetNode extends WasmBuiltinRootNode {
     @Override
     public Object executeWithContext(VirtualFrame frame, WasmContext context) {
         final Object[] args = frame.getArguments();
-        return fdFilestatGet(context, (int) args[0], (Handle) args[1]);
+        return fdFilestatGet(context, (int) args[0], (long) args[1]);
     }
 
     @TruffleBoundary
-    private int fdFilestatGet(WasmContext context, int fd, Handle bufferAddress) {
+    private int fdFilestatGet(WasmContext context, int fd, long bufferAddress) {
         final Fd handle = context.fdManager().get(fd);
         if (handle == null) {
             return Errno.Badf.ordinal();
         }
-        return handle.filestatGet(this, memory(), Handle.handleToRawLongBits(bufferAddress)).ordinal();
+        return handle.filestatGet(this, memory(), bufferAddress).ordinal();
     }
 
     @Override

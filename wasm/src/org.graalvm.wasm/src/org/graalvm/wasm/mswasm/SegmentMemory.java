@@ -26,6 +26,11 @@ public class SegmentMemory extends WasmMemory {
     public static final boolean DEBUG = false;
     public static final boolean DEBUG_FINE = false;
 
+    private static final long KEY_MASK = 0xffffffff_00000000L;
+    private static final long OFFSET_MASK = 0x00000000_ffffffffL;
+    private static final int KEY_SHIFT = 32;
+    private static final int OFFSET_SHIFT = 0;
+
     private static final Unsafe unsafe;
     static {
         try {
@@ -52,7 +57,7 @@ public class SegmentMemory extends WasmMemory {
      * Allocate a segment with the given size in bytes. Returns a handle that accesses that
      * segment with offset 0.
      */
-    public Handle allocSegment(int byteSize) {
+    public long allocSegment(int byteSize) {
         // Allocate segment with byte size
         long base = unsafe.allocateMemory(byteSize);
         long bound = base + byteSize;
@@ -65,15 +70,15 @@ public class SegmentMemory extends WasmMemory {
                                " of size " + byteSize);
             System.err.println("[allocSegment] segments: " + segments);
         }
-        return new Handle(s.key());
+        return (long)s.key() << KEY_SHIFT;
     }
 
     /**
      * Free the segment associated with the given handle. Traps if the handle is corrupted or
      * the segment is already freed.
      */
-    public void freeSegment(Node node, Handle h) {
-        Segment seg = getAndValidateSegment(node, h);
+    public void freeSegment(Node node, long handle) {
+        Segment seg = getAndValidateSegment(node, handle);
 
         // Safe to free the memory and the segment
         unsafe.freeMemory(seg.memoryBase);
@@ -82,6 +87,14 @@ public class SegmentMemory extends WasmMemory {
             System.err.println("[freeSegment] Freed segment " + seg.key());
             System.err.println("[freeSegment] segments: " + segments);
         }
+    }
+
+    public static int getKey(long handle) {
+        return (int)((handle & KEY_MASK) >>> KEY_SHIFT);
+    }
+
+    public static int getOffset(long handle) {
+        return (int)((handle & OFFSET_MASK) >>> OFFSET_SHIFT);
     }
 
 
@@ -96,16 +109,17 @@ public class SegmentMemory extends WasmMemory {
      * 
      * Traps if any of these conditions are violated. Otherwise, returns the segment.
      */
-    public Segment getAndValidateSegment(Node node, Handle h) {
+    public Segment getAndValidateSegment(Node node, long handle) {
         if (DEBUG_FINE) {
-            System.err.println("[getAndValidateSegment] called on " + h);
-        }
-        if (h.isNull()) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            throw trapNull(node, h);
+            System.err.println(String.format("[getAndValidateSegment] called on handle %016x", handle));
         }
 
-        int key = h.segment;
+        int key = getKey(handle);
+        if (key == 0) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
+            throw trapNull(node, handle);
+        }
+
         if (!segments.contains(key)) {
             if (DEBUG) {
                 System.err.println("[getAndValidateSegment] Couldn't find segment with key " + key);
@@ -113,7 +127,7 @@ public class SegmentMemory extends WasmMemory {
             }
             // If the segment does not exist, assume the handle is corrupted
             CompilerDirectives.transferToInterpreterAndInvalidate();
-            throw trapCorrupted(node, h);
+            throw trapCorrupted(node, handle);
         }
 
         Segment segment = segments.get(key);
@@ -135,12 +149,13 @@ public class SegmentMemory extends WasmMemory {
      * 
      * If either condition is validated, traps. Otherwise, returns the address.
      */
-    public long getAndValidateEffectiveAddress(Node node, Handle h, long accessSize) {
+    public long getAndValidateEffectiveAddress(Node node, long handle, long accessSize) {
         if (DEBUG_FINE) {
             System.err.println("[getAndValidateEffectiveAddress] called");
         }
-        Segment s = getAndValidateSegment(node, h);
-        long effectiveAddr = s.memoryBase + h.offset;
+        Segment s = getAndValidateSegment(node, handle);
+        int offset = getOffset(handle);
+        long effectiveAddr = s.memoryBase + offset;
 
         if (effectiveAddr >= s.memoryBound || effectiveAddr + accessSize > s.memoryBound) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
@@ -155,9 +170,8 @@ public class SegmentMemory extends WasmMemory {
      * @return
      */
     @TruffleBoundary
-    protected final WasmException trapCorrupted(Node node, Handle h) {
-        final String message = String.format("Handle into segment %d with offset %d is corrupted",
-                                             h.segment, h.offset);
+    protected final WasmException trapCorrupted(Node node, long handle) {
+        final String message = String.format("Handle %016x references an invalid segment", handle);
         if (DEBUG) {
             System.err.println("[trapCorrupted] " + message + ". Printing stack trace...");
             new Exception().printStackTrace();
@@ -171,9 +185,8 @@ public class SegmentMemory extends WasmMemory {
      * @return
      */
     @TruffleBoundary
-    protected final WasmException trapNull(Node node, Handle h) {
-        final String message = String.format("Handle into segment %d with offset %d is null",
-                                             h.segment, h.offset);
+    protected final WasmException trapNull(Node node, long h) {
+        final String message = String.format("Handle %016x is null", h);
         if (DEBUG) {
             System.err.println("[trapNull] " + message + ". Printing stack trace...");
             new Exception().printStackTrace();
@@ -266,103 +279,89 @@ public class SegmentMemory extends WasmMemory {
 
     @Override
     public int load_i32(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         int value = getInt(addr);
         return value;
     }
     
     @Override
     public long load_i64(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 8);
+        long addr = getAndValidateEffectiveAddress(node, handle, 8);
         long value = getLong(addr);
         return value;
     }
     
     @Override
     public float load_f32(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         float value = getFloat(addr);
         return value;
     }
     
     @Override
     public double load_f64(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 8);
+        long addr = getAndValidateEffectiveAddress(node, handle, 8);
         double value = getDouble(addr);
         return value;
     }
     
     @Override
     public int load_i32_8s(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 1);
+        long addr = getAndValidateEffectiveAddress(node, handle, 1);
         int value = getByte(addr);
         return value;
     }
     
     public int load_i32_8u(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 1);
+        long addr = getAndValidateEffectiveAddress(node, handle, 1);
         int value = 0x0000_00ff & getByte(addr);
         return value;
     }
     
     public int load_i32_16s(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 2);
+        long addr = getAndValidateEffectiveAddress(node, handle, 2);
         int value = getShort(addr);
         return value;
     }
     
     public int load_i32_16u(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 2);
+        long addr = getAndValidateEffectiveAddress(node, handle, 2);
         int value = 0x0000_ffff & getShort(addr);
         return value;
     }
     
     public long load_i64_8s(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 1);
+        long addr = getAndValidateEffectiveAddress(node, handle, 1);
         long value = getByte(addr);
         return value;
     }
     
     public long load_i64_8u(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 1);
+        long addr = getAndValidateEffectiveAddress(node, handle, 1);
         long value = 0x0000_0000_0000_00ffL & getByte(addr);
         return value;
     }
     
     public long load_i64_16s(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 2);
+        long addr = getAndValidateEffectiveAddress(node, handle, 2);
         long value = getShort(addr);
         return value;
     }
 
     public long load_i64_16u(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 2);
+        long addr = getAndValidateEffectiveAddress(node, handle, 2);
         long value = 0x0000_0000_0000_ffffL & getShort(addr);
         return value;
     }
     
     public long load_i64_32s(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         long value = getInt(addr);
         return value;
     }
     
     public long load_i64_32u(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         long value = 0x0000_0000_ffff_ffffL & getInt(addr);
         return value;
     }
@@ -370,77 +369,66 @@ public class SegmentMemory extends WasmMemory {
     /**
      * Load a handle from memory as a 64-bit long.
      */
-    public Handle load_handle(Node node, long handle) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+    public long load_handle(Node node, long handle) {
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         long value = getLong(addr);
-        return Handle.longBitsToHandle(value);
+        return value;
     }
 
 
     // Methods to store data to segments
     
     public void store_i32(Node node, long handle, int value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         putInt(addr, value);
     }
 
     public void store_i64(Node node, long handle, long value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 8);
+        long addr = getAndValidateEffectiveAddress(node, handle, 8);
         putLong(addr, value);
     }
     
     public void store_f32(Node node, long handle, float value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         putFloat(addr, value);
     }
     
     public void store_f64(Node node, long handle, double value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 8);
+        long addr = getAndValidateEffectiveAddress(node, handle, 8);
         putDouble(addr, value);
     }
 
     public void store_i32_8(Node node, long handle, byte value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 1);
+        long addr = getAndValidateEffectiveAddress(node, handle, 1);
         putByte(addr, value);
     }
     
     public void store_i32_16(Node node, long handle, short value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 2);
+        long addr = getAndValidateEffectiveAddress(node, handle, 2);
         putShort(addr, value);
     }
     
     public void store_i64_8(Node node, long handle, byte value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 1);
+        long addr = getAndValidateEffectiveAddress(node, handle, 1);
         putByte(addr, value);
     }
     
     public void store_i64_16(Node node, long handle, short value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 2);
+        long addr = getAndValidateEffectiveAddress(node, handle, 2);
         putShort(addr, value);
     }
 
     public void store_i64_32(Node node, long handle, int value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);
         putInt(addr, value);
     }
 
     /**
      * Store a handle to memory as a 64-bit long.
      */
-    public void store_handle(Node node, long handle, Handle value) {
-        Handle h = Handle.longBitsToHandle(handle);
-        long addr = getAndValidateEffectiveAddress(node, h, 4);        
-        putLong(addr, Handle.handleToRawLongBits(value));
+    public void store_handle(Node node, long handle, long value) {
+        long addr = getAndValidateEffectiveAddress(node, handle, 4);        
+        putLong(addr, value);
     }
 
 

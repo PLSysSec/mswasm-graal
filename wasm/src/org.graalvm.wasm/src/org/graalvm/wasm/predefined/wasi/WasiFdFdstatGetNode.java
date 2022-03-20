@@ -48,7 +48,6 @@ import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.fd.Fd;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
-import org.graalvm.wasm.mswasm.Handle;
 
 public final class WasiFdFdstatGetNode extends WasmBuiltinRootNode {
 
@@ -59,16 +58,16 @@ public final class WasiFdFdstatGetNode extends WasmBuiltinRootNode {
     @Override
     public Object executeWithContext(VirtualFrame frame, WasmContext context) {
         final Object[] args = frame.getArguments();
-        return fdFdstatGet(context, (int) args[0], (Handle) args[1]);
+        return fdFdstatGet(context, (int) args[0], (long) args[1]);
     }
 
     @TruffleBoundary
-    private int fdFdstatGet(WasmContext context, int fd, Handle resultAddress) {
+    private int fdFdstatGet(WasmContext context, int fd, long resultAddress) {
         final Fd handle = context.fdManager().get(fd);
         if (handle == null) {
             return Errno.Badf.ordinal();
         }
-        return handle.fdstatGet(this, memory(), Handle.handleToRawLongBits(resultAddress)).ordinal();
+        return handle.fdstatGet(this, memory(), resultAddress).ordinal();
     }
 
     @Override

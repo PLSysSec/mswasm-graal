@@ -47,11 +47,9 @@ import org.graalvm.wasm.WasmInstance;
 import org.graalvm.wasm.WasmLanguage;
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
-import org.graalvm.wasm.mswasm.Handle;
 import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.types.Clockid;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
-import org.graalvm.wasm.mswasm.Handle;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -68,15 +66,15 @@ public final class WasiClockTimeGetNode extends WasmBuiltinRootNode {
         assert args.length == 3;
 
         // TODO(mbovel): handle args[1] "precision"
-        return clockTimeGet((int) args[0], (Handle) args[2]);
+        return clockTimeGet((int) args[0], (long) args[2]);
     }
 
     @TruffleBoundary
-    private Object clockTimeGet(int clockIdValue, Handle resultAddress) {
+    private Object clockTimeGet(int clockIdValue, long resultAddress) {
         final Clockid clockId = Clockid.values()[clockIdValue];
         switch (clockId) {
             case Realtime:
-                memory().store_i64(this, Handle.handleToRawLongBits(resultAddress), realtimeNow());
+                memory().store_i64(this, resultAddress, realtimeNow());
                 break;
             case Monotonic:
             case ProcessCputimeId:
