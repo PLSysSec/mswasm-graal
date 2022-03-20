@@ -1,4 +1,4 @@
-DYNAMIC_IMPORTS=/compiler,/espresso,/graal-js,/regex,/sdk,/sulong,/truffle,/wasm
-COMPONENTS=cmp,ejvm,gwa,icu4j,java,js,llp,llrc,llrl,llrn,nfi-libffi,pbm,pmh,pbi,rgx,sdk,tfl,tflm
+DYNAMIC_IMPORTS=/compiler,/espresso,/regex,/sdk,/sulong,/truffle,/wasm
+COMPONENTS=cmp,ejvm,gwa,icu4j,java,llp,llrc,llrl,llrn,nfi-libffi,pbm,pmh,pbi,rgx,sdk,tfl,tflm
 NATIVE_IMAGES=lib:jvmcicompiler,polybench
 DISABLE_INSTALLABLES=False
