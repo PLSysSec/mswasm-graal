@@ -82,7 +82,7 @@ public class SegmentMemory extends WasmMemory {
 
         // Safe to free the memory and the segment
         unsafe.freeMemory(seg.memoryBase);
-        seg.free();
+        segments.remove(seg.key());
         if (DEBUG_FINE) {
             System.err.println("[freeSegment] Freed segment " + seg.key());
             System.err.println("[freeSegment] segments: " + segments);
@@ -131,10 +131,6 @@ public class SegmentMemory extends WasmMemory {
         }
 
         Segment segment = segments.get(key);
-        if (segment.isFree()) {
-            throw trapFreed(node, key);
-        }
-
         return segment;
     }
 
@@ -472,9 +468,8 @@ public class SegmentMemory extends WasmMemory {
     @Override
     public void reset() {
         for (Segment s : segments.segments) {
-            if (s != null && !s.isFree()) {
+            if (s != null) {
                 unsafe.freeMemory(s.memoryBase);
-                s.free();
             }
         }
         segments.clear();

@@ -3,7 +3,6 @@ package org.graalvm.wasm.mswasm;
 public class Segment {
     protected final long memoryBase;
     protected final long memoryBound;
-    private boolean isFree;
 
     // Used as a unique random key to track this segment.
     // We use only the lower 30 bits for keys to leave room for null and corrupted bits
@@ -18,14 +17,6 @@ public class Segment {
         this.key = (int)(Math.random() * (MAX_KEY - MIN_KEY)) + MIN_KEY;
     }
 
-    public boolean isFree() {
-        return isFree;
-    }
-
-    public void free() {
-        isFree = true;
-    }
-
     /**
      * Get an integer key corresponding to this segment
      */
@@ -35,7 +26,7 @@ public class Segment {
 
     @Override
     public String toString() {
-        return String.format("Segment %d { base: %x, bound: %x, free: %b }",
-            key, memoryBase, memoryBound, isFree);
+        return String.format("Segment %d { base: %x, bound: %x }",
+            key, memoryBase, memoryBound);
     }
 }
