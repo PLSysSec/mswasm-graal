@@ -54,7 +54,6 @@ import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.profiles.BranchProfile;
 import org.graalvm.wasm.collection.IntArrayList;
 import org.graalvm.wasm.constants.GlobalModifier;
-import org.graalvm.wasm.mswasm.Handle;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -202,7 +201,7 @@ public final class WasmInstance extends RuntimeState implements TruffleObject {
             case WasmType.F64_TYPE:
                 return Double.longBitsToDouble(globals.loadAsLong(address));
             case WasmType.HANDLE_TYPE:
-                return Handle.longBitsToHandle(globals.loadAsLong(address));
+                return globals.loadAsLong(address);
             default:
                 CompilerDirectives.transferToInterpreter();
                 throw new RuntimeException("Unknown type: " + type);

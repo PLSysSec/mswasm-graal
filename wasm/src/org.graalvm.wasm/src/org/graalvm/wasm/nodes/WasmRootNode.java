@@ -59,7 +59,6 @@ import org.graalvm.wasm.WasmType;
 import org.graalvm.wasm.WasmVoidResult;
 import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
-import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CompilerAsserts;
 import com.oracle.truffle.api.TruffleLanguage;
@@ -187,7 +186,7 @@ public class WasmRootNode extends RootNode {
                     pushDouble(frame, i, (double) arg);
                     break;
                 case WasmType.HANDLE_TYPE:
-                    pushHandle(frame, i, (Handle) arg);
+                    pushHandle(frame, i, (long) arg);
                     break;
             }
         }
@@ -212,7 +211,7 @@ public class WasmRootNode extends RootNode {
                     pushDouble(frame, i, 0D);
                     break;
                 case WasmType.HANDLE_TYPE:
-                    pushHandle(frame, i, Handle.nullHandle());
+                    pushHandle(frame, i, 0);
                     break;
             }
         }

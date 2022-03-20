@@ -49,7 +49,6 @@ import org.graalvm.wasm.predefined.WasmBuiltinRootNode;
 import org.graalvm.wasm.predefined.wasi.fd.Fd;
 import org.graalvm.wasm.predefined.wasi.types.Errno;
 import org.graalvm.wasm.predefined.wasi.types.Whence;
-import org.graalvm.wasm.mswasm.Handle;
 
 public final class WasiFdSeekNode extends WasmBuiltinRootNode {
 
@@ -60,16 +59,16 @@ public final class WasiFdSeekNode extends WasmBuiltinRootNode {
     @Override
     public Object executeWithContext(VirtualFrame frame, WasmContext context) {
         final Object[] args = frame.getArguments();
-        return fdSeek(context, (int) args[0], (long) args[1], (int) args[2], (Handle) args[3]);
+        return fdSeek(context, (int) args[0], (long) args[1], (int) args[2], (long) args[3]);
     }
 
     @TruffleBoundary
-    private int fdSeek(WasmContext context, int fd, long offset, int whence, Handle filesizeAddress) {
+    private int fdSeek(WasmContext context, int fd, long offset, int whence, long filesizeAddress) {
         final Fd handle = context.fdManager().get(fd);
         if (handle == null) {
             return Errno.Badf.ordinal();
         }
-        return handle.seek(this, memory(), offset, Whence.values()[whence], Handle.handleToRawLongBits(filesizeAddress)).ordinal();
+        return handle.seek(this, memory(), offset, Whence.values()[whence], filesizeAddress).ordinal();
     }
 
     @Override

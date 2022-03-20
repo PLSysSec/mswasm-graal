@@ -76,7 +76,6 @@ import org.graalvm.wasm.exception.Failure;
 import org.graalvm.wasm.exception.WasmException;
 import org.graalvm.wasm.memory.WasmMemory;
 import org.graalvm.wasm.mswasm.SegmentMemory;
-import org.graalvm.wasm.mswasm.Handle;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.interop.ExceptionType;
@@ -1246,7 +1245,7 @@ public class BinaryParser extends BinaryStreamParser {
                 case (byte)Instructions.NULL_HANDLE:
                     if (SegmentMemory.DEBUG)
                         System.err.println("[BinaryParser] Found global handle at index " + globalIndex);
-                    value = Handle.handleToRawLongBits(Handle.nullHandle());
+                    value = 0;
                     isInitialized = true;
                     break;
                 case Instructions.GLOBAL_GET:
@@ -1291,8 +1290,8 @@ public class BinaryParser extends BinaryStreamParser {
         if (linkedInstance != null) {
             if (SegmentMemory.DEBUG)
                 System.err.println("[BinaryParser] Initializing memory segment for global data");
-            Handle dataPointer = ((SegmentMemory)linkedInstance.memory()).allocSegment(8192);
-            linkedContext.globals().storeLong(1, Handle.handleToRawLongBits(dataPointer));
+            long dataPointer = ((SegmentMemory)linkedInstance.memory()).allocSegment(8192);
+            linkedContext.globals().storeLong(1, dataPointer);
         }
         
         final int numDataSegments = readLength();
@@ -1355,7 +1354,7 @@ public class BinaryParser extends BinaryStreamParser {
                 // Assert.assertUnsignedIntLessOrEqual(offsetAddress + byteLength, WasmMath.toUnsignedIntExact(memory.byteSize()), Failure.DATA_SEGMENT_DOES_NOT_FIT);
 
                 if (SegmentMemory.DEBUG)
-                    System.err.println("[BinaryParser:readDataSection] Writing static data to " + Handle.longBitsToHandle(baseAddress));
+                    System.err.println(String.format("[BinaryParser:readDataSection] Writing static data to %016x", baseAddress));
                 for (int writeOffset = 0; writeOffset != byteLength; ++writeOffset) {
                     final byte b = read1();
                     memory.store_i32_8(null, baseAddress + writeOffset, b);
@@ -1363,21 +1362,21 @@ public class BinaryParser extends BinaryStreamParser {
 
                 // Initialize pointers in data segment
                 if (SegmentMemory.DEBUG)
-                    System.err.println("[BinaryParser:readDataSection] Initializing global pointers at " + Handle.longBitsToHandle(baseAddress));
+                    System.err.println(String.format("[BinaryParser:readDataSection] Writing static data to %016x", baseAddress));
                 Assert.assertTrue(pointerOffsetsAndSizes.length % 2 == 0, "pointerOffsetsAndSizes must have even length", Failure.DATA_SEGMENT_DOES_NOT_FIT);
                 for (int ptr = 0; ptr < pointerOffsetsAndSizes.length; ptr += 2) {
                     int writeOffset = pointerOffsetsAndSizes[ptr];
                     int segmentSize = pointerOffsetsAndSizes[ptr + 1];
                     if (segmentSize == 0) {
-                        ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, Handle.nullHandle());
+                        ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, 0);
                         if (SegmentMemory.DEBUG) {
-                            System.err.println(String.format("[BinaryParser:readDataSection] Stored null handle at " + Handle.longBitsToHandle(baseAddress + writeOffset)));
+                            System.err.println(String.format("[BinaryParser:readDataSection] Stored null handle at %016x", baseAddress + writeOffset));
                         }
                     } else {
-                        Handle h = ((SegmentMemory) memory).allocSegment(segmentSize);
-                        ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, h); 
+                        long handle = ((SegmentMemory) memory).allocSegment(segmentSize);
+                        ((SegmentMemory) memory).store_handle(null, baseAddress + writeOffset, handle); 
                         if (SegmentMemory.DEBUG) {
-                            System.err.println(String.format("[BinaryParser:readDataSection] Stored handle " + h + " at " + Handle.longBitsToHandle(baseAddress + writeOffset)));
+                            System.err.println(String.format("[BinaryParser:readDataSection] Stored handle %016x at %016x", handle, baseAddress + writeOffset));
                         }
                     }
                 }
