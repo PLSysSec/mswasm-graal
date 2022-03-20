@@ -15,6 +15,8 @@ import org.graalvm.wasm.exception.WasmException;
 import org.graalvm.wasm.nodes.WasmNode;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
+import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.interop.TruffleObject;
 import sun.misc.Unsafe;
 import com.oracle.truffle.api.nodes.Node;
@@ -43,12 +45,17 @@ public class SegmentMemory extends WasmMemory {
     }
 
     /** Stores segments according to their integer keys */
-    private SegmentList segments;
+    @CompilationFinal private final SegmentList segments;
 
     public SegmentMemory() {
         // Provide dummy values for WasmMemory constructor
         super(0, MAX_MEMORY_DECLARATION_SIZE, 0, MAX_MEMORY_INSTANCE_SIZE);
         segments = new SegmentList();
+    }
+
+    private SegmentMemory(SegmentMemory memory) {
+        super(0, MAX_MEMORY_DECLARATION_SIZE, 0, MAX_MEMORY_INSTANCE_SIZE);
+        segments = memory.segments;
     }
 
     // Methods to allocate and free memory
@@ -481,8 +488,7 @@ public class SegmentMemory extends WasmMemory {
      */
     @Override
     public WasmMemory duplicate() {
-        SegmentMemory memory = new SegmentMemory();
-        memory.segments = this.segments;
+        SegmentMemory memory = new SegmentMemory(this);
         return memory;
     }
 

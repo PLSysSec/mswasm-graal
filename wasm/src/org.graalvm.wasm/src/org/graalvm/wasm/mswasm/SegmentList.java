@@ -1,11 +1,14 @@
 package org.graalvm.wasm.mswasm;
 
 import java.util.Arrays;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
+import com.oracle.truffle.api.nodes.ExplodeLoop;
 
 import org.graalvm.wasm.mswasm.Segment;
 import org.graalvm.wasm.mswasm.SegmentMemory;
 
-public class SegmentList {
+public class SegmentList implements TruffleObject {
     private static final int INITIAL_CAPACITY = 11;
 
     protected Segment[] segments;
@@ -56,6 +59,7 @@ public class SegmentList {
         return size;
     }
 
+    @ExplodeLoop
     public void clear() {
         if (size == 0)
             return;
@@ -93,6 +97,7 @@ public class SegmentList {
         }
     }
 
+    @ExplodeLoop
     private boolean attemptToCopyValues(Segment[] targetSegments, int[] targetKeys) {
         for (int i = 0; i < keys.length; i++) {
             if (keys[i] != 0) {
