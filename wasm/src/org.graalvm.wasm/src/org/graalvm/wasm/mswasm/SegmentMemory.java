@@ -68,7 +68,7 @@ public class SegmentMemory extends WasmMemory {
         // Allocate segment with byte size
         long base = unsafe.allocateMemory(byteSize);
         long bound = base + byteSize;
-        Segment s = new Segment(base, bound);
+        Segment s = new Segment(base, bound, segments.current);
 
         // Record segment and create handle
         segments.insert(s);
@@ -160,10 +160,6 @@ public class SegmentMemory extends WasmMemory {
         int offset = getOffset(handle);
         long effectiveAddr = s.memoryBase + offset;
 
-        if (effectiveAddr >= s.memoryBound || effectiveAddr + accessSize > s.memoryBound) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            throw trapOutOfBounds(node, accessSize, effectiveAddr);
-        }
         return effectiveAddr;
     }
 

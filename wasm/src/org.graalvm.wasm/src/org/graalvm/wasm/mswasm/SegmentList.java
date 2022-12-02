@@ -9,27 +9,27 @@ import org.graalvm.wasm.mswasm.Segment;
 import org.graalvm.wasm.mswasm.SegmentMemory;
 
 public class SegmentList implements TruffleObject {
-    private static final int INITIAL_CAPACITY = 11;
+    private static final int INITIAL_CAPACITY = 8;
 
     protected Segment[] segments;
-    protected int[] keys;
     private int size;
+    public int current;
 
     public SegmentList() {
         segments = new Segment[INITIAL_CAPACITY];
-        keys = new int[INITIAL_CAPACITY];
         size = 0;
+        current = 1;
     }
 
     public void insert(Segment s) {
-        int idx = s.key() % segments.length;
-        while (segments[idx] != null) {
+
+        int idx = s.key();
+        if (idx >= segments.length) {
             expandCapacity();
-            idx = s.key() % segments.length;
         }
         segments[idx] = s;
-        keys[idx] = s.key();
         ++size;
+        ++current;
         if (SegmentMemory.DEBUG)
             System.err.println("[SegmentList.insert] Inserted " + s + " at index " + idx);
     }
@@ -37,22 +37,19 @@ public class SegmentList implements TruffleObject {
     public void remove(int key) {
         int idx = key % segments.length;
         segments[idx] = null;
-        keys[idx] = 0;
         --size;
         if (SegmentMemory.DEBUG)
             System.err.println("[SegmentList.remove] Removed segment " + key);
     }
 
     public Segment get(int key) {
-        int idx = key % segments.length;
-        return segments[idx];
+        return segments[key];
     }
 
     public boolean contains(int key) {
         if (key == 0)
             return false;
-        int idx = key % segments.length;
-        return keys[idx] == key;
+        return segments[key] != null;
     }
 
     public int size() {
@@ -63,11 +60,11 @@ public class SegmentList implements TruffleObject {
     public void clear() {
         if (size == 0)
             return;
-        for (int i = 0; i < keys.length; i++) {
-            keys[i] = 0;
+        for (int i = 0; i < segments.length; i++) {
             segments[i] = null;
         }
         size = 0;
+        current = 1;
         if (SegmentMemory.DEBUG)
             System.err.println("[SegmentList.clear] Cleared segments");
     }
@@ -78,37 +75,21 @@ public class SegmentList implements TruffleObject {
     private void expandCapacity() {
         int cap = segments.length;
         Segment[] newSegs;
-        int[] newKeys;
 
-        boolean success = false;
-        do {
-            cap = cap * 2 + 1;
-            newSegs = new Segment[cap];
-            newKeys = new int[cap];
-            success = attemptToCopyValues(newSegs, newKeys);
-            // Keep expanding until we succeed without conflicts
-        } while (!success);
+        cap = cap * 2;
+        newSegs = new Segment[cap];
+        attemptToCopyValues(newSegs);
 
         segments = newSegs;
-        keys = newKeys;
         if (SegmentMemory.DEBUG) {
             System.err.println("[SegmentList.expandCapacity] Expanded capacity to " + segments.length);
             System.err.println("[SegmentList.expandCapacity] segments: " + Arrays.toString(segments));
         }
     }
 
-    @ExplodeLoop
-    private boolean attemptToCopyValues(Segment[] targetSegments, int[] targetKeys) {
-        for (int i = 0; i < keys.length; i++) {
-            if (keys[i] != 0) {
-                int idx = keys[i] % targetKeys.length;
-                if (targetKeys[idx] != 0) {
-                    // Found a conflict
-                    return false;
-                }
-                targetKeys[idx] = keys[i];
-                targetSegments[idx] = segments[i];
-            }
+    private boolean attemptToCopyValues(Segment[] targetSegments) {
+        for (int i = 0; i < segments.length; i++) {
+            targetSegments[i] = segments[i];
         }
         return true;
     }

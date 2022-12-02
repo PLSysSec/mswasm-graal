@@ -16,10 +16,10 @@ public class Segment implements TruffleObject {
     // in the 64-bit long representation of a handle.
     private final int key;
 
-    public Segment(long base, long bound) {
+    public Segment(long base, long bound, int key) {
         this.memoryBase = base;
         this.memoryBound = bound;
-        this.key = Math.abs(rand.nextInt());
+        this.key = key;
     }
 
     /**
