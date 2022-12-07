@@ -68,7 +68,7 @@ public class SegmentMemory extends WasmMemory {
         // Allocate segment with byte size
         long base = unsafe.allocateMemory(byteSize);
         long bound = base + byteSize;
-        Segment s = new Segment(base, bound, segments.current);
+        Segment s = new Segment(base, bound, segments.newKey());
 
         // Record segment and create handle
         segments.insert(s);
